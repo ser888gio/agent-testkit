@@ -102,6 +102,18 @@ def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkey
     assert "ms" in resp.text
 
 
+def test_compare_route_shows_diff(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr1, report1 = _seed_store(db)
+    cfg, rr2, report2 = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/compare?a={rr1.run_id}&b={rr2.run_id}")
+    assert resp.status_code == 200
+    assert "Newly failing" in resp.text
+    assert "Score delta" in resp.text
+
+
 def test_unknown_run_id_404(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)

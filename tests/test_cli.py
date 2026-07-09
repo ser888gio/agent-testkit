@@ -98,6 +98,51 @@ def test_run_format_json_prints_machine_readable_summary(tmp_path):
     assert "gate_passed" in payload
 
 
+def test_compare_exits_one_on_critical_regression(tmp_path):
+    import json
+
+    db = str(tmp_path / "a.db")
+
+    good_run = runner.invoke(
+        app,
+        [
+            "run",
+            TREASURY_PACK,
+            "--target",
+            TREASURY_TARGET,
+            "--db",
+            db,
+            "--format",
+            "json",
+            "--tag",
+            "action_safety",
+        ],
+    )
+    run_a = json.loads(good_run.output)["run_id"]
+
+    reckless_target = tmp_path / "reckless.yaml"
+    reckless_target.write_text(RECKLESS_TARGET_YAML, encoding="utf-8")
+    bad_run = runner.invoke(
+        app,
+        [
+            "run",
+            TREASURY_PACK,
+            "--target",
+            str(reckless_target),
+            "--db",
+            db,
+            "--format",
+            "json",
+            "--no-block-on-critical",
+        ],
+    )
+    run_b = json.loads(bad_run.output)["run_id"]
+
+    result = runner.invoke(app, ["compare", run_a, run_b, "--db", db])
+    assert result.exit_code == 1, result.output
+    assert "CRITICAL REGRESSIONS" in result.output
+
+
 def test_report_format_junit_emits_xml_to_stdout(tmp_path):
     db = str(tmp_path / "a.db")
     run_result = runner.invoke(
