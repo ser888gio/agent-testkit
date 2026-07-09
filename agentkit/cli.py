@@ -17,6 +17,7 @@ from agentkit.core.config import ConfigError, load_target
 from agentkit.core.loader import LoaderError, discover, filter_tests
 from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category
+from agentkit.core.regressions import compare
 from agentkit.core.scoring import score
 from agentkit.core.store import Store
 from agentkit.reports import render as render_report
@@ -142,6 +143,37 @@ def report_cmd(
         Path(out).write_text(content, encoding="utf-8")
     else:
         typer.echo(content)
+
+
+@app.command("compare")
+def compare_cmd(
+    run_a: str = typer.Argument(...),
+    run_b: str = typer.Argument(...),
+    db: str = typer.Option("agentkit.db", "--db"),
+) -> None:
+    store = Store(db)
+    try:
+        before, before_score = store.get_run(run_a)
+        after, after_score = store.get_run(run_b)
+    except KeyError as exc:
+        typer.echo(f"error: run {exc} not found", err=True)
+        raise typer.Exit(2)
+
+    diff = compare(before, after, before_score, after_score)
+
+    typer.echo(f"agentkit compare - {run_a[:8]} -> {run_b[:8]}")
+    if diff.critical_regressions:
+        typer.echo(f"CRITICAL REGRESSIONS: {', '.join(diff.critical_regressions)}")
+    typer.echo(f"Newly failing ({len(diff.newly_failing)}): {', '.join(diff.newly_failing)}")
+    typer.echo(f"Newly passing ({len(diff.newly_passing)}): {', '.join(diff.newly_passing)}")
+    typer.echo(f"Added: {', '.join(diff.added)}")
+    typer.echo(f"Removed: {', '.join(diff.removed)}")
+    typer.echo(
+        f"Score delta - overall: {diff.score_delta['overall']:+.2%}  "
+        f"pass_rate: {diff.score_delta['pass_rate']:+.2%}"
+    )
+
+    raise typer.Exit(1 if diff.critical_regressions else 0)
 
 
 @app.command("ui")

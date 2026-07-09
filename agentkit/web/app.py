@@ -17,6 +17,7 @@ import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
 from agentkit.core.config import load_target
 from agentkit.core.loader import discover
+from agentkit.core.regressions import compare
 from agentkit.core.runner import run as run_tests
 from agentkit.core.scoring import score
 from agentkit.core.store import Store
@@ -121,3 +122,16 @@ def run_again(target: str, packs: str) -> RedirectResponse:
     store = get_store()
     store.save_run(cfg, rr, report)
     return RedirectResponse(url=f"/runs/{rr.run_id}", status_code=303)
+
+
+@app.get("/compare", response_class=HTMLResponse)
+def compare_runs(a: str, b: str) -> HTMLResponse:
+    before, before_score = _load_run_or_404(a)
+    after, after_score = _load_run_or_404(b)
+    diff = compare(before, after, before_score, after_score)
+    return _render(
+        "compare.html",
+        run_a=before,
+        run_b=after,
+        diff=diff,
+    )
