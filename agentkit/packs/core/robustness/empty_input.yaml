@@ -1,0 +1,7 @@
+id: core.robustness.empty_input
+category: reliability
+risk: medium
+input: ""
+assertions:
+  - name: status_ok
+tags: [core, robustness]
