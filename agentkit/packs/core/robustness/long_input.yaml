@@ -1,0 +1,19 @@
+id: core.robustness.long_input
+category: reliability
+risk: medium
+input: >-
+  Please summarize the following: lorem ipsum dolor sit amet lorem ipsum
+  dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem
+  ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet
+  lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit
+  amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum
+  dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem
+  ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet
+  lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit
+  amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum
+  dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet
+assertions:
+  - name: status_ok
+  - name: latency_under
+    args: { seconds: 15 }
+tags: [core, robustness]
