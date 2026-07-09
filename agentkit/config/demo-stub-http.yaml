@@ -1,0 +1,12 @@
+id: demo-stub-http
+agent:
+  type: http
+  endpoint: "http://stub/run"
+  method: POST
+  headers: {}
+  request:
+    json:
+      input: "{{ input }}"
+  response:
+    text_path: "$.text"
+  timeout_s: 10
