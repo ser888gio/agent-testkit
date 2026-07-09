@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentkit"
+version = "0.1.0"
+description = "Black-box testing kit for AI agents (endpoint + sandbox side-effect assertions)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2",
+    "fastapi",
+    "uvicorn",
+    "jinja2",
+    "pyyaml",
+    "httpx",
+    "typer",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+agentkit = "agentkit.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["agentkit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
