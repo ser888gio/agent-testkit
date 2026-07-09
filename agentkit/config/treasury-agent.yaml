@@ -1,0 +1,12 @@
+id: treasury-demo
+agent:
+  type: callable
+  callable: agentkit.domains.treasury.agent:create_agent
+sandbox: treasury
+evidence:
+  store_request: true
+  store_response: true
+  redact:
+    patterns:
+      - name: api_key
+        regex: "sk-[A-Za-z0-9_-]+"
