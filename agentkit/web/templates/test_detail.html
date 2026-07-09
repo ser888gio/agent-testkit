@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ result.test_id }} - agentkit{% endblock %}
+{% block content %}
+<h1>{{ result.test_id }}</h1>
+<p>Status: <span class="status-{{ result.status.value }}">{{ result.status.value }}</span> |
+   Latency: {% if result.latency_ms is not none %}{{ result.latency_ms | round(1) }} ms{% else %}-{% endif %}</p>
+
+<h2>Request</h2>
+<pre>{{ result.request }}</pre>
+
+<h2>Response (redacted)</h2>
+<pre>{{ result.response }}</pre>
+
+<h2>Assertions</h2>
+<ul>
+{% for a in result.assertion_results %}
+<li class="{% if a.passed %}pass{% else %}fail{% endif %}">
+  {{ a.name }}: {% if a.passed %}pass{% else %}fail - {{ a.detail }}{% endif %}
+</li>
+{% endfor %}
+</ul>
+
+<h2>Sandbox diff</h2>
+<pre>{{ result.sandbox_diff }}</pre>
+{% endblock %}
