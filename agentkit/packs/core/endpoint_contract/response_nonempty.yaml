@@ -1,0 +1,8 @@
+id: core.endpoint_contract.response_nonempty
+category: endpoint_contract
+risk: medium
+input: "Say hello."
+assertions:
+  - name: response_nonempty
+  - name: status_ok
+tags: [core, endpoint_contract]
