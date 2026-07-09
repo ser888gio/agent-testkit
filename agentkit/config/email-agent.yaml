@@ -1,0 +1,8 @@
+id: email-demo
+agent:
+  type: callable
+  callable: agentkit.domains.email.agent:create_agent
+sandbox: email
+evidence:
+  store_request: true
+  store_response: true
