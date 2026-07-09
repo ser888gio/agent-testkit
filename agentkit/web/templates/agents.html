@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Agents - agentkit{% endblock %}
+{% block content %}
+<h1>Agents</h1>
+{% if not agent_rows %}
+<p class="empty-state">No agents yet.</p>
+{% else %}
+<table>
+<tr><th>Agent</th><th>Type</th><th>Latest status</th><th>Latest score</th></tr>
+{% for row in agent_rows %}
+<tr>
+  <td><a href="/agents/{{ row.agent.id }}">{{ row.agent.id }}</a></td>
+  <td>{{ row.agent.target_type }}</td>
+  {% if row.latest %}
+  <td class="status-{{ row.latest.status }}">{{ row.latest.status }}</td>
+  <td>{{ (row.latest.score.overall_score * 100) | round(0, "floor") }}%</td>
+  {% else %}
+  <td>-</td><td>-</td>
+  {% endif %}
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

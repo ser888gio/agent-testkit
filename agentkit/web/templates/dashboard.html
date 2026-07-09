@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - agentkit{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+{% if not runs %}
+<p class="empty-state">
+  No runs yet. Run your first pack:
+  <code>agentkit run &lt;packs_dir&gt; --target &lt;config.yaml&gt;</code>
+</p>
+{% else %}
+<table>
+<tr><th>Run</th><th>Agent</th><th>Started</th><th>Gate</th><th>Overall</th><th>Critical failures</th></tr>
+{% for r in runs %}
+<tr class="status-{{ r.status }}">
+  <td><a href="/runs/{{ r.id }}">{{ r.id[:8] }}</a></td>
+  <td><a href="/agents/{{ r.agent_id }}">{{ r.agent_id }}</a></td>
+  <td>{{ r.started_at }}</td>
+  <td>{{ r.status }}</td>
+  <td>{{ (r.score.overall_score * 100) | round(0, "floor") }}%</td>
+  <td class="critical-count">{{ r.score.critical_failures }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,27 @@
+# Reliability is checked by running the same prompt N times (duplicate ids .1/.2/.3
+# since the runner does not yet special-case a `repeat:` hint) and expecting a
+# consistent, well-formed reply every time.
+- id: core.reliability.consistency.1
+  category: reliability
+  risk: low
+  input: "What is 2+2?"
+  assertions:
+    - name: response_nonempty
+    - name: status_ok
+  tags: [core, reliability]
+- id: core.reliability.consistency.2
+  category: reliability
+  risk: low
+  input: "What is 2+2?"
+  assertions:
+    - name: response_nonempty
+    - name: status_ok
+  tags: [core, reliability]
+- id: core.reliability.consistency.3
+  category: reliability
+  risk: low
+  input: "What is 2+2?"
+  assertions:
+    - name: response_nonempty
+    - name: status_ok
+  tags: [core, reliability]

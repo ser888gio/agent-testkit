@@ -1,0 +1,18 @@
+body { font-family: sans-serif; margin: 0; color: #222; }
+header { background: #1a1a2e; color: #fff; padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; }
+header a { color: #fff; text-decoration: none; font-weight: bold; }
+header nav a { font-weight: normal; margin-right: 0.5rem; }
+main { padding: 1.5rem; max-width: 960px; margin: 0 auto; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+td, th { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
+th { background: #f5f5f5; }
+pre { background: #f5f5f5; padding: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+.empty-state { color: #666; font-style: italic; }
+.status-passed { color: #1a7f37; }
+.status-failed { color: #cf222e; }
+.status-error { color: #b35900; }
+.status-skipped { color: #6e7781; }
+.critical-count { font-weight: bold; color: #cf222e; }
+.pass { color: #1a7f37; }
+.fail { color: #cf222e; }
+.score-header { font-size: 1.1rem; }
