@@ -8,6 +8,11 @@ merge, then start the next. Ordered by dependency (backbone first). Full design 
 Branch naming: `feat/<area>`. One task per branch so reviews stay small. Subtasks are
 sized to roughly one commit each.
 
+> **Implementer handoff:** each branch has a full contract spec (public API, data
+> models/formats, lifecycle, failure behavior, examples, required tests, observable "done")
+> under [`docs/specs/`](docs/specs/README.md). Read your branch's spec before coding — it is
+> the source of truth for interfaces and examples so branches don't invent incompatible shapes.
+
 ## Branch map
 
 | #  | Branch | Task | Depends on |
