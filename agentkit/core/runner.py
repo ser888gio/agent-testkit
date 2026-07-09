@@ -14,14 +14,22 @@ from agentkit.core.config import TargetConfig
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.redaction import EvidencePolicy, Redactor
 from agentkit.core.sandbox import Sandbox, build_sandbox
-from agentkit.core.schema import AssertionResult, RunResult, Status, TestCase, TestResult
+from agentkit.core.schema import (
+    AssertionResult,
+    RunResult,
+    Status,
+    TestCase,
+    TestResult,
+)
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _run_with_timeout(agent: Agent, input: str | dict, timeout_s: float) -> AgentResponse:
+def _run_with_timeout(
+    agent: Agent, input: str | dict, timeout_s: float
+) -> AgentResponse:
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     future = executor.submit(agent.run, input)
     try:
@@ -87,7 +95,10 @@ def run_one(
             diff = None
 
         ctx = AssertionContext(
-            response=response, sandbox=sandbox, latency_ms=response.latency_ms, diff=diff
+            response=response,
+            sandbox=sandbox,
+            latency_ms=response.latency_ms,
+            diff=diff,
         )
         assertion_results = [evaluate(a, ctx) for a in test.assertions]
         status = _derive_status(response, assertion_results, test)
@@ -148,7 +159,9 @@ def _run_python_test(
         latency_ms = (time.perf_counter() - t0) * 1000
 
         status = Status.passed if passed else Status.failed
-        assertion_results = [AssertionResult(name=test.id, passed=passed, detail=detail)]
+        assertion_results = [
+            AssertionResult(name=test.id, passed=passed, detail=detail)
+        ]
         request_evidence, response_evidence = _redact_evidence(
             evidence, redactor, "<python test>", AgentResponse(text="", error=error)
         )
@@ -198,7 +211,9 @@ def run(
     results: list[TestResult] = []
     for test in tests:
         if isinstance(test, PythonTestCase):
-            results.append(_run_python_test(agent, sandbox, test, redactor, target.evidence))
+            results.append(
+                _run_python_test(agent, sandbox, test, redactor, target.evidence)
+            )
         else:
             results.append(run_one(agent, sandbox, test, redactor, target.evidence))
 

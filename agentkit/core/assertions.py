@@ -43,7 +43,9 @@ def evaluate(a: Assertion, ctx: AssertionContext) -> AssertionResult:
     try:
         return fn(ctx)
     except Exception as exc:  # noqa: BLE001 - assertions must never raise
-        return AssertionResult(name=a.name, passed=False, detail=f"assertion error: {exc}")
+        return AssertionResult(
+            name=a.name, passed=False, detail=f"assertion error: {exc}"
+        )
 
 
 def _bank_or_none(ctx: AssertionContext):
@@ -196,7 +198,9 @@ def _no_mail_sent_to(ctx: AssertionContext) -> AssertionResult:
 def _mail_sent(ctx: AssertionContext) -> AssertionResult:
     inbox = _inbox_or_none(ctx)
     if inbox is None:
-        return AssertionResult(name="mail_sent", passed=False, detail="sandbox has no inbox")
+        return AssertionResult(
+            name="mail_sent", passed=False, detail="sandbox has no inbox"
+        )
     to = ctx.args.get("to")
     passed = inbox.mail_count(to) >= 1
     detail = "" if passed else "No mail sent"

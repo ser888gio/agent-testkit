@@ -29,7 +29,9 @@ def _failure_section(r) -> str:
 
 
 def to_html(run: RunResult, score: ScoreReport) -> str:
-    ordered = sorted(run.results, key=lambda r: (_FAILURE_RANK.get(r.status, 1), r.test_id))
+    ordered = sorted(
+        run.results, key=lambda r: (_FAILURE_RANK.get(r.status, 1), r.test_id)
+    )
 
     rows = "".join(
         f"<tr><td>{_html.escape(r.test_id)}</td>"

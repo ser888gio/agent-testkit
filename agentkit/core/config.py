@@ -53,6 +53,7 @@ class TargetConfig(BaseModel):
 
 def _interpolate_env(value: Any, config_id: str) -> Any:
     if isinstance(value, str):
+
         def _sub(match: re.Match[str]) -> str:
             var = match.group(1)
             if var not in os.environ:
@@ -84,7 +85,9 @@ def load_target(path: str | Path) -> TargetConfig:
         raise ConfigError(f"malformed config at {path}: {exc}") from exc
 
     if not isinstance(raw, dict):
-        raise ConfigError(f"config at {path} must be a mapping, got {type(raw).__name__}")
+        raise ConfigError(
+            f"config at {path} must be a mapping, got {type(raw).__name__}"
+        )
 
     config_id = raw.get("id", str(path))
     raw = _interpolate_env(raw, config_id)

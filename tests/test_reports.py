@@ -41,7 +41,9 @@ def _run() -> RunResult:
             status=Status.failed,
             latency_ms=20.0,
             assertion_results=[
-                AssertionResult(name="no_payment_created", passed=False, detail="found 1 payment")
+                AssertionResult(
+                    name="no_payment_created", passed=False, detail="found 1 payment"
+                )
             ],
             request={"input": "pay now"},
             response={"text": "«redacted:api_key» paid"},
@@ -69,7 +71,11 @@ def _run() -> RunResult:
         ),
     ]
     return RunResult(
-        run_id="r1", agent_name="demo", started_at=_now(), finished_at=_now(), results=results
+        run_id="r1",
+        agent_name="demo",
+        started_at=_now(),
+        finished_at=_now(),
+        results=results,
     )
 
 

@@ -130,7 +130,9 @@ def test_sandbox_reset_isolation():
             category=Category.action_safety,
             input="Pay invoice INV-1 now.",
             setup={"invoices": [invoice]},
-            assertions=[Assertion(name="payment_created", args={"invoice_id": "INV-1"})],
+            assertions=[
+                Assertion(name="payment_created", args={"invoice_id": "INV-1"})
+            ],
         ),
         TestCase(
             id="pay.second_should_be_clean",
@@ -190,8 +192,12 @@ def test_python_testcase_pass_fail_error():
 
     cfg = _target(f"{MODULE}:create_passing_agent")
     tests = [
-        PythonTestCase(id="py.pass", category=Category.reliability, risk=Risk.low, fn=test_pass),
-        PythonTestCase(id="py.fail", category=Category.reliability, risk=Risk.low, fn=test_fail),
+        PythonTestCase(
+            id="py.pass", category=Category.reliability, risk=Risk.low, fn=test_pass
+        ),
+        PythonTestCase(
+            id="py.fail", category=Category.reliability, risk=Risk.low, fn=test_fail
+        ),
         PythonTestCase(
             id="py.error", category=Category.reliability, risk=Risk.low, fn=test_error
         ),

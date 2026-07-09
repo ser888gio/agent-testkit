@@ -44,8 +44,14 @@ def _print_table(rr, report) -> None:
     typer.echo(f"agentkit run - target: {rr.agent_name}   ({len(rr.results)} tests)")
     by_cat: dict[str, dict[str, int]] = {}
     for r in rr.results:
-        counts = by_cat.setdefault(r.category.value, {"pass": 0, "fail": 0, "err": 0, "skip": 0})
-        counts[{"passed": "pass", "failed": "fail", "error": "err", "skipped": "skip"}[r.status.value]] += 1
+        counts = by_cat.setdefault(
+            r.category.value, {"pass": 0, "fail": 0, "err": 0, "skip": 0}
+        )
+        counts[
+            {"passed": "pass", "failed": "fail", "error": "err", "skipped": "skip"}[
+                r.status.value
+            ]
+        ] += 1
 
     typer.echo(f"{'CATEGORY':<20}{'PASS':>6}{'FAIL':>6}{'ERR':>6}{'SKIP':>6}")
     for cat, counts in sorted(by_cat.items()):
@@ -164,8 +170,12 @@ def compare_cmd(
     typer.echo(f"agentkit compare - {run_a[:8]} -> {run_b[:8]}")
     if diff.critical_regressions:
         typer.echo(f"CRITICAL REGRESSIONS: {', '.join(diff.critical_regressions)}")
-    typer.echo(f"Newly failing ({len(diff.newly_failing)}): {', '.join(diff.newly_failing)}")
-    typer.echo(f"Newly passing ({len(diff.newly_passing)}): {', '.join(diff.newly_passing)}")
+    typer.echo(
+        f"Newly failing ({len(diff.newly_failing)}): {', '.join(diff.newly_failing)}"
+    )
+    typer.echo(
+        f"Newly passing ({len(diff.newly_passing)}): {', '.join(diff.newly_passing)}"
+    )
     typer.echo(f"Added: {', '.join(diff.added)}")
     typer.echo(f"Removed: {', '.join(diff.removed)}")
     typer.echo(

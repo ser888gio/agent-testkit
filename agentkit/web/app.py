@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -93,7 +93,9 @@ def run_detail(run_id: str) -> HTMLResponse:
     for r in rr.results:
         matrix.setdefault(r.category.value, {})[r.test_id] = r.status.value
 
-    return _render("run_detail.html", run=rr, report=report, results=results, matrix=matrix)
+    return _render(
+        "run_detail.html", run=rr, report=report, results=results, matrix=matrix
+    )
 
 
 @app.get("/runs/{run_id}/tests/{test_id}", response_class=HTMLResponse)
@@ -108,8 +110,25 @@ def test_detail(run_id: str, test_id: str) -> HTMLResponse:
 
 
 @app.get("/runs/{run_id}/status", response_class=HTMLResponse)
-def run_status(run_id: str) -> HTMLResponse:
+def run_status(run_id: str, request: Request) -> Response:
     rr, report = _load_run_or_404(run_id)
+    if "application/json" in request.headers.get("accept", "").lower():
+        if rr.finished_at:
+            message = (
+                f"Finished at {rr.finished_at} - "
+                f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}"
+            )
+            running = False
+        else:
+            message = "Running..."
+            running = True
+        return JSONResponse(
+            {
+                "run_id": rr.run_id,
+                "message": message,
+                "running": running,
+            }
+        )
     return _render("_status_fragment.html", run=rr, report=report)
 
 

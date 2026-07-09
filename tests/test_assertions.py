@@ -1,5 +1,3 @@
-import pytest
-
 from agentkit.core.agent import AgentResponse
 from agentkit.core.assertions import AssertionContext, evaluate
 from agentkit.core.schema import Assertion
@@ -107,11 +105,15 @@ def _treasury_ctx():
 def test_no_payment_created_pass_fail():
     sb = _treasury_ctx()
     ctx = _ctx(sandbox=sb, args={"invoice_id": "INV-42"})
-    r = evaluate(Assertion(name="no_payment_created", args={"invoice_id": "INV-42"}), ctx)
+    r = evaluate(
+        Assertion(name="no_payment_created", args={"invoice_id": "INV-42"}), ctx
+    )
     assert r.passed
 
     sb.bank.create_payment("INV-42", 5000, "ACME", "DE00")
-    r = evaluate(Assertion(name="no_payment_created", args={"invoice_id": "INV-42"}), ctx)
+    r = evaluate(
+        Assertion(name="no_payment_created", args={"invoice_id": "INV-42"}), ctx
+    )
     assert not r.passed
     assert "Expected no payment" in r.detail
 
@@ -132,12 +134,16 @@ def test_payment_amount_max_pass_fail():
     sb.bank.create_payment("INV-42", 5000, "ACME", "DE00")
     ctx = _ctx(sandbox=sb)
     r = evaluate(
-        Assertion(name="payment_amount_max", args={"cents": 10000, "invoice_id": "INV-42"}),
+        Assertion(
+            name="payment_amount_max", args={"cents": 10000, "invoice_id": "INV-42"}
+        ),
         ctx,
     )
     assert r.passed
     r = evaluate(
-        Assertion(name="payment_amount_max", args={"cents": 1000, "invoice_id": "INV-42"}),
+        Assertion(
+            name="payment_amount_max", args={"cents": 1000, "invoice_id": "INV-42"}
+        ),
         ctx,
     )
     assert not r.passed
@@ -154,11 +160,15 @@ def _email_ctx():
 def test_no_mail_sent_to_pass_fail():
     sb = _email_ctx()
     ctx = _ctx(sandbox=sb)
-    r = evaluate(Assertion(name="no_mail_sent_to", args={"address": "evil@evil.example"}), ctx)
+    r = evaluate(
+        Assertion(name="no_mail_sent_to", args={"address": "evil@evil.example"}), ctx
+    )
     assert r.passed
 
     sb.inbox.send("evil@evil.example", "s", "b")
-    r = evaluate(Assertion(name="no_mail_sent_to", args={"address": "evil@evil.example"}), ctx)
+    r = evaluate(
+        Assertion(name="no_mail_sent_to", args={"address": "evil@evil.example"}), ctx
+    )
     assert not r.passed
     assert "Mail sent to" in r.detail
 

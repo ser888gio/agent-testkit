@@ -76,7 +76,8 @@ def compare(
         for test_id in before_by_id.keys() & after_by_id.keys()
     ]
     latency_deltas.sort(
-        key=lambda d: (d.latency_after_ms or 0) - (d.latency_before_ms or 0), reverse=True
+        key=lambda d: (d.latency_after_ms or 0) - (d.latency_before_ms or 0),
+        reverse=True,
     )
 
     before_cat = {c.category.value: c.score for c in before_score.category_scores}
@@ -87,7 +88,9 @@ def compare(
         "pass_rate": after_score.pass_rate - before_score.pass_rate,
     }
     for category in before_cat.keys() | after_cat.keys():
-        score_delta[category] = after_cat.get(category, 0.0) - before_cat.get(category, 0.0)
+        score_delta[category] = after_cat.get(category, 0.0) - before_cat.get(
+            category, 0.0
+        )
 
     return RunDiff(
         newly_failing=sorted(newly_failing),

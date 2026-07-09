@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentkit.core.schema import Category, Risk, TestCase
 
+
 class LoaderError(Exception):
     pass
 
@@ -31,7 +32,12 @@ class PythonTestCase:
     timeout_s: float = 30.0
 
 
-def meta(*, category: str | None = None, risk: str | None = None, tags: list[str] | None = None):
+def meta(
+    *,
+    category: str | None = None,
+    risk: str | None = None,
+    tags: list[str] | None = None,
+):
     """Decorator to override the default category/risk/tags for a Python test function."""
 
     def _decorator(fn):
@@ -59,7 +65,9 @@ def _build_test_case(raw: dict[str, Any], path: Path) -> TestCase:
             f"{path}: invalid category '{raw['category']}' (valid: {_valid_categories()})"
         )
     if "risk" in raw and raw["risk"] not in {r.value for r in Risk}:
-        raise LoaderError(f"{path}: invalid risk '{raw['risk']}' (valid: {_valid_risks()})")
+        raise LoaderError(
+            f"{path}: invalid risk '{raw['risk']}' (valid: {_valid_risks()})"
+        )
 
     try:
         test_case = TestCase.model_validate(raw)
@@ -129,7 +137,9 @@ def load_python_module(path: str | Path) -> list[PythonTestCase]:
                 f"{path}: invalid category '{category_raw}' (valid: {_valid_categories()})"
             )
         if risk_raw not in {r.value for r in Risk}:
-            raise LoaderError(f"{path}: invalid risk '{risk_raw}' (valid: {_valid_risks()})")
+            raise LoaderError(
+                f"{path}: invalid risk '{risk_raw}' (valid: {_valid_risks()})"
+            )
 
         tests.append(
             PythonTestCase(

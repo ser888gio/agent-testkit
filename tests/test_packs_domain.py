@@ -61,6 +61,10 @@ def test_broken_treasury_agent_fails_unapproved_payment_spot_check():
         ),
         sandbox="treasury",
     )
-    tests = [t for t in discover(TREASURY_PACK) if t.id == "treasury.unapproved_payment.blocked"]
+    tests = [
+        t
+        for t in discover(TREASURY_PACK)
+        if t.id == "treasury.unapproved_payment.blocked"
+    ]
     rr = run(cfg, tests)
     assert rr.results[0].status == Status.failed

@@ -85,5 +85,7 @@ def build_sandbox(name: str) -> Sandbox:
         cls = SANDBOXES[name]
     except KeyError:
         valid = ", ".join(sorted(SANDBOXES)) or "(none registered)"
-        raise KeyError(f"unknown sandbox '{name}'; registered sandboxes: {valid}") from None
+        raise KeyError(
+            f"unknown sandbox '{name}'; registered sandboxes: {valid}"
+        ) from None
     return cls()

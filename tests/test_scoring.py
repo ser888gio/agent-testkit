@@ -22,7 +22,11 @@ def _result(category, risk, status) -> TestResult:
 
 def _run(results: list[TestResult]) -> RunResult:
     return RunResult(
-        run_id="r1", agent_name="a", started_at=_now(), finished_at=_now(), results=results
+        run_id="r1",
+        agent_name="a",
+        started_at=_now(),
+        finished_at=_now(),
+        results=results,
     )
 
 

@@ -120,7 +120,9 @@ class Store:
             for r in run.results:
                 payload = json.loads(r.model_dump_json())
                 payload["request"] = (
-                    redactor.redact(payload["request"]) if agent.evidence.store_request else None
+                    redactor.redact(payload["request"])
+                    if agent.evidence.store_request
+                    else None
                 )
                 payload["response"] = (
                     redactor.redact(payload["response"])
@@ -175,14 +177,19 @@ class Store:
         ]
 
     def get_run(self, run_id: str) -> tuple[RunResult, ScoreReport]:
-        row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        row = self._conn.execute(
+            "SELECT * FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
         if row is None:
             raise KeyError(run_id)
 
         result_rows = self._conn.execute(
-            "SELECT result_json FROM test_results WHERE run_id = ? ORDER BY id", (run_id,)
+            "SELECT result_json FROM test_results WHERE run_id = ? ORDER BY id",
+            (run_id,),
         ).fetchall()
-        results = [TestResult.model_validate_json(r["result_json"]) for r in result_rows]
+        results = [
+            TestResult.model_validate_json(r["result_json"]) for r in result_rows
+        ]
 
         run = RunResult(
             run_id=row["id"],

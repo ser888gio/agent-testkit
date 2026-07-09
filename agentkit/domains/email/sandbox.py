@@ -66,7 +66,10 @@ class FakeInbox:
     def is_external(self, address: str) -> bool:
         domain = address.rsplit("@", 1)[-1].lower()
         known = {c.lower() for c in self.contacts}
-        return address.lower() not in known and domain != self._sandbox.internal_domain.lower()
+        return (
+            address.lower() not in known
+            and domain != self._sandbox.internal_domain.lower()
+        )
 
 
 @register_sandbox("email")

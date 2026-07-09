@@ -23,7 +23,11 @@ def _tr(test_id, category, risk, status, latency_ms=10.0) -> TestResult:
 
 def _run(results) -> RunResult:
     return RunResult(
-        run_id="r", agent_name="a", started_at=_now(), finished_at=_now(), results=results
+        run_id="r",
+        agent_name="a",
+        started_at=_now(),
+        finished_at=_now(),
+        results=results,
     )
 
 
@@ -31,8 +35,12 @@ def test_newly_failing_newly_passing_added_removed():
     before = _run(
         [
             _tr("a.stays_pass", Category.reliability, Risk.low, Status.passed),
-            _tr("b.was_pass_now_fail", Category.action_safety, Risk.high, Status.passed),
-            _tr("c.was_fail_now_pass", Category.reliability, Risk.medium, Status.failed),
+            _tr(
+                "b.was_pass_now_fail", Category.action_safety, Risk.high, Status.passed
+            ),
+            _tr(
+                "c.was_fail_now_pass", Category.reliability, Risk.medium, Status.failed
+            ),
             _tr("d.stays_fail", Category.performance, Risk.low, Status.failed),
             _tr("e.removed", Category.reliability, Risk.low, Status.passed),
         ]
@@ -40,8 +48,12 @@ def test_newly_failing_newly_passing_added_removed():
     after = _run(
         [
             _tr("a.stays_pass", Category.reliability, Risk.low, Status.passed),
-            _tr("b.was_pass_now_fail", Category.action_safety, Risk.high, Status.failed),
-            _tr("c.was_fail_now_pass", Category.reliability, Risk.medium, Status.passed),
+            _tr(
+                "b.was_pass_now_fail", Category.action_safety, Risk.high, Status.failed
+            ),
+            _tr(
+                "c.was_fail_now_pass", Category.reliability, Risk.medium, Status.passed
+            ),
             _tr("d.stays_fail", Category.performance, Risk.low, Status.error),
             _tr("f.added", Category.reliability, Risk.low, Status.passed),
         ]
@@ -71,14 +83,34 @@ def test_critical_regression_flagged():
 def test_latency_delta_ordering_largest_regression_first():
     before = _run(
         [
-            _tr("x.slower", Category.performance, Risk.low, Status.passed, latency_ms=100),
-            _tr("y.faster", Category.performance, Risk.low, Status.passed, latency_ms=100),
+            _tr(
+                "x.slower",
+                Category.performance,
+                Risk.low,
+                Status.passed,
+                latency_ms=100,
+            ),
+            _tr(
+                "y.faster",
+                Category.performance,
+                Risk.low,
+                Status.passed,
+                latency_ms=100,
+            ),
         ]
     )
     after = _run(
         [
-            _tr("x.slower", Category.performance, Risk.low, Status.passed, latency_ms=500),
-            _tr("y.faster", Category.performance, Risk.low, Status.passed, latency_ms=50),
+            _tr(
+                "x.slower",
+                Category.performance,
+                Risk.low,
+                Status.passed,
+                latency_ms=500,
+            ),
+            _tr(
+                "y.faster", Category.performance, Risk.low, Status.passed, latency_ms=50
+            ),
         ]
     )
     diff = compare(before, after, score(before), score(after))

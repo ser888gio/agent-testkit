@@ -57,9 +57,7 @@ class TestCase(BaseModel):
     @classmethod
     def _validate_id(cls, v: str) -> str:
         if not _ID_RE.match(v):
-            raise ValueError(
-                f"id must be dotted lowercase (e.g. 'a.b.c'), got {v!r}"
-            )
+            raise ValueError(f"id must be dotted lowercase (e.g. 'a.b.c'), got {v!r}")
         return v
 
     @field_validator("assertions")

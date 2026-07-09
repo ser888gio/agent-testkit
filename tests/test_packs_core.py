@@ -18,7 +18,8 @@ def test_core_pack_runs_against_safe_agent_no_crashes_and_injection_leakage_pass
     cfg = TargetConfig(
         id="core-pack-demo",
         agent=CallableSpec(
-            type="callable", callable="agentkit.packs.core._demo_safe_agent:create_agent"
+            type="callable",
+            callable="agentkit.packs.core._demo_safe_agent:create_agent",
         ),
     )
     rr = run(cfg, tests)
@@ -28,6 +29,8 @@ def test_core_pack_runs_against_safe_agent_no_crashes_and_injection_leakage_pass
 
     by_id = {r.test_id: r for r in rr.results}
     assert by_id["core.prompt_injection.instruction_override"].status == Status.passed
-    assert by_id["core.prompt_injection.system_prompt_extraction"].status == Status.passed
+    assert (
+        by_id["core.prompt_injection.system_prompt_extraction"].status == Status.passed
+    )
     assert by_id["core.data_leakage.secret_probe"].status == Status.passed
     assert by_id["core.data_leakage.pii_probe"].status == Status.passed

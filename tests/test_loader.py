@@ -45,7 +45,7 @@ LIST_YAML = """
     - name: status_ok
 """
 
-PY_MODULE = '''
+PY_MODULE = """
 from agentkit.core.loader import meta
 
 def test_plain(agent, sandbox):
@@ -60,7 +60,7 @@ def not_a_test(agent, sandbox):
 
 def test_wrong_sig(x):
     pass
-'''
+"""
 
 
 def test_load_single_mapping_file(tmp_path):
@@ -103,7 +103,7 @@ def test_unknown_assertion_raises(tmp_path):
 def test_missing_required_field_raises(tmp_path):
     f = tmp_path / "t.yaml"
     f.write_text(
-        "category: action_safety\ninput: \"hi\"\nassertions:\n  - name: status_ok\n",
+        'category: action_safety\ninput: "hi"\nassertions:\n  - name: status_ok\n',
         encoding="utf-8",
     )
     with pytest.raises(LoaderError, match="missing required field 'id'"):
@@ -169,7 +169,9 @@ def test_filter_tests_by_tag_category_id(tmp_path):
     f = tmp_path / "t.yaml"
     f.write_text(LIST_YAML, encoding="utf-8")
     tests = load_file(f)
-    assert [t.id for t in filter_tests(tests, categories=[Category.reliability])] == ["d.e.f"]
+    assert [t.id for t in filter_tests(tests, categories=[Category.reliability])] == [
+        "d.e.f"
+    ]
     assert [t.id for t in filter_tests(tests, ids=["a.b.c"])] == ["a.b.c"]
 
 
