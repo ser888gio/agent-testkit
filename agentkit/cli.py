@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +19,7 @@ from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category
 from agentkit.core.scoring import score
 from agentkit.core.store import Store
+from agentkit.reports import render as render_report
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -118,36 +118,6 @@ def run_cmd(
     raise typer.Exit(0 if report.gate_passed else 1)
 
 
-def _junit_xml(rr) -> str:
-    testsuite = ET.Element("testsuite", name=rr.agent_name, tests=str(len(rr.results)))
-    for r in rr.results:
-        tc = ET.SubElement(
-            testsuite,
-            "testcase",
-            name=r.test_id,
-            classname=r.category.value,
-            time=str((r.latency_ms or 0) / 1000),
-        )
-        if r.status.value == "failed":
-            ET.SubElement(tc, "failure", message=r.error or "assertion failed")
-        elif r.status.value == "error":
-            ET.SubElement(tc, "error", message=r.error or "error")
-    return ET.tostring(testsuite, encoding="unicode")
-
-
-def _basic_text_report(rr, report, fmt: str) -> str:
-    lines = [f"# Run {rr.run_id} — {rr.agent_name}"]
-    lines.append(
-        f"Overall: {report.overall_score * 100:.0f}%  "
-        f"Pass rate: {report.pass_rate * 100:.0f}%  "
-        f"Critical failures: {report.critical_failures}  "
-        f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}"
-    )
-    for r in rr.results:
-        lines.append(f"- [{r.status.value}] {r.test_id}")
-    return "\n".join(lines)
-
-
 @app.command("report")
 def report_cmd(
     run: str = typer.Option(..., "--run"),
@@ -162,20 +132,10 @@ def report_cmd(
         typer.echo(f"error: run '{run}' not found", err=True)
         raise typer.Exit(2)
 
-    if format == "json":
-        content = json.dumps(
-            {
-                "run": json.loads(rr.model_dump_json()),
-                "score": json.loads(report.model_dump_json()),
-            },
-            indent=2,
-        )
-    elif format == "junit":
-        content = _junit_xml(rr)
-    elif format in ("html", "md"):
-        content = _basic_text_report(rr, report, format)
-    else:
-        typer.echo(f"error: unknown format '{format}'", err=True)
+    try:
+        content = render_report(rr, report, format)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2)
 
     if out:
