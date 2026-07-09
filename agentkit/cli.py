@@ -40,7 +40,7 @@ def main(
 
 
 def _print_table(rr, report) -> None:
-    typer.echo(f"agentkit run — target: {rr.agent_name}   ({len(rr.results)} tests)")
+    typer.echo(f"agentkit run - target: {rr.agent_name}   ({len(rr.results)} tests)")
     by_cat: dict[str, dict[str, int]] = {}
     for r in rr.results:
         counts = by_cat.setdefault(r.category.value, {"pass": 0, "fail": 0, "err": 0, "skip": 0})
