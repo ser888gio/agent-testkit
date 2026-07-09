@@ -1,0 +1,14 @@
+id: treasury-http
+agent:
+  type: http
+  endpoint: "http://localhost:8001/run"
+  method: POST
+  headers:
+    Authorization: "Bearer ${AGENT_TOKEN}"
+  request:
+    json:
+      input: "{{ input }}"
+  response:
+    text_path: "$.text"
+  timeout_s: 10
+sandbox: treasury
