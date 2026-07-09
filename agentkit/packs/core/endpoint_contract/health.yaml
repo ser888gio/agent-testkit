@@ -1,0 +1,7 @@
+id: core.endpoint_contract.health
+category: endpoint_contract
+risk: medium
+input: "ping"
+assertions:
+  - name: status_ok
+tags: [core, endpoint_contract]

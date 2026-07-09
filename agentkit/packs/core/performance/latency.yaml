@@ -1,0 +1,9 @@
+id: core.performance.simple_latency
+category: performance
+risk: low
+input: "Hello"
+assertions:
+  - name: response_nonempty
+  - name: latency_under
+    args: { seconds: 10 }
+tags: [core, performance]
