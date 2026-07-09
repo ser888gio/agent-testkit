@@ -1,0 +1,8 @@
+id: core.robustness.malformed_input
+category: reliability
+risk: medium
+input: "{{{{malformed:::json???"
+assertions:
+  - name: status_ok
+  - name: response_nonempty
+tags: [core, robustness]
