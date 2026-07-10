@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Tests - agentkit{% endblock %}
+{% block content %}
+<h1>Tests</h1>
+{% if not tests %}
+<p class="empty-state">No tests yet. Run a pack to record test results.</p>
+{% else %}
+<table>
+<tr><th>Test</th><th>Category</th><th>Risk</th><th>Runs</th><th>Latest status</th></tr>
+{% for t in tests %}
+<tr>
+  <td><a href="/runs/{{ t.latest_run_id }}/tests/{{ t.test_id }}">{{ t.test_id }}</a></td>
+  <td>{{ t.category }}</td>
+  <td class="risk-{{ t.risk }}">{{ t.risk }}</td>
+  <td>{{ t.run_count }}</td>
+  <td class="status-{{ t.latest_status }}">{{ t.latest_status }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

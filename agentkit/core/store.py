@@ -153,6 +153,33 @@ class Store:
         cur = self._conn.execute("SELECT * FROM agents ORDER BY created_at DESC")
         return [AgentRow(**dict(row)) for row in cur.fetchall()]
 
+    def list_tests(self) -> list[dict]:
+        """Distinct tests seen across all runs, with their latest status."""
+        cur = self._conn.execute(
+            """
+            SELECT tr.test_id, tr.category, tr.risk, tr.status,
+                   r.id AS run_id, r.agent_id
+            FROM test_results tr
+            JOIN runs r ON r.id = tr.run_id
+            ORDER BY r.started_at DESC, tr.id
+            """
+        )
+        seen: dict[str, dict] = {}
+        for row in cur.fetchall():
+            if row["test_id"] in seen:
+                seen[row["test_id"]]["run_count"] += 1
+                continue
+            seen[row["test_id"]] = {
+                "test_id": row["test_id"],
+                "category": row["category"],
+                "risk": row["risk"],
+                "latest_status": row["status"],
+                "latest_run_id": row["run_id"],
+                "latest_agent_id": row["agent_id"],
+                "run_count": 1,
+            }
+        return sorted(seen.values(), key=lambda t: (t["category"], t["test_id"]))
+
     def run_count(self, agent_id: str) -> int:
         row = self._conn.execute(
             "SELECT COUNT(*) AS n FROM runs WHERE agent_id = ?", (agent_id,)

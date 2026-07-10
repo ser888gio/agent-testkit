@@ -87,6 +87,13 @@ def agent_detail(agent_id: str) -> HTMLResponse:
     )
 
 
+@app.get("/tests", response_class=HTMLResponse)
+def tests_page() -> HTMLResponse:
+    store = get_store()
+    tests = store.list_tests()
+    return _render("tests.html", tests=tests)
+
+
 def _load_run_or_404(run_id: str):
     store = get_store()
     try:

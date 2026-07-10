@@ -106,6 +106,46 @@ def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkey
     assert "ms" in resp.text
 
 
+def test_sidebar_shows_nav_tabs(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert 'class="sidebar"' in resp.text
+    assert 'href="/agents"' in resp.text
+    assert 'href="/tests"' in resp.text
+
+
+def test_tests_page_lists_distinct_tests(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    _seed_store(db)  # second run: same test ids seen again
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/tests")
+    assert resp.status_code == 200
+    assert "a.pass.case" in resp.text
+    assert "b.fail.case" in resp.text
+    assert "action_safety" in resp.text
+    # each test id is listed once (distinct), linking to its latest run detail
+    assert resp.text.count(">a.pass.case</a>") == 1
+    assert "/tests/a.pass.case" in resp.text
+
+
+def test_tests_page_empty_state(tmp_path, monkeypatch):
+    db = str(tmp_path / "empty.db")
+    from agentkit.core.store import Store as _Store
+
+    _Store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/tests")
+    assert resp.status_code == 200
+    assert "No tests yet" in resp.text
+
+
 def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
