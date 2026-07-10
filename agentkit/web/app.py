@@ -62,7 +62,13 @@ def agents_page() -> HTMLResponse:
     rows = []
     for a in agents:
         latest = store.list_runs(a.id, limit=1)
-        rows.append({"agent": a, "latest": latest[0] if latest else None})
+        rows.append(
+            {
+                "agent": a,
+                "latest": latest[0] if latest else None,
+                "run_count": store.run_count(a.id),
+            }
+        )
     return _render("agents.html", agent_rows=rows)
 
 
@@ -71,7 +77,14 @@ def agent_detail(agent_id: str) -> HTMLResponse:
     store = get_store()
     runs = store.list_runs(agent_id)
     matrix = store.pass_fail_matrix(agent_id)
-    return _render("agent_detail.html", agent_id=agent_id, runs=runs, matrix=matrix)
+    latest_run_id = runs[0].id if runs else None
+    return _render(
+        "agent_detail.html",
+        agent_id=agent_id,
+        runs=runs,
+        matrix=matrix,
+        latest_run_id=latest_run_id,
+    )
 
 
 def _load_run_or_404(run_id: str):

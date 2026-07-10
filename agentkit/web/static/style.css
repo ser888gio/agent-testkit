@@ -16,3 +16,7 @@ pre { background: #f5f5f5; padding: 0.75rem; overflow-x: auto; white-space: pre-
 .pass { color: #1a7f37; }
 .fail { color: #cf222e; }
 .score-header { font-size: 1.1rem; }
+.risk-low { color: #6e7781; }
+.risk-medium { color: #9a6700; }
+.risk-high { color: #b35900; font-weight: bold; }
+.risk-critical { color: #cf222e; font-weight: bold; }

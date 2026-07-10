@@ -106,6 +106,45 @@ def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkey
     assert "ms" in resp.text
 
 
+def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    _seed_store(db)  # second run for the same agent
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents")
+    assert resp.status_code == 200
+    assert "web-target" in resp.text
+    assert "Runs" in resp.text
+    # two runs recorded for the single agent
+    assert ">2<" in resp.text
+
+
+def test_agent_detail_links_matrix_tests_to_latest_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents/web-target")
+    assert resp.status_code == 200
+    assert "b.fail.case" in resp.text
+    # matrix test id links through to its test detail page in the latest run
+    assert f"/runs/{rr.run_id}/tests/b.fail.case" in resp.text
+
+
+def test_test_detail_shows_category_and_risk(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}/tests/b.fail.case")
+    assert resp.status_code == 200
+    assert "action_safety" in resp.text
+    assert "critical" in resp.text
+    # breadcrumb back to the owning agent
+    assert "/agents/web-target" in resp.text
+
+
 def test_compare_route_shows_diff(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     cfg, rr1, report1 = _seed_store(db)

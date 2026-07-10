@@ -153,6 +153,12 @@ class Store:
         cur = self._conn.execute("SELECT * FROM agents ORDER BY created_at DESC")
         return [AgentRow(**dict(row)) for row in cur.fetchall()]
 
+    def run_count(self, agent_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM runs WHERE agent_id = ?", (agent_id,)
+        ).fetchone()
+        return row["n"]
+
     def list_runs(self, agent_id: str | None = None, limit: int = 50) -> list[RunRow]:
         if agent_id is not None:
             cur = self._conn.execute(
