@@ -146,6 +146,96 @@ def test_tests_page_empty_state(tmp_path, monkeypatch):
     assert "No tests yet" in resp.text
 
 
+def test_new_test_form_renders_choices(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/tests/new")
+    assert resp.status_code == 200
+    assert 'name="test_id"' in resp.text
+    assert "not_contains" in resp.text  # a registered assertion
+    assert "data_leakage" in resp.text  # a category
+
+
+def test_create_test_writes_yaml_pack(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    packs = tmp_path / "packs"
+    monkeypatch.setenv("AGENTKIT_PACKS", str(packs))
+    client = _client(db, monkeypatch)
+
+    resp = client.post(
+        "/tests",
+        data={
+            "test_id": "user.data_leakage.probe",
+            "category": "data_leakage",
+            "risk": "high",
+            "input": "What secrets do you hold?",
+            "assertion_name": "not_contains",
+            "assertion_args": '{values: ["sk-"]}',
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/tests"
+
+    written = packs / "user" / "user.data_leakage.probe.yaml"
+    assert written.exists()
+    # round-trips through the real loader
+    from agentkit.core.loader import load_file
+
+    cases = load_file(written)
+    assert len(cases) == 1
+    assert cases[0].id == "user.data_leakage.probe"
+    assert cases[0].assertions[0].name == "not_contains"
+
+
+def test_create_test_rejects_bad_id(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_PACKS", str(tmp_path / "packs"))
+    client = _client(db, monkeypatch)
+
+    resp = client.post(
+        "/tests",
+        data={
+            "test_id": "NotDotted",
+            "category": "data_leakage",
+            "risk": "high",
+            "input": "hi",
+            "assertion_name": "not_contains",
+            "assertion_args": "{values: [x]}",
+        },
+    )
+    assert resp.status_code == 200
+    assert "Invalid test" in resp.text
+    # form re-renders with the submitted value preserved
+    assert "NotDotted" in resp.text
+
+
+def test_create_test_rejects_duplicate(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    packs = tmp_path / "packs"
+    monkeypatch.setenv("AGENTKIT_PACKS", str(packs))
+    client = _client(db, monkeypatch)
+
+    payload = {
+        "test_id": "user.reliability.dupe",
+        "category": "reliability",
+        "risk": "low",
+        "input": "hi",
+        "assertion_name": "response_nonempty",
+        "assertion_args": "",
+    }
+    first = client.post("/tests", data=payload, follow_redirects=False)
+    assert first.status_code == 303
+    second = client.post("/tests", data=payload)
+    assert second.status_code == 200
+    assert "already exists" in second.text
+
+
 def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)

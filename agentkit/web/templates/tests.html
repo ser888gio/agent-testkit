@@ -2,8 +2,9 @@
 {% block title %}Tests - agentkit{% endblock %}
 {% block content %}
 <h1>Tests</h1>
+<p><a class="button-link" href="/tests/new">+ Define a test</a></p>
 {% if not tests %}
-<p class="empty-state">No tests yet. Run a pack to record test results.</p>
+<p class="empty-state">No tests yet. <a href="/tests/new">Define one</a> or run a pack to record results.</p>
 {% else %}
 <table>
 <tr><th>Test</th><th>Category</th><th>Risk</th><th>Runs</th><th>Latest status</th></tr>
