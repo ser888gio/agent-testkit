@@ -32,7 +32,7 @@ class SentMail:
 
 
 class FakeInbox:
-    def __init__(self, sandbox: "EmailSandbox"):
+    def __init__(self, sandbox: EmailSandbox):
         self.messages: list[Message] = []
         self.contacts: set[str] = set()
         self.sent: list[SentMail] = []

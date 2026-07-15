@@ -173,8 +173,8 @@ def _load_run_or_404(run_id: str):
     store = get_store()
     try:
         return store.get_run(run_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"run '{run_id}' not found") from exc
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
