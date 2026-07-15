@@ -66,3 +66,16 @@ def test_evidence_policy_store_flags_default_true():
 def test_bad_custom_regex_raises_at_construction():
     with pytest.raises(ValueError, match="invalid redaction pattern"):
         Redactor(RedactionConfig(patterns=[RedactionPattern(name="bad", regex="(")]))
+
+
+def test_numeric_account_number_masked():
+    r = Redactor(RedactionConfig())
+    out = r.redact({"account_number": 123456789})
+    assert out["account_number"] == "«redacted:account»"
+
+
+def test_short_number_and_bool_unchanged():
+    r = Redactor(RedactionConfig())
+    out = r.redact({"amount": 42, "ok": True})
+    assert out["amount"] == 42
+    assert out["ok"] is True
