@@ -6,7 +6,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -41,7 +41,7 @@ class HTTPSpec(BaseModel):
     timeout_s: float = 30.0
 
 
-AgentSpec = Annotated[Union[CallableSpec, HTTPSpec], Field(discriminator="type")]
+AgentSpec = Annotated[CallableSpec | HTTPSpec, Field(discriminator="type")]
 
 
 class TargetConfig(BaseModel):

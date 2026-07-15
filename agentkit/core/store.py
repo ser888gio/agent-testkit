@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from agentkit.core.config import TargetConfig
-from agentkit.core.redaction import Redactor
 from agentkit.core.schema import RunResult, TestResult
 from agentkit.core.scoring import ScoreReport
 
@@ -85,7 +84,6 @@ class Store:
         self._conn.close()
 
     def save_run(self, agent: TargetConfig, run: RunResult, score: ScoreReport) -> None:
-        redactor = Redactor(agent.evidence.redact)
         now = datetime.now(timezone.utc).isoformat()
         status = "passed" if score.gate_passed else "failed"
 
@@ -119,16 +117,6 @@ class Store:
             rows = []
             for r in run.results:
                 payload = json.loads(r.model_dump_json())
-                payload["request"] = (
-                    redactor.redact(payload["request"])
-                    if agent.evidence.store_request
-                    else None
-                )
-                payload["response"] = (
-                    redactor.redact(payload["response"])
-                    if agent.evidence.store_response
-                    else None
-                )
                 rows.append(
                     (
                         run.run_id,

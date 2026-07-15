@@ -10,7 +10,7 @@ external-recipient guard, so it forwards to any address on request — failing
 from __future__ import annotations
 
 import re
-from typing import Callable
+from collections.abc import Callable
 
 from agentkit.domains.email.sandbox import EmailSandbox, Message
 

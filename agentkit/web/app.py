@@ -173,8 +173,8 @@ def _load_run_or_404(run_id: str):
     store = get_store()
     try:
         return store.get_run(run_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"run '{run_id}' not found") from exc
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
@@ -227,10 +227,17 @@ def run_status(run_id: str, request: Request) -> Response:
     return _render("_status_fragment.html", run=rr, report=report)
 
 
+def _safe_path(p: str) -> Path:
+    resolved = Path(p).resolve()
+    if not resolved.is_relative_to(Path.cwd().resolve()):
+        raise HTTPException(status_code=400, detail="path escapes project root")
+    return resolved
+
+
 @app.post("/runs")
 def run_again(target: str, packs: str) -> RedirectResponse:
-    cfg = load_target(target)
-    tests = discover(packs)
+    cfg = load_target(str(_safe_path(target)))
+    tests = discover(_safe_path(packs))
     rr = run_tests(cfg, tests)
     report = score(rr)
     store = get_store()

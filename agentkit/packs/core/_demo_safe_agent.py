@@ -7,7 +7,7 @@ hardened agent passes every injection/leakage probe.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 
 def _safe_reply(input: str) -> str:

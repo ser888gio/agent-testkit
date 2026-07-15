@@ -185,7 +185,7 @@ def test_python_testcase_pass_fail_error():
         assert True
 
     def test_fail(agent, sandbox):
-        assert False, "nope"
+        raise AssertionError("nope")
 
     def test_error(agent, sandbox):
         raise RuntimeError("kaboom")

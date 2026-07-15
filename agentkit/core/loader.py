@@ -5,9 +5,10 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import json
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any
 
 import yaml
 from pydantic import ValidationError

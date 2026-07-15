@@ -105,7 +105,7 @@ def test_get_unknown_run_raises_keyerror():
     store = Store(":memory:")
     try:
         store.get_run("does-not-exist")
-        assert False, "expected KeyError"
+        raise AssertionError("expected KeyError")
     except KeyError:
         pass
 
