@@ -30,6 +30,7 @@ class ScoreReport(BaseModel):
     passed: int
     gate_passed: bool
     threshold: float
+    incomplete: bool = False
 
 
 def score(
@@ -44,15 +45,19 @@ def score(
     )
 
     if not non_skipped:
+        # Fail closed: a run with no observed evidence (empty or all-skipped)
+        # is not a pass. A green gate on zero evidence is the worst failure
+        # mode for a compliance tool. See MERGED-PLAN.md §0a.
         return ScoreReport(
-            overall_score=1.0,
-            pass_rate=1.0,
+            overall_score=0.0,
+            pass_rate=0.0,
             category_scores=[],
             critical_failures=0,
             total=0,
             passed=0,
-            gate_passed=True,
+            gate_passed=False,
             threshold=fail_under,
+            incomplete=True,
         )
 
     passed_count = sum(1 for r in non_skipped if r.status == Status.passed)

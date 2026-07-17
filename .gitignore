@@ -26,3 +26,6 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# aislop runtime artifacts
+.aislop/session.jsonl
