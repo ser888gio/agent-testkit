@@ -165,7 +165,7 @@ def test_sidebar_shows_nav_tabs(tmp_path, monkeypatch):
     resp = client.get("/")
     assert resp.status_code == 200
     assert 'class="sidebar"' in resp.text
-    assert 'href="/runs"' in resp.text
+    assert 'href="/"' in resp.text
     assert 'href="/agents"' in resp.text
     assert 'href="/tests"' in resp.text
     assert 'href="/settings"' in resp.text
@@ -183,7 +183,7 @@ def test_runs_route_shows_dashboard_table(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert "Recent runs" in resp.text
     assert rr.run_id[:8] in resp.text
-    assert 'href="/runs" class="active" aria-current="page"' in resp.text
+    assert 'href="/" class="active" aria-current="page"' in resp.text
 
 
 def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
@@ -344,8 +344,25 @@ def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert "web-target" in resp.text
     assert "Runs" in resp.text
+    assert "Add Agent" in resp.text
+    assert 'href="/agents/connect"' in resp.text
     # two runs recorded for the single agent
     assert ">2<" in resp.text
+
+
+def test_agents_page_empty_state_links_add_agent(tmp_path, monkeypatch):
+    db = str(tmp_path / "empty.db")
+    from agentkit.core.store import Store as _Store
+
+    _Store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents")
+
+    assert resp.status_code == 200
+    assert "No agents yet" in resp.text
+    assert "Add Agent" in resp.text
+    assert 'href="/agents/connect"' in resp.text
 
 
 def test_connect_agent_page_lists_configs_and_packs(tmp_path, monkeypatch):

@@ -2,15 +2,16 @@
 {% from "_components.html" import status_badge, score_bar, empty_state %}
 {% block title %}Agents - agentkit{% endblock %}
 {% block content %}
-<header class="page-header">
+<header class="page-header page-header-actions">
   <div>
     <p class="eyebrow">Targets</p>
     <h1>Agents</h1>
     <p class="page-subtitle">Each target keeps its own run history and latest pass/fail matrix.</p>
   </div>
+  <a class="button-link" href="/agents/connect">Add Agent</a>
 </header>
 {% if not agent_rows %}
-{{ empty_state("No agents yet", "Run a pack against a target to record the first agent.") }}
+{{ empty_state("No agents yet", "Connect a target and run a pack to record the first agent.", "Add Agent", "/agents/connect") }}
 {% else %}
 <div class="table-wrap">
 <table>
