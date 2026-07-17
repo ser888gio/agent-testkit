@@ -1,8 +1,10 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}agentkit{% endblock %}</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128737;</text></svg>">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -19,5 +21,13 @@
   {% block content %}{% endblock %}
   </main>
 </div>
+<script>
+// Highlight the sidebar link matching the current section.
+const p = location.pathname;
+document.querySelectorAll(".sidebar nav a").forEach((a) => {
+  const h = a.getAttribute("href");
+  if (h === "/" ? (p === "/" || p.startsWith("/runs")) : p.startsWith(h)) a.classList.add("active");
+});
+</script>
 </body>
 </html>

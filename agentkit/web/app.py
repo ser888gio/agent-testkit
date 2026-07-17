@@ -110,7 +110,8 @@ def agents_page() -> HTMLResponse:
     return _render("agents.html", agent_rows=rows)
 
 
-@app.get("/agents/{agent_id}", response_class=HTMLResponse)
+# :path so URL-shaped agent ids (e.g. "http://127.0.0.1:9911/") keep their slashes.
+@app.get("/agents/{agent_id:path}", response_class=HTMLResponse)
 def agent_detail(agent_id: str) -> HTMLResponse:
     store = get_store()
     runs = store.list_runs(agent_id)

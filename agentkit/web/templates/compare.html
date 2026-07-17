@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Compare - agentkit{% endblock %}
 {% block content %}
-<h1>Compare {{ run_a.run_id[:8] }} &rarr; {{ run_b.run_id[:8] }}</h1>
+<h1>Compare <span class="mono">{{ run_a.run_id[:8] }}</span> &rarr; <span class="mono">{{ run_b.run_id[:8] }}</span></h1>
 
 {% if diff.critical_regressions %}
 <p class="critical-count">CRITICAL REGRESSIONS: {{ diff.critical_regressions | join(", ") }}</p>
@@ -22,23 +22,31 @@
 
 <h2>Score delta</h2>
 <table>
-<tr><th>Metric</th><th>Delta</th></tr>
+<thead>
+<tr><th scope="col">Metric</th><th scope="col">Delta</th></tr>
+</thead>
+<tbody>
 {% for key, value in diff.score_delta.items() %}
 <tr><td>{{ key }}</td><td>{{ "%+.1f%%" | format(value * 100) }}</td></tr>
 {% endfor %}
+</tbody>
 </table>
 
 <h2>Latency deltas</h2>
 <table>
-<tr><th>Test</th><th>Before status</th><th>After status</th><th>Before (ms)</th><th>After (ms)</th></tr>
+<thead>
+<tr><th scope="col">Test</th><th scope="col">Before status</th><th scope="col">After status</th><th scope="col">Before (ms)</th><th scope="col">After (ms)</th></tr>
+</thead>
+<tbody>
 {% for d in diff.latency_deltas %}
 <tr>
   <td>{{ d.test_id }}</td>
-  <td>{{ d.before.value if d.before else "-" }}</td>
-  <td>{{ d.after.value if d.after else "-" }}</td>
+  <td>{% if d.before %}<span class="badge badge-{{ d.before.value }}">{{ d.before.value }}</span>{% else %}-{% endif %}</td>
+  <td>{% if d.after %}<span class="badge badge-{{ d.after.value }}">{{ d.after.value }}</span>{% else %}-{% endif %}</td>
   <td>{{ d.latency_before_ms }}</td>
   <td>{{ d.latency_after_ms }}</td>
 </tr>
 {% endfor %}
+</tbody>
 </table>
 {% endblock %}

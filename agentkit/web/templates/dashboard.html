@@ -9,17 +9,21 @@
 </p>
 {% else %}
 <table>
-<tr><th>Run</th><th>Agent</th><th>Started</th><th>Gate</th><th>Overall</th><th>Critical failures</th></tr>
+<thead>
+<tr><th scope="col">Run</th><th scope="col">Agent</th><th scope="col">Started</th><th scope="col">Gate</th><th scope="col">Overall</th><th scope="col">Critical failures</th></tr>
+</thead>
+<tbody>
 {% for r in runs %}
-<tr class="status-{{ r.status }}">
-  <td><a href="/runs/{{ r.id }}">{{ r.id[:8] }}</a></td>
-  <td><a href="/agents/{{ r.agent_id }}">{{ r.agent_id }}</a></td>
-  <td>{{ r.started_at }}</td>
-  <td>{{ r.status }}</td>
+<tr>
+  <td><a class="mono" href="/runs/{{ r.id }}">{{ r.id[:8] }}</a></td>
+  <td><a href="/agents/{{ r.agent_id | urlencode }}">{{ r.agent_id }}</a></td>
+  <td class="mono">{{ r.started_at[:16] | replace("T", " ") }}</td>
+  <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
   <td>{{ (r.score.overall_score * 100) | round(0, "floor") }}%</td>
-  <td class="critical-count">{{ r.score.critical_failures }}</td>
+  <td class="{% if r.score.critical_failures %}critical-count{% endif %}">{{ r.score.critical_failures }}</td>
 </tr>
 {% endfor %}
+</tbody>
 </table>
 {% endif %}
 {% endblock %}

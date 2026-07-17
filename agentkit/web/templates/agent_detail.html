@@ -5,12 +5,11 @@
 <h1>{{ agent_id }}</h1>
 
 {% if runs %}
-<p class="score-header">
-  {{ runs | length }} run{{ '' if runs | length == 1 else 's' }} |
-  Latest gate:
-  <span class="status-{{ runs[0].status }}">{{ runs[0].status }}</span> |
-  Latest score: {{ (runs[0].score.overall_score * 100) | round(0, "floor") }}%
-</p>
+<div class="stats">
+  <span class="stat"><strong>{{ runs | length }}</strong> run{{ '' if runs | length == 1 else 's' }}</span>
+  <span class="stat">Latest gate <span class="badge badge-{{ runs[0].status }}">{{ runs[0].status }}</span></span>
+  <span class="stat">Latest score <strong>{{ (runs[0].score.overall_score * 100) | round(0, "floor") }}%</strong></span>
+</div>
 {% endif %}
 
 <h2>Run history</h2>
@@ -18,15 +17,19 @@
 <p class="empty-state">No runs yet for this agent.</p>
 {% else %}
 <table>
-<tr><th>Run</th><th>Started</th><th>Gate</th><th>Score</th></tr>
+<thead>
+<tr><th scope="col">Run</th><th scope="col">Started</th><th scope="col">Gate</th><th scope="col">Score</th></tr>
+</thead>
+<tbody>
 {% for r in runs %}
 <tr>
-  <td><a href="/runs/{{ r.id }}">{{ r.id[:8] }}</a></td>
-  <td>{{ r.started_at }}</td>
-  <td class="status-{{ r.status }}">{{ r.status }}</td>
+  <td><a class="mono" href="/runs/{{ r.id }}">{{ r.id[:8] }}</a></td>
+  <td class="mono">{{ r.started_at[:16] | replace("T", " ") }}</td>
+  <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
   <td>{{ (r.score.overall_score * 100) | round(0, "floor") }}%</td>
 </tr>
 {% endfor %}
+</tbody>
 </table>
 {% endif %}
 
@@ -35,14 +38,13 @@
 <p class="empty-state">No matrix yet.</p>
 {% else %}
 {% for cat, tests in matrix.items() %}
-<h3>{{ cat }}</h3>
-<ul>
-{% for tid, status in tests.items() %}
-<li class="status-{{ status }}">
-  {% if latest_run_id %}<a href="/runs/{{ latest_run_id }}/tests/{{ tid }}">{{ tid }}</a>{% else %}{{ tid }}{% endif %}: {{ status }}
-</li>
-{% endfor %}
-</ul>
+<div class="matrix-row">
+  <span class="cat">{{ cat }}</span>
+  {% for tid, status in tests.items() %}
+  {% if latest_run_id %}<a href="/runs/{{ latest_run_id }}/tests/{{ tid }}"><span class="badge badge-{{ status }}">{{ tid }}</span></a>
+  {% else %}<span class="badge badge-{{ status }}">{{ tid }}</span>{% endif %}
+  {% endfor %}
+</div>
 {% endfor %}
 {% endif %}
 {% endblock %}

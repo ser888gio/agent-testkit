@@ -1,6 +1,6 @@
 <div id="run-status" data-run-id="{{ run.run_id }}">
 {% if run.finished_at %}
-  Finished at {{ run.finished_at }} - Gate: {% if report.gate_passed %}PASS{% else %}BLOCK{% endif %}
+  Finished at {{ run.finished_at[:16] | replace("T", " ") }} - Gate: {% if report.gate_passed %}<span class="badge badge-passed">PASS</span>{% else %}<span class="badge badge-failed">BLOCK</span>{% endif %}
 {% else %}
   Running...
 {% endif %}

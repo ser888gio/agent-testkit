@@ -6,21 +6,25 @@
 <p class="empty-state">No agents yet.</p>
 {% else %}
 <table>
-<tr><th>Agent</th><th>Type</th><th>Runs</th><th>Latest status</th><th>Latest score</th><th>First seen</th></tr>
+<thead>
+<tr><th scope="col">Agent</th><th scope="col">Type</th><th scope="col">Runs</th><th scope="col">Latest status</th><th scope="col">Latest score</th><th scope="col">First seen</th></tr>
+</thead>
+<tbody>
 {% for row in agent_rows %}
 <tr>
-  <td><a href="/agents/{{ row.agent.id }}">{{ row.agent.id }}</a></td>
+  <td><a href="/agents/{{ row.agent.id | urlencode }}">{{ row.agent.id }}</a></td>
   <td>{{ row.agent.target_type }}</td>
   <td>{{ row.run_count }}</td>
   {% if row.latest %}
-  <td class="status-{{ row.latest.status }}">{{ row.latest.status }}</td>
+  <td><span class="badge badge-{{ row.latest.status }}">{{ row.latest.status }}</span></td>
   <td>{{ (row.latest.score.overall_score * 100) | round(0, "floor") }}%</td>
   {% else %}
   <td>-</td><td>-</td>
   {% endif %}
-  <td>{{ row.agent.created_at[:10] }}</td>
+  <td class="mono">{{ row.agent.created_at[:10] }}</td>
 </tr>
 {% endfor %}
+</tbody>
 </table>
 {% endif %}
 {% endblock %}

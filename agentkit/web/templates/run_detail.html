@@ -1,35 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Run {{ run.run_id }} - agentkit{% endblock %}
+{% block title %}Run {{ run.run_id[:8] }} - agentkit{% endblock %}
 {% block content %}
-<h1>Run {{ run.run_id }}</h1>
-<p class="score-header">
-  Overall: {{ (report.overall_score * 100) | round(0, "floor") }}% |
-  Pass rate: {{ (report.pass_rate * 100) | round(0, "floor") }}% |
-  Critical failures: <span class="critical-count">{{ report.critical_failures }}</span> |
-  Gate: {% if report.gate_passed %}PASS{% else %}BLOCK{% endif %}
-</p>
+<h1>Run <span class="mono">{{ run.run_id[:8] }}</span></h1>
+<p class="mono" style="color:#57606a">{{ run.run_id }}</p>
+<div class="stats">
+  <span class="stat">Gate
+    {% if report.gate_passed %}<span class="badge badge-passed">PASS</span>
+    {% else %}<span class="badge badge-failed">BLOCK</span>{% endif %}
+  </span>
+  <span class="stat">Overall <strong>{{ (report.overall_score * 100) | round(0, "floor") }}%</strong></span>
+  <span class="stat">Pass rate <strong>{{ (report.pass_rate * 100) | round(0, "floor") }}%</strong></span>
+  <span class="stat">Critical failures <strong class="{% if report.critical_failures %}critical-count{% endif %}">{{ report.critical_failures }}</strong></span>
+</div>
 
 <h2>Category &times; test matrix</h2>
 {% for cat, tests in matrix.items() %}
-<h3>{{ cat }}</h3>
-<ul>
-{% for tid, status in tests.items() %}
-<li class="status-{{ status }}">
-  <a href="/runs/{{ run.run_id }}/tests/{{ tid }}">{{ tid }}</a>: {{ status }}
-</li>
-{% endfor %}
-</ul>
+<div class="matrix-row">
+  <span class="cat">{{ cat }}</span>
+  {% for tid, status in tests.items() %}
+  <a href="/runs/{{ run.run_id }}/tests/{{ tid }}"><span class="badge badge-{{ status }}">{{ tid }}</span></a>
+  {% endfor %}
+</div>
 {% endfor %}
 
 <h2>Results (failed first)</h2>
 <table>
-<tr><th>Test</th><th>Category</th><th>Status</th></tr>
+<thead>
+<tr><th scope="col">Test</th><th scope="col">Category</th><th scope="col">Status</th></tr>
+</thead>
+<tbody>
 {% for r in results %}
-<tr class="status-{{ r.status.value }}">
+<tr>
   <td><a href="/runs/{{ run.run_id }}/tests/{{ r.test_id }}">{{ r.test_id }}</a></td>
   <td>{{ r.category.value }}</td>
-  <td>{{ r.status.value }}</td>
+  <td><span class="badge badge-{{ r.status.value }}">{{ r.status.value }}</span></td>
 </tr>
 {% endfor %}
+</tbody>
 </table>
 {% endblock %}

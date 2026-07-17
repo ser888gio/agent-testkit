@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ result.test_id }} - agentkit{% endblock %}
 {% block content %}
-<p><a href="/runs/{{ run.run_id }}">&larr; Run {{ run.run_id[:8] }}</a>
-   &middot; <a href="/agents/{{ run.agent_name }}">{{ run.agent_name }}</a></p>
+<p><a href="/runs/{{ run.run_id }}">&larr; Run <span class="mono">{{ run.run_id[:8] }}</span></a>
+   &middot; <a href="/agents/{{ run.agent_name | urlencode }}">{{ run.agent_name }}</a></p>
 <h1>{{ result.test_id }}</h1>
-<p>
-  Status: <span class="status-{{ result.status.value }}">{{ result.status.value }}</span> |
-  Category: {{ result.category.value }} |
-  Risk: <span class="risk-{{ result.risk.value }}">{{ result.risk.value }}</span> |
-  Latency: {% if result.latency_ms is not none %}{{ result.latency_ms | round(1) }} ms{% else %}-{% endif %}
-</p>
+<div class="stats">
+  <span class="stat">Status <span class="badge badge-{{ result.status.value }}">{{ result.status.value }}</span></span>
+  <span class="stat">Category <strong>{{ result.category.value }}</strong></span>
+  <span class="stat">Risk <span class="badge badge-{{ result.risk.value }}">{{ result.risk.value }}</span></span>
+  <span class="stat">Latency <strong>{% if result.latency_ms is not none %}{{ result.latency_ms | round(1) }} ms{% else %}-{% endif %}</strong></span>
+</div>
 
 {% if result.error %}
 <h2>Error</h2>

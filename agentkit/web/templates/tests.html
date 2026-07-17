@@ -7,16 +7,20 @@
 <p class="empty-state">No tests yet. <a href="/tests/new">Define one</a> or run a pack to record results.</p>
 {% else %}
 <table>
-<tr><th>Test</th><th>Category</th><th>Risk</th><th>Runs</th><th>Latest status</th></tr>
+<thead>
+<tr><th scope="col">Test</th><th scope="col">Category</th><th scope="col">Risk</th><th scope="col">Runs</th><th scope="col">Latest status</th></tr>
+</thead>
+<tbody>
 {% for t in tests %}
 <tr>
   <td><a href="/runs/{{ t.latest_run_id }}/tests/{{ t.test_id }}">{{ t.test_id }}</a></td>
   <td>{{ t.category }}</td>
-  <td class="risk-{{ t.risk }}">{{ t.risk }}</td>
+  <td><span class="badge badge-{{ t.risk }}">{{ t.risk }}</span></td>
   <td>{{ t.run_count }}</td>
-  <td class="status-{{ t.latest_status }}">{{ t.latest_status }}</td>
+  <td><span class="badge badge-{{ t.latest_status }}">{{ t.latest_status }}</span></td>
 </tr>
 {% endfor %}
+</tbody>
 </table>
 {% endif %}
 {% endblock %}

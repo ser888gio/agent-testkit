@@ -1,32 +1,65 @@
-body { font-family: sans-serif; margin: 0; color: #222; }
+body { font-family: system-ui, sans-serif; margin: 0; color: #222; line-height: 1.5; }
 .layout { display: flex; min-height: 100vh; }
 .sidebar { background: #1a1a2e; color: #fff; width: 180px; flex-shrink: 0; padding: 1rem 0; }
 .sidebar .brand { display: block; color: #fff; text-decoration: none; font-weight: bold; font-size: 1.15rem; padding: 0.5rem 1.25rem 1rem; }
 .sidebar nav { display: flex; flex-direction: column; }
-.sidebar nav a { color: #cfcfe0; text-decoration: none; padding: 0.6rem 1.25rem; }
+.sidebar nav a { color: #cfcfe0; text-decoration: none; padding: 0.6rem 1.25rem; border-left: 3px solid transparent; }
 .sidebar nav a:hover { background: #2a2a44; color: #fff; }
+.sidebar nav a.active { background: #2a2a44; color: #fff; border-left-color: #7c7cff; }
 main { padding: 1.5rem; max-width: 960px; margin: 0 auto; flex: 1; min-width: 0; }
+
 table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-td, th { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
-th { background: #f5f5f5; }
+td, th { border-bottom: 1px solid #ddd; padding: 8px 10px; text-align: left; }
+th { background: #f5f5f5; border-bottom: 2px solid #ccc; }
+tbody tr:hover { background: #f6f8fa; }
+
 pre { background: #f5f5f5; padding: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
 .empty-state { color: #666; font-style: italic; }
+.mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.9em; }
+
+.badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
+.badge-passed, .badge-pass { background: #dafbe1; color: #116329; }
+.badge-failed, .badge-fail { background: #ffebe9; color: #a40e26; }
+.badge-error { background: #fff1e5; color: #953800; }
+.badge-skipped { background: #eaeef2; color: #424a53; }
+.badge-low { background: #eaeef2; color: #424a53; }
+.badge-medium { background: #fff8c5; color: #7d4e00; }
+.badge-high { background: #fff1e5; color: #953800; }
+.badge-critical { background: #ffebe9; color: #a40e26; }
+
 .status-passed { color: #1a7f37; }
 .status-failed { color: #cf222e; }
 .status-error { color: #b35900; }
-.status-skipped { color: #6e7781; }
+.status-skipped { color: #57606a; }
 .critical-count { font-weight: bold; color: #cf222e; }
 .pass { color: #1a7f37; }
 .fail { color: #cf222e; }
-.score-header { font-size: 1.1rem; }
-.risk-low { color: #6e7781; }
-.risk-medium { color: #9a6700; }
-.risk-high { color: #b35900; font-weight: bold; }
-.risk-critical { color: #cf222e; font-weight: bold; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; align-items: baseline; margin: 0.5rem 0 1rem; }
+.stats .stat { color: #57606a; }
+.stats .stat strong { color: #222; font-size: 1.05rem; }
+
+.matrix-row { margin: 0.35rem 0; }
+.matrix-row .cat { font-weight: 600; margin-right: 0.5rem; }
+.matrix-row a { margin-right: 0.35rem; text-decoration: none; }
+.matrix-row a:hover { text-decoration: underline; }
+
 .button-link { display: inline-block; background: #1a1a2e; color: #fff; text-decoration: none; padding: 0.4rem 0.9rem; border-radius: 4px; }
 .button-link:hover { background: #2a2a44; }
+
 .test-form { display: flex; flex-direction: column; gap: 1rem; max-width: 560px; }
 .test-form label { display: flex; flex-direction: column; gap: 0.25rem; font-weight: bold; }
 .test-form input, .test-form select, .test-form textarea { font: inherit; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; }
 .test-form small { font-weight: normal; color: #666; }
 .test-form button { align-self: flex-start; background: #1a7f37; color: #fff; border: 0; padding: 0.5rem 1.2rem; border-radius: 4px; font: inherit; cursor: pointer; }
+
+@media (max-width: 640px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: auto; padding: 0.25rem 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+  .sidebar .brand { padding: 0.5rem; }
+  .sidebar nav { flex-direction: row; }
+  .sidebar nav a { padding: 0.5rem 0.75rem; border-left: 0; border-bottom: 3px solid transparent; }
+  .sidebar nav a.active { border-bottom-color: #7c7cff; }
+  main { padding: 1rem; }
+  table { display: block; overflow-x: auto; }
+}

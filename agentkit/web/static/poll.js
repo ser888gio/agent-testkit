@@ -15,7 +15,8 @@ document.addEventListener("DOMContentLoaded", () => {
           if (status.running === true) {
             setTimeout(tick, 2000);
           }
-        });
+        })
+        .catch(() => setTimeout(tick, 2000));
     };
     tick();
   });
