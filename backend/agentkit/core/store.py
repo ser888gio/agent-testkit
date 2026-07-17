@@ -75,7 +75,7 @@ def _summarize(run: RunResult) -> dict:
 
 
 class Store:
-    def __init__(self, path: str = "Database/agentkit.db"):
+    def __init__(self, path: str = "database/agentkit.db"):
         db_path = Path(path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path))

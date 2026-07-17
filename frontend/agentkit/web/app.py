@@ -84,7 +84,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 
 def get_db_path() -> str:
-    return os.environ.get("AGENTKIT_DB", "Database/agentkit.db")
+    return os.environ.get("AGENTKIT_DB", "database/agentkit.db")
 
 
 def get_store() -> Store:

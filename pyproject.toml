@@ -29,7 +29,7 @@ dev = [
 agentkit = "agentkit.cli:app"
 
 [tool.setuptools.packages.find]
-where = [".", "BE", "FE"]
+where = [".", "backend", "frontend"]
 include = ["agentkit*"]
 namespaces = true
 
