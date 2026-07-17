@@ -1,4 +1,4 @@
-"""Compliance mapping + report tests. See MERGED-PLAN.md §0c–0e verification."""
+"""Compliance mapping + report tests. See docs/archive/plans/MERGED-PLAN.md §0c–0e verification."""
 
 from __future__ import annotations
 

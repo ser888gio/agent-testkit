@@ -1,4 +1,4 @@
-"""P0 fail-closed / security regression gates. See MERGED-PLAN.md §0a.
+"""P0 fail-closed / security regression gates. See docs/archive/plans/MERGED-PLAN.md §0a.
 
 Each test reproduces a weakness that the current code either had or could
 regress into, and asserts the hardened behaviour.

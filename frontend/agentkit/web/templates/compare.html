@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_components.html" import status_badge, stat_card %}
+{% block title %}Compare - agentkit{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Run comparison</p>
+    <h1>Compare <span class="mono">{{ run_a.run_id[:8] }}</span> to <span class="mono">{{ run_b.run_id[:8] }}</span></h1>
+  </div>
+</header>
+
+{% if diff.critical_regressions %}
+<p class="form-error" role="alert">Critical regressions: {{ diff.critical_regressions | join(", ") }}</p>
+{% endif %}
+
+<section class="stat-grid">
+  {{ stat_card("Newly failing", diff.newly_failing | length, "was passing or absent", "danger" if diff.newly_failing else "") }}
+  {{ stat_card("Newly passing", diff.newly_passing | length, "recovered tests") }}
+  {{ stat_card("Still failing", diff.still_failing | length, "known failures", "danger" if diff.still_failing else "") }}
+  {{ stat_card("Changed coverage", (diff.added | length) + (diff.removed | length), "added or removed") }}
+</section>
+
+<section class="detail-grid">
+  <article class="panel">
+    <div class="panel-header"><h2>Newly failing ({{ diff.newly_failing | length }})</h2></div>
+    <ul>{% for t in diff.newly_failing %}<li class="status-failed">{{ t }}</li>{% else %}<li class="quiet">none</li>{% endfor %}</ul>
+  </article>
+  <article class="panel">
+    <div class="panel-header"><h2>Newly passing ({{ diff.newly_passing | length }})</h2></div>
+    <ul>{% for t in diff.newly_passing %}<li class="status-passed">{{ t }}</li>{% else %}<li class="quiet">none</li>{% endfor %}</ul>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header"><h2>Still failing ({{ diff.still_failing | length }})</h2></div>
+  <ul>{% for t in diff.still_failing %}<li class="status-failed">{{ t }}</li>{% else %}<li class="quiet">none</li>{% endfor %}</ul>
+</section>
+
+<section class="panel">
+  <div class="panel-header"><h2>Added / Removed</h2></div>
+  <p>Added: {{ diff.added | join(", ") or "none" }}</p>
+  <p>Removed: {{ diff.removed | join(", ") or "none" }}</p>
+</section>
+
+<section class="panel">
+<div class="panel-header"><h2>Score delta</h2></div>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th scope="col">Metric</th><th scope="col">Delta</th></tr>
+</thead>
+<tbody>
+{% for key, value in diff.score_delta.items() %}
+<tr><td>{{ key }}</td><td>{{ "%+.1f%%" | format(value * 100) }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+
+<section class="panel">
+<div class="panel-header"><h2>Latency deltas</h2></div>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th scope="col">Test</th><th scope="col">Before status</th><th scope="col">After status</th><th scope="col">Before (ms)</th><th scope="col">After (ms)</th></tr>
+</thead>
+<tbody>
+{% for d in diff.latency_deltas %}
+<tr>
+  <td>{{ d.test_id }}</td>
+  <td>{% if d.before %}{{ status_badge(d.before.value) }}{% else %}-{% endif %}</td>
+  <td>{% if d.after %}{{ status_badge(d.after.value) }}{% else %}-{% endif %}</td>
+  <td>{{ d.latency_before_ms }}</td>
+  <td>{{ d.latency_after_ms }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+{% endblock %}

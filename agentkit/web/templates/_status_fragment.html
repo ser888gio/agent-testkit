@@ -1,7 +1,0 @@
-<div id="run-status" data-run-id="{{ run.run_id }}">
-{% if run.finished_at %}
-  Finished at {{ run.finished_at }} - Gate: {% if report.gate_passed %}PASS{% else %}BLOCK{% endif %}
-{% else %}
-  Running...
-{% endif %}
-</div>

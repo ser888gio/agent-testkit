@@ -27,7 +27,7 @@ agentkit compare --base <run_id> --head <run_id>
 - `tests/` — pytest suite; shared fixtures in `tests/_fixtures.py`
 - `examples/` — runnable demos (`demo_agent.py`, `run_treasury.py`, `run_email.py`)
 - `docs/` — `architecture.md`, `plan.md`, specs (incl. `specs/compliance.md`) and notes
-- `diagrams/` — D2 sources + rendered SVGs (light/dark) used by the README
+- `docs/diagrams/` — D2 sources + rendered SVGs (light/dark) used by the README
 
 ## Conventions
 

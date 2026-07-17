@@ -1,0 +1,31 @@
+{% macro status_badge(status, label=None) -%}
+<span class="badge badge-{{ status }}">{{ label or status }}</span>
+{%- endmacro %}
+
+{% macro score_bar(value, label="") -%}
+<span class="score-bar" role="progressbar" aria-label="{{ label or 'Score' }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ value }}">
+  <span style="width: {{ value }}%"></span>
+</span>
+{%- endmacro %}
+
+{% macro stat_card(label, value, note="", tone="") -%}
+<article class="stat-card{% if tone %} stat-card-{{ tone }}{% endif %}">
+  <span class="stat-label">{{ label }}</span>
+  <strong>{{ value }}</strong>
+  {% if note %}<span class="stat-note">{{ note }}</span>{% endif %}
+</article>
+{%- endmacro %}
+
+{% macro empty_state(title, body, action_label="", action_href="") -%}
+<section class="empty-state" aria-live="polite">
+  <h2>{{ title }}</h2>
+  <p>{{ body }}</p>
+  {% if action_label and action_href %}
+  <a class="button-link" href="{{ action_href }}">{{ action_label }}</a>
+  {% endif %}
+</section>
+{%- endmacro %}
+
+{% macro time_text(value) -%}
+<time datetime="{{ value }}">{{ value[:16] | replace("T", " ") }}</time>
+{%- endmacro %}

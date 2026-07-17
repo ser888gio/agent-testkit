@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Settings - agentkit{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Workspace</p>
+    <h1>Settings</h1>
+    <p class="page-subtitle">Read-only runtime configuration for the local web dashboard.</p>
+  </div>
+</header>
+
+<section class="settings-grid">
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Storage</h2>
+        <p>Where runs, agents, and test results are read from.</p>
+      </div>
+    </div>
+    <dl class="harness-meta">
+      <div><dt>Database</dt><dd class="mono">{{ settings.db_path }}</dd></div>
+      <div><dt>Package Root</dt><dd class="mono">{{ settings.package_dir }}</dd></div>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Run Inputs</h2>
+        <p>Allowed local roots for targets and packs.</p>
+      </div>
+    </div>
+    <dl class="harness-meta">
+      <div><dt>Configs</dt><dd class="mono">{{ settings.config_dir }}</dd></div>
+      <div><dt>Packs</dt><dd class="mono">{{ settings.packs_dir }}</dd></div>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Security</h2>
+        <p>State-changing routes require a loopback token.</p>
+      </div>
+    </div>
+    <dl class="harness-meta">
+      <div><dt>Web Token</dt><dd>{{ settings.token_state }}</dd></div>
+      <div><dt>Writable Routes</dt><dd>Protected by query token or <span class="mono">x-agentkit-token</span>.</dd></div>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Interface</h2>
+        <p>Current dashboard navigation and polling behavior.</p>
+      </div>
+    </div>
+    <dl class="harness-meta">
+      <div><dt>Sections</dt><dd>Runs, Agents, Tests, Settings</dd></div>
+      <div><dt>Polling</dt><dd>Status polling uses JSON and writes text content only.</dd></div>
+    </dl>
+  </article>
+</section>
+{% endblock %}

@@ -15,19 +15,19 @@ reporting.
 
 ### Infrastructure
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./diagrams/infrastructure-simplified-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./diagrams/infrastructure-simplified-light.svg">
-  <img alt="Infrastructure Overview" src="./diagrams/infrastructure-simplified-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/diagrams/infrastructure-simplified-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/diagrams/infrastructure-simplified-light.svg">
+  <img alt="Infrastructure Overview" src="./docs/diagrams/infrastructure-simplified-light.svg">
 </picture>
 
 ### Architecture
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./diagrams/architecture-simplified-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./diagrams/architecture-simplified-light.svg">
-  <img alt="Architecture Overview" src="./diagrams/architecture-simplified-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/diagrams/architecture-simplified-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/diagrams/architecture-simplified-light.svg">
+  <img alt="Architecture Overview" src="./docs/diagrams/architecture-simplified-light.svg">
 </picture>
 
-[More diagrams →](./diagrams/README.md)
+[More diagrams →](./docs/diagrams/README.md)
 
 ## What it does
 
@@ -151,8 +151,8 @@ same inputs — the whole premise of testing agents through an endpoint.
 
 ## Development
 
-- [`TASKS.md`](TASKS.md) — the task/branch plan (one branch per task, merged in dependency
-  order).
+- [`docs/README.md`](docs/README.md) — documentation map for architecture, specs, diagrams,
+  research, and archived planning notes.
 - [`docs/plan.md`](docs/plan.md) — the full MVP design.
 - [`docs/architecture.md`](docs/architecture.md) — control plane vs runner, execution modes,
   trace visibility, the privacy/redaction model, the sandbox model, and how this MVP points

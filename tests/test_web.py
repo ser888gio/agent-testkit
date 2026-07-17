@@ -50,6 +50,29 @@ def _seed_store(db_path: str):
     return cfg, rr, report
 
 
+def _seed_passing_store(db_path: str):
+    cfg = TargetConfig(
+        id="clean-target",
+        agent=CallableSpec(
+            type="callable", callable=f"{MODULE}:create_agent_with_secret"
+        ),
+        evidence=EvidencePolicy(),
+    )
+    tests = [
+        TestCase(
+            id="clean.pass.case",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+        ),
+    ]
+    rr = run(cfg, tests)
+    report = score(rr)
+    store = Store(db_path)
+    store.save_run(cfg, rr, report)
+    return cfg, rr, report
+
+
 def _client(db_path: str, monkeypatch) -> TestClient:
     monkeypatch.setenv("AGENTKIT_DB", db_path)
     from agentkit.web.app import app
@@ -66,6 +89,13 @@ def test_dashboard_shows_run_and_critical_count(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert rr.run_id[:8] in resp.text
     assert str(report.critical_failures) in resp.text
+    assert "Needs attention" in resp.text
+    assert "Connect an agent" in resp.text
+    assert "Create a test" in resp.text
+    assert 'href="/agents/connect"' in resp.text
+    assert 'href="/tests/new"' in resp.text
+    assert 'aria-current="page"' in resp.text
+    assert "Apply Filters" not in resp.text
 
 
 def test_dashboard_empty_state(tmp_path, monkeypatch):
@@ -92,6 +122,53 @@ def test_run_detail_shows_matrix_and_failed_first(tmp_path, monkeypatch):
     # failed test appears before the passing one in the results table
     results_section = resp.text.split("Results (failed first)")[1]
     assert results_section.index("b.fail.case") < results_section.index("a.pass.case")
+    assert "Failures for review" in resp.text
+    assert f"/runs/{rr.run_id}/harness" in resp.text
+
+
+def test_run_harness_shows_findings_skills_context_summary(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}/harness")
+
+    assert resp.status_code == 200
+    assert "Test Harness" in resp.text
+    assert "Workflow / History" in resp.text
+    assert "Harness Environment" in resp.text
+    assert "Memory &amp; Context" in resp.text
+    assert "No memory/context checks were included" in resp.text
+    assert "Skills" in resp.text
+    assert "Action Safety" in resp.text
+    assert "b.fail.case" in resp.text
+    assert "not_contains" in resp.text
+    assert f'data-poll-url="/runs/{rr.run_id}/status"' in resp.text
+    assert rr.run_id in resp.text
+    assert 'href="/harness" class="active" aria-current="page"' in resp.text
+
+
+def test_harness_nav_redirects_to_latest_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/harness", follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"/runs/{rr.run_id}/harness"
+
+
+def test_harness_nav_has_empty_state_without_runs(tmp_path, monkeypatch):
+    db = str(tmp_path / "empty.db")
+    Store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/harness")
+
+    assert resp.status_code == 200
+    assert "No harness data yet" in resp.text
+    assert 'href="/harness" class="active" aria-current="page"' in resp.text
 
 
 def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkeypatch):
@@ -114,8 +191,43 @@ def test_sidebar_shows_nav_tabs(tmp_path, monkeypatch):
     resp = client.get("/")
     assert resp.status_code == 200
     assert 'class="sidebar"' in resp.text
+    assert 'href="/harness"' in resp.text
+    assert 'href="/"' in resp.text
     assert 'href="/agents"' in resp.text
     assert 'href="/tests"' in resp.text
+    assert 'href="/settings"' in resp.text
+    assert 'aria-label="Primary"' in resp.text
+    assert 'class="nav-icon"' in resp.text
+
+
+def test_runs_route_shows_dashboard_table(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/runs")
+
+    assert resp.status_code == 200
+    assert "Recent runs" in resp.text
+    assert rr.run_id[:8] in resp.text
+    assert 'href="/" class="active" aria-current="page"' in resp.text
+
+
+def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/settings")
+
+    assert resp.status_code == 200
+    assert "Settings" in resp.text
+    assert "Storage" in resp.text
+    assert "Run Inputs" in resp.text
+    assert "Security" in resp.text
+    assert db in resp.text
+    assert "AGENTKIT_WEB_TOKEN" not in resp.text
+    assert 'href="/settings" class="active" aria-current="page"' in resp.text
 
 
 def test_tests_page_lists_distinct_tests(tmp_path, monkeypatch):
@@ -132,6 +244,19 @@ def test_tests_page_lists_distinct_tests(tmp_path, monkeypatch):
     # each test id is listed once (distinct), linking to its latest run detail
     assert resp.text.count(">a.pass.case</a>") == 1
     assert "/tests/a.pass.case" in resp.text
+    assert "Apply Filters" not in resp.text
+
+
+def test_tests_page_filters_by_status(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/tests?status=failed")
+
+    assert resp.status_code == 200
+    assert "b.fail.case" in resp.text
+    assert "a.pass.case" not in resp.text
 
 
 def test_tests_page_empty_state(tmp_path, monkeypatch):
@@ -246,8 +371,39 @@ def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert "web-target" in resp.text
     assert "Runs" in resp.text
+    assert "Add Agent" in resp.text
+    assert 'href="/agents/connect"' in resp.text
     # two runs recorded for the single agent
     assert ">2<" in resp.text
+
+
+def test_agents_page_empty_state_links_add_agent(tmp_path, monkeypatch):
+    db = str(tmp_path / "empty.db")
+    from agentkit.core.store import Store as _Store
+
+    _Store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents")
+
+    assert resp.status_code == 200
+    assert "No agents yet" in resp.text
+    assert "Add Agent" in resp.text
+    assert 'href="/agents/connect"' in resp.text
+
+
+def test_connect_agent_page_lists_configs_and_packs(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents/connect")
+
+    assert resp.status_code == 200
+    assert "Connect an agent" in resp.text
+    assert "config/treasury-agent.yaml" in resp.text
+    assert "packs/core" in resp.text
+    assert "agentkit run" in resp.text
 
 
 def test_agent_detail_links_matrix_tests_to_latest_run(tmp_path, monkeypatch):
@@ -260,6 +416,51 @@ def test_agent_detail_links_matrix_tests_to_latest_run(tmp_path, monkeypatch):
     assert "b.fail.case" in resp.text
     # matrix test id links through to its test detail page in the latest run
     assert f"/runs/{rr.run_id}/tests/b.fail.case" in resp.text
+
+
+def test_dashboard_filters_by_agent_query(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/?agent=web-target&q=web-target")
+
+    assert resp.status_code == 200
+    assert rr.run_id[:8] in resp.text
+    assert "Recent runs" in resp.text
+
+
+def test_dashboard_status_filter_uses_result_summary(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _, failed_run, _ = _seed_store(db)
+    _, passed_run, _ = _seed_passing_store(db)
+    client = _client(db, monkeypatch)
+
+    failed_resp = client.get("/?status=failed")
+
+    assert failed_resp.status_code == 200
+    assert failed_run.run_id[:8] in failed_resp.text
+    assert passed_run.run_id[:8] not in failed_resp.text
+
+    passed_resp = client.get("/?status=passed")
+
+    assert passed_resp.status_code == 200
+    assert passed_run.run_id[:8] in passed_resp.text
+    assert failed_run.run_id[:8] not in passed_resp.text
+
+
+def test_run_detail_filters_results_by_status(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}?status=failed")
+
+    assert resp.status_code == 200
+    results_section = resp.text.split("Results (failed first)")[1]
+    assert "b.fail.case" in results_section
+    assert "a.pass.case" not in results_section
+    assert "Apply Filters" not in resp.text
 
 
 def test_test_detail_shows_category_and_risk(tmp_path, monkeypatch):
@@ -294,6 +495,8 @@ def test_unknown_run_id_404(tmp_path, monkeypatch):
 
     resp = client.get("/runs/does-not-exist")
     assert resp.status_code == 404
+    assert "404 error" in resp.text
+    assert "Back to dashboard" in resp.text
 
 
 def test_unknown_test_id_404(tmp_path, monkeypatch):
@@ -337,10 +540,14 @@ def test_status_route_returns_json_for_safe_polling(tmp_path, monkeypatch):
 
 
 def test_poll_helper_avoids_html_injection_sink():
-    path = Path(__file__).resolve().parents[1] / "agentkit/web/static/poll.js"
+    import agentkit.web as web_pkg
+
+    path = Path(web_pkg.__file__).resolve().parent / "static" / "poll.js"
     js = path.read_text(encoding="utf-8")
 
     assert "innerHTML" not in js
     assert "insertAdjacentHTML" not in js
     assert "textContent" in js
     assert 'Accept: "application/json"' in js
+    assert "requestSubmit" in js
+    assert "setTimeout(submit, 350)" in js

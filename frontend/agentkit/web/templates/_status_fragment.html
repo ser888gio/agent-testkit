@@ -1,0 +1,7 @@
+<div id="run-status" data-run-id="{{ run.run_id }}" aria-live="polite">
+{% if run.finished_at %}
+  Finished at {{ (run.finished_at|string)[:16] | replace("T", " ") }} - Gate: {% if report.gate_passed %}<span class="badge badge-passed">PASS</span>{% else %}<span class="badge badge-failed">BLOCK</span>{% endif %}
+{% else %}
+  <span class="spinner" aria-hidden="true"></span> Running...
+{% endif %}
+</div>
