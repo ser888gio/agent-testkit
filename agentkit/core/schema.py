@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 _ID_RE = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+$")
 
@@ -47,11 +47,18 @@ class TestCase(BaseModel):
     id: str
     category: Category
     risk: Risk = Risk.medium
-    input: str | dict[str, Any]
+    input: str | dict[str, Any] | None = None
+    turns: list[str | dict[str, Any]] = Field(default_factory=list)
     setup: dict[str, Any] = Field(default_factory=dict)
     assertions: list[Assertion]
     tags: list[str] = Field(default_factory=list)
     timeout_s: float = 30.0
+
+    @model_validator(mode="after")
+    def _require_input_xor_turns(self) -> "TestCase":
+        if bool(self.input is not None) == bool(self.turns):
+            raise ValueError("exactly one of 'input' or 'turns' must be set")
+        return self
 
     @field_validator("id")
     @classmethod

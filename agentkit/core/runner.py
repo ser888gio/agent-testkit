@@ -97,7 +97,15 @@ def run_one(
         else:
             before = None
 
-        response = _run_with_timeout(agent, test.input, test.timeout_s)
+        # Single-input tests run one turn; multi-turn tests run each turn in
+        # sequence WITHOUT resetting the sandbox between turns, so state (and
+        # any poisoned memory) carries across turns like a server-side session.
+        # The final turn's response is what assertions run against.
+        turns = test.turns if test.turns else [test.input]
+        for turn in turns:
+            response = _run_with_timeout(agent, turn, test.timeout_s)
+            if response.error == "timeout":
+                break
 
         if sandbox is not None and response.error != "timeout":
             after = sandbox.snapshot()
@@ -117,8 +125,9 @@ def run_one(
         )
         assertion_results = [evaluate(a, ctx) for a in test.assertions]
         status = _derive_status(response, assertion_results, test)
+        request = test.turns if test.turns else test.input
         request_evidence, response_evidence = _redact_evidence(
-            evidence, redactor, test.input, response
+            evidence, redactor, request, response
         )
 
         return TestResult(
