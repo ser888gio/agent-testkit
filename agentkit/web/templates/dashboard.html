@@ -66,7 +66,7 @@
   </div>
   <form class="filter-bar" method="get" action="/">
     <label>Search
-      <input type="search" name="q" value="{{ filters.q }}" placeholder="Run or agent">
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Run or agent" autocomplete="off">
     </label>
     <label>Status
       <select name="status">
@@ -90,7 +90,6 @@
         <option value="agent" {% if filters.sort == "agent" %}selected{% endif %}>Agent</option>
       </select>
     </label>
-    <button type="submit">Apply</button>
     <a class="button-secondary" href="/">Reset</a>
   </form>
   {% if not runs %}

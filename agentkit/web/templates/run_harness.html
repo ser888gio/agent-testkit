@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from "_components.html" import stat_card, status_badge, score_bar %}
+{% block title %}Harness {{ run.run_id[:8] }} - agentkit{% endblock %}
+{% block content %}
+<p><a href="/runs/{{ run.run_id }}">Run <span class="mono">{{ run.run_id[:8] }}</span></a>
+   &middot; <a href="/agents/{{ run.agent_name | urlencode }}">{{ run.agent_name }}</a></p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Page harness</p>
+    <h1>Test Harness</h1>
+    <p class="page-subtitle">Live run status, finding stream, skills, context, and summary for this test pass.</p>
+  </div>
+</header>
+
+<section class="panel harness-status" aria-labelledby="harness-status-title">
+  <div class="panel-header">
+    <div>
+      <h2 id="harness-status-title">Current Status</h2>
+      <p id="run-status" data-poll-url="/runs/{{ run.run_id }}/status" data-run-id="{{ run.run_id }}" aria-live="polite">
+        Gate: {{ harness.summary.gate }}
+      </p>
+    </div>
+    {{ status_badge("passed" if report.gate_passed else "failed", harness.summary.gate) }}
+  </div>
+  <div class="stat-grid">
+    {{ stat_card("Overall", harness.summary.overall_score ~ "%", "weighted score") }}
+    {{ stat_card("Pass Rate", harness.summary.pass_rate ~ "%", harness.summary.passed ~ " of " ~ harness.summary.total ~ " tests") }}
+    {{ stat_card("Critical Findings", harness.summary.critical_failures, "blocks safety gate", "danger" if harness.summary.critical_failures else "") }}
+    {{ stat_card("Findings", harness.findings | length, "ordered by attention") }}
+  </div>
+</section>
+
+<section class="detail-grid">
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Context Summary</h2>
+        <p>Run identity and coverage scope.</p>
+      </div>
+    </div>
+    <dl class="harness-meta">
+      <div><dt>Agent</dt><dd>{{ harness.context.agent }}</dd></div>
+      <div><dt>Run ID</dt><dd class="mono">{{ harness.context.run_id }}</dd></div>
+      <div><dt>Started</dt><dd>{{ harness.context.started }}</dd></div>
+      <div><dt>Finished</dt><dd>{{ harness.context.finished }}</dd></div>
+      <div><dt>Categories</dt><dd>{{ harness.context.categories | join(", ") }}</dd></div>
+      <div><dt>Assertions</dt><dd>{{ harness.context.assertions | join(", ") }}</dd></div>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Skills</h2>
+        <p>Capabilities exercised by this run.</p>
+      </div>
+    </div>
+    <div class="skill-list">
+      {% for skill in harness.skills %}
+      <article class="skill-card">
+        <div>
+          <h3>{{ skill.name | title }}</h3>
+          <p>{{ skill.passed }} of {{ skill.total }} passed</p>
+        </div>
+        {{ score_bar(skill.score, skill.category ~ " score") }}
+        <small>{{ skill.assertions | join(", ") }}</small>
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Findings During Test</h2>
+      <p>Failure-first stream of each observed result and assertion outcome.</p>
+    </div>
+  </div>
+  <ol class="finding-stream">
+    {% for finding in harness.findings %}
+    <li class="finding-item">
+      <div class="finding-main">
+        <span class="mono">Step {{ finding.step }}</span>
+        <h3>{{ finding.test_id }}</h3>
+        <p>{{ finding.summary }}</p>
+      </div>
+      <div class="finding-side">
+        {{ status_badge(finding.status) }}
+        {{ status_badge(finding.risk) }}
+        <span>{% if finding.latency_ms is not none %}{{ finding.latency_ms | round(1) }} ms{% else %}no latency{% endif %}</span>
+      </div>
+      <ul class="assertion-list">
+        {% for assertion in finding.assertions %}
+        <li class="{% if assertion.passed %}pass{% else %}fail{% endif %}">
+          <strong>{{ assertion.name }}</strong>
+          <span>{% if assertion.passed %}pass{% else %}fail - {{ assertion.detail }}{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endblock %}

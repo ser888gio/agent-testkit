@@ -131,6 +131,7 @@ def _run_view(row) -> dict:
         "started": _short_date(row.started_at),
         "finished": _short_date(row.finished_at),
         "status": row.status,
+        "by_status": by_status,
         "score_percent": _pct(score.get("overall_score", 0)),
         "pass_percent": _pct(score.get("pass_rate", 0)),
         "critical_failures": score.get("critical_failures", 0),
@@ -158,8 +159,25 @@ def _filter_rows(rows: list[dict], q: str = "", status: str = "all") -> list[dic
     return filtered
 
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request) -> HTMLResponse:
+def _filter_run_rows(rows: list[dict], q: str = "", status: str = "all") -> list[dict]:
+    rows = _filter_rows(rows, q=q, status="all")
+    if status == "all":
+        return rows
+
+    filtered = []
+    for row in rows:
+        by_status = row.get("by_status", {})
+        failed_count = by_status.get("failed", 0) + by_status.get("error", 0)
+        if status == "passed" and row.get("status") == "passed" and failed_count == 0:
+            filtered.append(row)
+        elif status in {"failed", "error", "skipped"} and by_status.get(status, 0) > 0:
+            filtered.append(row)
+        elif status == "failed" and row.get("status") == "failed":
+            filtered.append(row)
+    return filtered
+
+
+def _runs_page(request: Request) -> HTMLResponse:
     store = get_store()
     q = request.query_params.get("q", "")
     status = request.query_params.get("status", "all")
@@ -169,7 +187,7 @@ def dashboard(request: Request) -> HTMLResponse:
     run_rows = [_run_view(r) for r in store.list_runs(limit=100)]
     if agent != "all":
         run_rows = [r for r in run_rows if r["agent_id"] == agent]
-    run_rows = _filter_rows(run_rows, q=q, status=status)
+    run_rows = _filter_run_rows(run_rows, q=q, status=status)
 
     if sort == "score":
         run_rows.sort(key=lambda r: (r["score_percent"], r["started"]))
@@ -193,7 +211,7 @@ def dashboard(request: Request) -> HTMLResponse:
         sum(r["score_percent"] for r in all_runs) / total_runs
     ) if total_runs else 0
     agents = sorted({r["agent_id"] for r in all_runs})
-    attention = [r for r in all_runs if r["needs_attention"]][:5]
+    attention = [r for r in run_rows if r["needs_attention"]][:5]
 
     return _render(
         "dashboard.html",
@@ -208,7 +226,18 @@ def dashboard(request: Request) -> HTMLResponse:
             "critical_failures": critical_failures,
             "avg_score": avg_score,
         },
+        active="runs",
     )
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard(request: Request) -> HTMLResponse:
+    return _runs_page(request)
+
+
+@app.get("/runs", response_class=HTMLResponse)
+def runs_page(request: Request) -> HTMLResponse:
+    return _runs_page(request)
 
 
 @app.get("/agents", response_class=HTMLResponse)
@@ -322,6 +351,26 @@ def new_test_form(error: str | None = None, values: dict | None = None) -> HTMLR
     )
 
 
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page() -> HTMLResponse:
+    token_state = (
+        "Configured"
+        if os.environ.get("AGENTKIT_WEB_TOKEN")
+        else "Generated per process"
+    )
+    return _render(
+        "settings.html",
+        settings={
+            "db_path": get_db_path(),
+            "package_dir": str(_PACKAGE_DIR),
+            "config_dir": str(_PACKAGE_DIR / "config"),
+            "packs_dir": str(get_packs_dir()),
+            "token_state": token_state,
+        },
+        active="settings",
+    )
+
+
 @app.post("/tests")
 def create_test(
     test_id: str = Form(...),
@@ -385,6 +434,68 @@ def _load_run_or_404(run_id: str):
         raise HTTPException(status_code=404, detail=f"run '{run_id}' not found") from exc
 
 
+def _harness_view(run, report) -> dict:
+    categories = sorted({r.category.value for r in run.results})
+    assertions = sorted({a.name for r in run.results for a in r.assertion_results})
+    skills = []
+    for category_score in report.category_scores:
+        category = category_score.category.value
+        related = [r for r in run.results if r.category.value == category]
+        skills.append(
+            {
+                "name": category.replace("_", " "),
+                "category": category,
+                "assertions": sorted(
+                    {a.name for r in related for a in r.assertion_results}
+                ),
+                "passed": category_score.passed,
+                "total": category_score.total,
+                "score": _pct(category_score.score),
+            }
+        )
+
+    findings = []
+    for index, result in enumerate(
+        sorted(run.results, key=lambda r: (_STATUS_RANK.get(r.status.value, 1), r.test_id)),
+        start=1,
+    ):
+        failed_assertions = [a for a in result.assertion_results if not a.passed]
+        details = [a.detail for a in failed_assertions if a.detail]
+        findings.append(
+            {
+                "step": index,
+                "test_id": result.test_id,
+                "category": result.category.value,
+                "risk": result.risk.value,
+                "status": result.status.value,
+                "latency_ms": result.latency_ms,
+                "assertions": result.assertion_results,
+                "summary": result.error or "; ".join(details) or "No finding detail.",
+            }
+        )
+
+    return {
+        "summary": {
+            "gate": "PASS" if report.gate_passed else "BLOCK",
+            "overall_score": _pct(report.overall_score),
+            "pass_rate": _pct(report.pass_rate),
+            "critical_failures": report.critical_failures,
+            "passed": report.passed,
+            "total": report.total,
+        },
+        "context": {
+            "agent": run.agent_name,
+            "run_id": run.run_id,
+            "started": _short_date(run.started_at),
+            "finished": _short_date(run.finished_at),
+            "categories": categories,
+            "assertions": assertions,
+        },
+        "skills": skills,
+        "findings": findings,
+    }
+
+
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 def run_detail(run_id: str, request: Request) -> HTMLResponse:
     rr, report = _load_run_or_404(run_id)
@@ -429,6 +540,17 @@ def run_detail(run_id: str, request: Request) -> HTMLResponse:
         duration_ms=duration,
         filters={"q": q, "status": status, "category": category},
         categories=sorted(matrix),
+    )
+
+
+@app.get("/runs/{run_id}/harness", response_class=HTMLResponse)
+def run_harness(run_id: str) -> HTMLResponse:
+    run, report = _load_run_or_404(run_id)
+    return _render(
+        "run_harness.html",
+        run=run,
+        report=report,
+        harness=_harness_view(run, report),
     )
 
 

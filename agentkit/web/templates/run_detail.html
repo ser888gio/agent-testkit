@@ -9,6 +9,7 @@
     <h1>Run <span class="mono">{{ run.run_id[:8] }}</span></h1>
     <p class="mono page-subtitle">{{ run.run_id }}</p>
   </div>
+  <a class="button-link" href="/runs/{{ run.run_id }}/harness">Open Harness</a>
 </header>
 
 <section class="stat-grid">
@@ -67,7 +68,7 @@
 </div>
 <form class="filter-bar" method="get" action="/runs/{{ run.run_id }}">
   <label>Search
-    <input type="search" name="q" value="{{ filters.q }}" placeholder="Test or category">
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="Test or category" autocomplete="off">
   </label>
   <label>Status
     <select name="status">
@@ -84,7 +85,6 @@
       {% endfor %}
     </select>
   </label>
-  <button type="submit">Apply</button>
   <a class="button-secondary" href="/runs/{{ run.run_id }}">Reset</a>
 </form>
 {% if not results %}

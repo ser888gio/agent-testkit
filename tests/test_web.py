@@ -50,6 +50,29 @@ def _seed_store(db_path: str):
     return cfg, rr, report
 
 
+def _seed_passing_store(db_path: str):
+    cfg = TargetConfig(
+        id="clean-target",
+        agent=CallableSpec(
+            type="callable", callable=f"{MODULE}:create_agent_with_secret"
+        ),
+        evidence=EvidencePolicy(),
+    )
+    tests = [
+        TestCase(
+            id="clean.pass.case",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+        ),
+    ]
+    rr = run(cfg, tests)
+    report = score(rr)
+    store = Store(db_path)
+    store.save_run(cfg, rr, report)
+    return cfg, rr, report
+
+
 def _client(db_path: str, monkeypatch) -> TestClient:
     monkeypatch.setenv("AGENTKIT_DB", db_path)
     from agentkit.web.app import app
@@ -72,6 +95,7 @@ def test_dashboard_shows_run_and_critical_count(tmp_path, monkeypatch):
     assert 'href="/agents/connect"' in resp.text
     assert 'href="/tests/new"' in resp.text
     assert 'aria-current="page"' in resp.text
+    assert "Apply Filters" not in resp.text
 
 
 def test_dashboard_empty_state(tmp_path, monkeypatch):
@@ -99,6 +123,26 @@ def test_run_detail_shows_matrix_and_failed_first(tmp_path, monkeypatch):
     results_section = resp.text.split("Results (failed first)")[1]
     assert results_section.index("b.fail.case") < results_section.index("a.pass.case")
     assert "Failures for review" in resp.text
+    assert f"/runs/{rr.run_id}/harness" in resp.text
+
+
+def test_run_harness_shows_findings_skills_context_summary(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}/harness")
+
+    assert resp.status_code == 200
+    assert "Test Harness" in resp.text
+    assert "Findings During Test" in resp.text
+    assert "Context Summary" in resp.text
+    assert "Skills" in resp.text
+    assert "Action Safety" in resp.text
+    assert "b.fail.case" in resp.text
+    assert "not_contains" in resp.text
+    assert f'data-poll-url="/runs/{rr.run_id}/status"' in resp.text
+    assert rr.run_id in resp.text
 
 
 def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkeypatch):
@@ -121,9 +165,42 @@ def test_sidebar_shows_nav_tabs(tmp_path, monkeypatch):
     resp = client.get("/")
     assert resp.status_code == 200
     assert 'class="sidebar"' in resp.text
+    assert 'href="/runs"' in resp.text
     assert 'href="/agents"' in resp.text
     assert 'href="/tests"' in resp.text
+    assert 'href="/settings"' in resp.text
     assert 'aria-label="Primary"' in resp.text
+    assert 'class="nav-icon"' in resp.text
+
+
+def test_runs_route_shows_dashboard_table(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/runs")
+
+    assert resp.status_code == 200
+    assert "Recent runs" in resp.text
+    assert rr.run_id[:8] in resp.text
+    assert 'href="/runs" class="active" aria-current="page"' in resp.text
+
+
+def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/settings")
+
+    assert resp.status_code == 200
+    assert "Settings" in resp.text
+    assert "Storage" in resp.text
+    assert "Run Inputs" in resp.text
+    assert "Security" in resp.text
+    assert db in resp.text
+    assert "AGENTKIT_WEB_TOKEN" not in resp.text
+    assert 'href="/settings" class="active" aria-current="page"' in resp.text
 
 
 def test_tests_page_lists_distinct_tests(tmp_path, monkeypatch):
@@ -140,6 +217,7 @@ def test_tests_page_lists_distinct_tests(tmp_path, monkeypatch):
     # each test id is listed once (distinct), linking to its latest run detail
     assert resp.text.count(">a.pass.case</a>") == 1
     assert "/tests/a.pass.case" in resp.text
+    assert "Apply Filters" not in resp.text
 
 
 def test_tests_page_filters_by_status(tmp_path, monkeypatch):
@@ -308,6 +386,25 @@ def test_dashboard_filters_by_agent_query(tmp_path, monkeypatch):
     assert "Recent runs" in resp.text
 
 
+def test_dashboard_status_filter_uses_result_summary(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _, failed_run, _ = _seed_store(db)
+    _, passed_run, _ = _seed_passing_store(db)
+    client = _client(db, monkeypatch)
+
+    failed_resp = client.get("/?status=failed")
+
+    assert failed_resp.status_code == 200
+    assert failed_run.run_id[:8] in failed_resp.text
+    assert passed_run.run_id[:8] not in failed_resp.text
+
+    passed_resp = client.get("/?status=passed")
+
+    assert passed_resp.status_code == 200
+    assert passed_run.run_id[:8] in passed_resp.text
+    assert failed_run.run_id[:8] not in passed_resp.text
+
+
 def test_run_detail_filters_results_by_status(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     cfg, rr, report = _seed_store(db)
@@ -319,6 +416,7 @@ def test_run_detail_filters_results_by_status(tmp_path, monkeypatch):
     results_section = resp.text.split("Results (failed first)")[1]
     assert "b.fail.case" in results_section
     assert "a.pass.case" not in results_section
+    assert "Apply Filters" not in resp.text
 
 
 def test_test_detail_shows_category_and_risk(tmp_path, monkeypatch):
@@ -405,3 +503,5 @@ def test_poll_helper_avoids_html_injection_sink():
     assert "insertAdjacentHTML" not in js
     assert "textContent" in js
     assert 'Accept: "application/json"' in js
+    assert "requestSubmit" in js
+    assert "setTimeout(submit, 350)" in js

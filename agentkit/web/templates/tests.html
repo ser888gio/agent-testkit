@@ -8,7 +8,7 @@
     <h1>Tests</h1>
     <p class="page-subtitle">Search and triage distinct tests across recorded runs.</p>
   </div>
-  <a class="button-link" href="/tests/new">Define a test</a>
+  <a class="button-link" href="/tests/new">Define Test</a>
 </header>
 {% if not tests %}
 {{ empty_state("No tests yet", "Define one or run a pack to record results.", "Define a test", "/tests/new") }}
@@ -16,7 +16,7 @@
 <section class="panel">
   <form class="filter-bar" method="get" action="/tests">
     <label>Search
-      <input type="search" name="q" value="{{ filters.q }}" placeholder="Test id or category">
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Test ID or category" autocomplete="off">
     </label>
     <label>Status
       <select name="status">
@@ -41,7 +41,6 @@
         {% endfor %}
       </select>
     </label>
-    <button type="submit">Apply</button>
     <a class="button-secondary" href="/tests">Reset</a>
   </form>
   <div class="table-wrap">

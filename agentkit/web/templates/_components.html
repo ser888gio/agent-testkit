@@ -3,7 +3,7 @@
 {%- endmacro %}
 
 {% macro score_bar(value, label="") -%}
-<span class="score-bar" aria-label="{{ label or 'Score' }} {{ value }}%">
+<span class="score-bar" role="progressbar" aria-label="{{ label or 'Score' }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ value }}">
   <span style="width: {{ value }}%"></span>
 </span>
 {%- endmacro %}

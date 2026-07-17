@@ -2,6 +2,28 @@
 // Any element with [data-poll-url] gets its text refreshed every 2s until the
 // fetched status is no longer running.
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".filter-bar").forEach((form) => {
+    let timer;
+    const submit = () => {
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    };
+
+    form.querySelectorAll("select").forEach((select) => {
+      select.addEventListener("change", submit);
+    });
+
+    form.querySelectorAll('input[type="search"]').forEach((input) => {
+      input.addEventListener("input", () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(submit, 350);
+      });
+    });
+  });
+
   document.querySelectorAll("[data-poll-url]").forEach((el) => {
     const url = el.getAttribute("data-poll-url");
     let failures = 0;
