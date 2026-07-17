@@ -1,41 +1,113 @@
 {% extends "base.html" %}
+{% from "_components.html" import stat_card, status_badge, score_bar, empty_state %}
 {% block title %}Run {{ run.run_id[:8] }} - agentkit{% endblock %}
 {% block content %}
-<h1>Run <span class="mono">{{ run.run_id[:8] }}</span></h1>
-<p class="mono" style="color:#57606a">{{ run.run_id }}</p>
-<div class="stats">
-  <span class="stat">Gate
-    {% if report.gate_passed %}<span class="badge badge-passed">PASS</span>
-    {% else %}<span class="badge badge-failed">BLOCK</span>{% endif %}
-  </span>
-  <span class="stat">Overall <strong>{{ (report.overall_score * 100) | round(0, "floor") }}%</strong></span>
-  <span class="stat">Pass rate <strong>{{ (report.pass_rate * 100) | round(0, "floor") }}%</strong></span>
-  <span class="stat">Critical failures <strong class="{% if report.critical_failures %}critical-count{% endif %}">{{ report.critical_failures }}</strong></span>
-</div>
+<p><a href="/">Back to dashboard</a> &middot; <a href="/agents/{{ run.agent_name | urlencode }}">{{ run.agent_name }}</a></p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Run detail</p>
+    <h1>Run <span class="mono">{{ run.run_id[:8] }}</span></h1>
+    <p class="mono page-subtitle">{{ run.run_id }}</p>
+  </div>
+</header>
 
-<h2>Category &times; test matrix</h2>
+<section class="stat-grid">
+  {{ stat_card("Gate", "PASS" if report.gate_passed else "BLOCK", "release decision", "" if report.gate_passed else "danger") }}
+  {{ stat_card("Overall", ((report.overall_score * 100) | round(0, "floor")) ~ "%", "weighted score") }}
+  {{ stat_card("Pass rate", ((report.pass_rate * 100) | round(0, "floor")) ~ "%", report.passed ~ " of " ~ report.total ~ " tests") }}
+  {{ stat_card("Critical failures", report.critical_failures, "blocks safety gate", "danger" if report.critical_failures else "") }}
+</section>
+
+<section class="panel">
+<div class="panel-header">
+  <div>
+    <h2>Evidence map</h2>
+    <p>Category by test status, with direct links into each result.</p>
+  </div>
+</div>
 {% for cat, tests in matrix.items() %}
 <div class="matrix-row">
   <span class="cat">{{ cat }}</span>
   {% for tid, status in tests.items() %}
-  <a href="/runs/{{ run.run_id }}/tests/{{ tid }}"><span class="badge badge-{{ status }}">{{ tid }}</span></a>
+  <a href="/runs/{{ run.run_id }}/tests/{{ tid }}">{{ status_badge(status, tid) }}</a>
   {% endfor %}
 </div>
 {% endfor %}
+</section>
 
-<h2>Results (failed first)</h2>
+<section class="panel">
+<div class="panel-header">
+  <div>
+    <h2>Failures for review</h2>
+    <p>Prioritized queue before the full result list.</p>
+  </div>
+</div>
+{% if not failures %}
+<p class="quiet">No failed or errored tests in the current result set.</p>
+{% else %}
+<div class="attention-list">
+{% for r in failures %}
+  <a class="attention-item" href="/runs/{{ run.run_id }}/tests/{{ r.test_id }}">
+    <span>{{ r.test_id }}</span>
+    {{ status_badge(r.status) }}
+    {{ status_badge(r.risk) }}
+    <span>{% if r.latency_ms is not none %}{{ r.latency_ms | round(1) }} ms{% else %}no latency{% endif %}</span>
+  </a>
+{% endfor %}
+</div>
+{% endif %}
+</section>
+
+<section class="panel">
+<div class="panel-header">
+  <div>
+    <h2>Results (failed first)</h2>
+    <p>Filter locally recorded results while preserving links to each evidence page.</p>
+  </div>
+</div>
+<form class="filter-bar" method="get" action="/runs/{{ run.run_id }}">
+  <label>Search
+    <input type="search" name="q" value="{{ filters.q }}" placeholder="Test or category">
+  </label>
+  <label>Status
+    <select name="status">
+      {% for key, label in status_labels.items() %}
+      <option value="{{ key }}" {% if filters.status == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Category
+    <select name="category">
+      <option value="all">All categories</option>
+      {% for c in categories %}
+      <option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+  <a class="button-secondary" href="/runs/{{ run.run_id }}">Reset</a>
+</form>
+{% if not results %}
+<p class="quiet">No results match the current filters.</p>
+{% else %}
+<div class="table-wrap">
 <table>
 <thead>
-<tr><th scope="col">Test</th><th scope="col">Category</th><th scope="col">Status</th></tr>
+<tr><th scope="col">Test</th><th scope="col">Category</th><th scope="col">Risk</th><th scope="col">Status</th><th scope="col">Latency</th></tr>
 </thead>
 <tbody>
 {% for r in results %}
 <tr>
-  <td><a href="/runs/{{ run.run_id }}/tests/{{ r.test_id }}">{{ r.test_id }}</a></td>
-  <td>{{ r.category.value }}</td>
-  <td><span class="badge badge-{{ r.status.value }}">{{ r.status.value }}</span></td>
+  <td data-label="Test"><a href="/runs/{{ run.run_id }}/tests/{{ r.test_id }}">{{ r.test_id }}</a></td>
+  <td data-label="Category">{{ r.category.value }}</td>
+  <td data-label="Risk">{{ status_badge(r.risk.value) }}</td>
+  <td data-label="Status">{{ status_badge(r.status.value) }}</td>
+  <td data-label="Latency">{% if r.latency_ms is not none %}{{ r.latency_ms | round(1) }} ms{% else %}-{% endif %}</td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
+  </div>
+{% endif %}
+</section>
 {% endblock %}

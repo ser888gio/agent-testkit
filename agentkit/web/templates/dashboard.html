@@ -1,29 +1,121 @@
 {% extends "base.html" %}
+{% from "_components.html" import stat_card, status_badge, score_bar, empty_state, time_text %}
 {% block title %}Dashboard - agentkit{% endblock %}
 {% block content %}
-<h1>Dashboard</h1>
-{% if not runs %}
-<p class="empty-state">
-  No runs yet. Run your first pack:
-  <code>agentkit run &lt;packs_dir&gt; --target &lt;config.yaml&gt;</code>
-</p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Run operations</p>
+    <h1>Home</h1>
+    <p class="page-subtitle">Start by connecting an agent or creating a reusable test, then use the run dashboard below for triage.</p>
+  </div>
+</header>
+
+<section class="home-actions" aria-label="Primary actions">
+  <a class="home-action" href="/agents/connect">
+    <span class="home-action-kicker">Connect agent</span>
+    <strong>Connect an agent</strong>
+    <span>Open the setup page for target configs, pack selection, and the run command.</span>
+  </a>
+  <a class="home-action" href="/tests/new">
+    <span class="home-action-kicker">Create test</span>
+    <strong>Create a test</strong>
+    <span>Open the test creation page and add a YAML-backed coverage case.</span>
+  </a>
+</section>
+
+{% if not all_runs %}
+{{ empty_state("No runs yet", "Run your first pack with agentkit run <packs_dir> --target <config.yaml>.", "View tests", "/tests") }}
 {% else %}
-<table>
+<section class="stat-grid" aria-label="Run summary">
+  {{ stat_card("Runs", stats.total_runs, "latest 100 recorded") }}
+  {{ stat_card("Needs attention", stats.failed_runs, "failed or blocked gates", "danger" if stats.failed_runs else "") }}
+  {{ stat_card("Critical failures", stats.critical_failures, "across stored runs", "danger" if stats.critical_failures else "") }}
+  {{ stat_card("Average score", stats.avg_score ~ "%", "weighted by risk") }}
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Needs attention</h2>
+      <p>Failure-first queue, inspired by Cypress review flows and Playwright's shortest path to evidence.</p>
+    </div>
+  </div>
+  {% if not attention %}
+  <p class="quiet">No failed gates or critical failures in the latest runs.</p>
+  {% else %}
+  <div class="attention-list">
+  {% for r in attention %}
+    <a class="attention-item" href="/runs/{{ r.id }}">
+      <span class="mono">{{ r.short_id }}</span>
+      <span>{{ r.agent_id }}</span>
+      {{ status_badge(r.status) }}
+      <span>{{ r.failed }} failed</span>
+      <span class="{% if r.critical_failures %}critical-count{% endif %}">{{ r.critical_failures }} critical</span>
+    </a>
+  {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Recent runs</h2>
+      <p>Search, filter, and sort before opening a run.</p>
+    </div>
+  </div>
+  <form class="filter-bar" method="get" action="/">
+    <label>Search
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Run or agent">
+    </label>
+    <label>Status
+      <select name="status">
+        {% for key, label in status_labels.items() %}
+        <option value="{{ key }}" {% if filters.status == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Agent
+      <select name="agent">
+        <option value="all">All agents</option>
+        {% for a in agents %}
+        <option value="{{ a }}" {% if filters.agent == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Sort
+      <select name="sort">
+        <option value="attention" {% if filters.sort == "attention" %}selected{% endif %}>Needs attention</option>
+        <option value="score" {% if filters.sort == "score" %}selected{% endif %}>Lowest score</option>
+        <option value="agent" {% if filters.sort == "agent" %}selected{% endif %}>Agent</option>
+      </select>
+    </label>
+    <button type="submit">Apply</button>
+    <a class="button-secondary" href="/">Reset</a>
+  </form>
+  {% if not runs %}
+  <p class="quiet">No runs match the current filters.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table>
 <thead>
-<tr><th scope="col">Run</th><th scope="col">Agent</th><th scope="col">Started</th><th scope="col">Gate</th><th scope="col">Overall</th><th scope="col">Critical failures</th></tr>
+<tr><th scope="col">Run</th><th scope="col">Agent</th><th scope="col">Started</th><th scope="col">Gate</th><th scope="col">Score</th><th scope="col">Evidence</th></tr>
 </thead>
 <tbody>
 {% for r in runs %}
 <tr>
-  <td><a class="mono" href="/runs/{{ r.id }}">{{ r.id[:8] }}</a></td>
-  <td><a href="/agents/{{ r.agent_id | urlencode }}">{{ r.agent_id }}</a></td>
-  <td class="mono">{{ r.started_at[:16] | replace("T", " ") }}</td>
-  <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
-  <td>{{ (r.score.overall_score * 100) | round(0, "floor") }}%</td>
-  <td class="{% if r.score.critical_failures %}critical-count{% endif %}">{{ r.score.critical_failures }}</td>
+  <td data-label="Run"><a class="mono" href="/runs/{{ r.id }}">{{ r.short_id }}</a></td>
+  <td data-label="Agent"><a href="/agents/{{ r.agent_id | urlencode }}">{{ r.agent_id }}</a></td>
+  <td class="mono" data-label="Started">{{ r.started }}</td>
+  <td data-label="Gate">{{ status_badge(r.status) }}</td>
+  <td data-label="Score">{{ score_bar(r.score_percent, "Overall score") }} <span>{{ r.score_percent }}%</span></td>
+  <td data-label="Evidence"><span class="{% if r.critical_failures %}critical-count{% endif %}">{{ r.critical_failures }}</span> critical, {{ r.failed }} failed</td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
+  </div>
+  {% endif %}
+</section>
 {% endif %}
 {% endblock %}

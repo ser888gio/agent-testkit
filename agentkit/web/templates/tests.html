@@ -1,11 +1,50 @@
 {% extends "base.html" %}
+{% from "_components.html" import status_badge, empty_state %}
 {% block title %}Tests - agentkit{% endblock %}
 {% block content %}
-<h1>Tests</h1>
-<p><a class="button-link" href="/tests/new">+ Define a test</a></p>
+<header class="page-header page-header-actions">
+  <div>
+    <p class="eyebrow">Coverage library</p>
+    <h1>Tests</h1>
+    <p class="page-subtitle">Search and triage distinct tests across recorded runs.</p>
+  </div>
+  <a class="button-link" href="/tests/new">Define a test</a>
+</header>
 {% if not tests %}
-<p class="empty-state">No tests yet. <a href="/tests/new">Define one</a> or run a pack to record results.</p>
+{{ empty_state("No tests yet", "Define one or run a pack to record results.", "Define a test", "/tests/new") }}
 {% else %}
+<section class="panel">
+  <form class="filter-bar" method="get" action="/tests">
+    <label>Search
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Test id or category">
+    </label>
+    <label>Status
+      <select name="status">
+        {% for key, label in status_labels.items() %}
+        <option value="{{ key }}" {% if filters.status == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Risk
+      <select name="risk">
+        <option value="all">All risks</option>
+        {% for r in risks %}
+        <option value="{{ r }}" {% if filters.risk == r %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Category
+      <select name="category">
+        <option value="all">All categories</option>
+        {% for c in categories %}
+        <option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Apply</button>
+    <a class="button-secondary" href="/tests">Reset</a>
+  </form>
+  <div class="table-wrap">
 <table>
 <thead>
 <tr><th scope="col">Test</th><th scope="col">Category</th><th scope="col">Risk</th><th scope="col">Runs</th><th scope="col">Latest status</th></tr>
@@ -13,14 +52,16 @@
 <tbody>
 {% for t in tests %}
 <tr>
-  <td><a href="/runs/{{ t.latest_run_id }}/tests/{{ t.test_id }}">{{ t.test_id }}</a></td>
-  <td>{{ t.category }}</td>
-  <td><span class="badge badge-{{ t.risk }}">{{ t.risk }}</span></td>
-  <td>{{ t.run_count }}</td>
-  <td><span class="badge badge-{{ t.latest_status }}">{{ t.latest_status }}</span></td>
+  <td data-label="Test"><a href="/runs/{{ t.latest_run_id }}/tests/{{ t.test_id }}">{{ t.test_id }}</a></td>
+  <td data-label="Category">{{ t.category }}</td>
+  <td data-label="Risk">{{ status_badge(t.risk) }}</td>
+  <td data-label="Runs">{{ t.run_count }}</td>
+  <td data-label="Latest status">{{ status_badge(t.latest_status) }}</td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
+  </div>
+</section>
 {% endif %}
 {% endblock %}

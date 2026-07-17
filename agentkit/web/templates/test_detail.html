@@ -1,36 +1,84 @@
 {% extends "base.html" %}
+{% from "_components.html" import stat_card, status_badge, empty_state %}
 {% block title %}{{ result.test_id }} - agentkit{% endblock %}
 {% block content %}
-<p><a href="/runs/{{ run.run_id }}">&larr; Run <span class="mono">{{ run.run_id[:8] }}</span></a>
+<p><a href="/runs/{{ run.run_id }}">Run <span class="mono">{{ run.run_id[:8] }}</span></a>
    &middot; <a href="/agents/{{ run.agent_name | urlencode }}">{{ run.agent_name }}</a></p>
-<h1>{{ result.test_id }}</h1>
-<div class="stats">
-  <span class="stat">Status <span class="badge badge-{{ result.status.value }}">{{ result.status.value }}</span></span>
-  <span class="stat">Category <strong>{{ result.category.value }}</strong></span>
-  <span class="stat">Risk <span class="badge badge-{{ result.risk.value }}">{{ result.risk.value }}</span></span>
-  <span class="stat">Latency <strong>{% if result.latency_ms is not none %}{{ result.latency_ms | round(1) }} ms{% else %}-{% endif %}</strong></span>
-</div>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Test evidence</p>
+    <h1>{{ result.test_id }}</h1>
+  </div>
+</header>
+<section class="stat-grid">
+  {{ stat_card("Status", result.status.value, "latest result", "danger" if result.status.value in ["failed", "error"] else "") }}
+  {{ stat_card("Category", result.category.value, "coverage area") }}
+  {{ stat_card("Risk", result.risk.value, "impact weighting", "danger" if result.risk.value == "critical" else "") }}
+  {{ stat_card("Latency", (result.latency_ms | round(1)) ~ " ms" if result.latency_ms is not none else "-", "agent response time") }}
+</section>
 
-{% if result.error %}
-<h2>Error</h2>
-<pre class="fail">{{ result.error }}</pre>
-{% endif %}
+<section class="detail-grid">
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Failure context</h2>
+        <p>Assertion outcome, error text, and neighboring results.</p>
+      </div>
+    </div>
+    <div class="assertion-summary">
+      <span class="pass">{{ passed_assertions }} passed</span>
+      <span class="{% if failed_assertions %}fail{% endif %}">{{ failed_assertions }} failed</span>
+    </div>
+    {% if result.error %}
+    <h3>Error</h3>
+    <pre class="fail">{{ result.error }}</pre>
+    {% endif %}
+    <div class="pager">
+      {% if previous_result %}<a href="/runs/{{ run.run_id }}/tests/{{ previous_result.test_id }}">Previous: {{ previous_result.test_id }}</a>{% else %}<span></span>{% endif %}
+      {% if next_result %}<a href="/runs/{{ run.run_id }}/tests/{{ next_result.test_id }}">Next: {{ next_result.test_id }}</a>{% endif %}
+    </div>
+  </article>
 
-<h2>Request</h2>
-<pre>{{ result.request }}</pre>
+  <article class="panel">
+    <div class="panel-header"><h2>Artifacts</h2></div>
+    <ul class="artifact-list">
+      {% for a in artifact_states %}
+      <li>
+        <strong>{{ a.name }}</strong>
+        <span>{{ a.state }}</span>
+        <small>{{ a.detail }}</small>
+      </li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
 
-<h2>Response (redacted)</h2>
-<pre>{{ result.response }}</pre>
+<section class="panel">
+  <div class="panel-header"><h2>Assertions</h2></div>
+  <ul class="assertion-list">
+  {% for a in result.assertion_results %}
+  <li class="{% if a.passed %}pass{% else %}fail{% endif %}">
+    <strong>{{ a.name }}</strong>
+    <span>{% if a.passed %}pass{% else %}fail - {{ a.detail }}{% endif %}</span>
+  </li>
+  {% endfor %}
+  </ul>
+</section>
 
-<h2>Assertions</h2>
-<ul>
-{% for a in result.assertion_results %}
-<li class="{% if a.passed %}pass{% else %}fail{% endif %}">
-  {{ a.name }}: {% if a.passed %}pass{% else %}fail - {{ a.detail }}{% endif %}
-</li>
-{% endfor %}
-</ul>
+<section class="detail-grid">
+  <article class="panel">
+    <div class="panel-header"><h2>Request</h2></div>
+    <pre>{{ result.request }}</pre>
+  </article>
 
-<h2>Sandbox diff</h2>
-<pre>{{ result.sandbox_diff }}</pre>
+  <article class="panel">
+    <div class="panel-header"><h2>Response (redacted)</h2></div>
+    <pre>{{ result.response }}</pre>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header"><h2>Sandbox diff</h2></div>
+  <pre>{{ result.sandbox_diff or "No sandbox changes were recorded." }}</pre>
+</section>
 {% endblock %}

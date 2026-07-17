@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% from "_components.html" import empty_state %}
+{% block title %}{{ display_status }} - agentkit{% endblock %}
+{% block content %}
+{{ empty_state(display_status|string ~ " error", detail, "Back to dashboard", "/") }}
+{% endblock %}

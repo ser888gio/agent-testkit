@@ -1,17 +1,23 @@
 {% extends "base.html" %}
 {% block title %}New test - agentkit{% endblock %}
 {% block content %}
-<p><a href="/tests">&larr; Tests</a></p>
-<h1>Define a test</h1>
+<p><a href="/tests">Back to tests</a></p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Coverage authoring</p>
+    <h1>Define a test</h1>
+    <p class="page-subtitle">Add a reusable YAML-backed test pack entry.</p>
+  </div>
+</header>
 
 {% if error %}
-<p class="fail">{{ error }}</p>
+<p class="form-error" role="alert">{{ error }}</p>
 {% endif %}
 
 <form method="post" action="/tests" class="test-form">
   <label>Test ID
     <input type="text" name="test_id" required
-           placeholder="e.g. user.data_leakage.my_probe"
+           placeholder="user.data_leakage.my_probe"
            value="{{ values.test_id or '' }}">
     <small>Dotted lowercase, e.g. <code>a.b.c</code>.</small>
   </label>

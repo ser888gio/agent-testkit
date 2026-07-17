@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "_components.html" import empty_state %}
+{% block title %}Connect agent - agentkit{% endblock %}
+{% block content %}
+<p><a href="/">Back to home</a></p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Agent setup</p>
+    <h1>Connect an agent</h1>
+    <p class="page-subtitle">Choose a target config and a test pack, then run the command locally to record results in the dashboard.</p>
+  </div>
+</header>
+
+<section class="detail-grid">
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Target configs</h2>
+        <p>These are the agent connection files available under <code>agentkit/config</code>.</p>
+      </div>
+    </div>
+    {% if not targets %}
+    <p class="quiet">No target configs were found.</p>
+    {% else %}
+    <ul class="option-list">
+      {% for target in targets %}
+      <li><code>{{ target }}</code></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Test packs</h2>
+        <p>Pick one of these pack roots when you run a connected agent.</p>
+      </div>
+    </div>
+    {% if not pack_roots %}
+    <p class="quiet">No test packs were found.</p>
+    {% else %}
+    <ul class="option-list">
+      {% for pack in pack_roots %}
+      <li><code>{{ pack }}</code></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Run command</h2>
+      <p>After the run finishes, the agent appears under Agents and the results appear on Home.</p>
+    </div>
+  </div>
+  {% if targets and pack_roots %}
+  <pre>agentkit run {{ pack_roots[0] }} --target {{ targets[0] }}</pre>
+  {% else %}
+  {{ empty_state("Connection inputs missing", "Add a target config and at least one pack before running an agent.") }}
+  {% endif %}
+</section>
+{% endblock %}

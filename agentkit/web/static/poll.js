@@ -4,19 +4,29 @@
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-poll-url]").forEach((el) => {
     const url = el.getAttribute("data-poll-url");
+    let failures = 0;
     const tick = () => {
       fetch(url, { headers: { Accept: "application/json" } })
         .then((r) => r.json())
         .then((status) => {
+          failures = 0;
           if (typeof status.run_id === "string" && status.run_id.length > 0) {
             el.setAttribute("data-run-id", status.run_id);
           }
+          el.setAttribute("aria-live", "polite");
           el.textContent = typeof status.message === "string" ? status.message : "";
           if (status.running === true) {
             setTimeout(tick, 2000);
           }
         })
-        .catch(() => setTimeout(tick, 2000));
+        .catch(() => {
+          failures += 1;
+          el.setAttribute("aria-live", "polite");
+          if (failures >= 3) {
+            el.textContent = "Status temporarily unavailable. Retrying...";
+          }
+          setTimeout(tick, Math.min(10000, 2000 * failures));
+        });
     };
     tick();
   });

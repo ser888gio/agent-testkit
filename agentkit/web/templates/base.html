@@ -8,26 +8,23 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<a class="skip-link" href="#content">Skip to content</a>
 <div class="layout">
   <aside class="sidebar">
-    <a class="brand" href="/">agentkit</a>
-    <nav>
-      <a href="/">Dashboard</a>
-      <a href="/agents">Agents</a>
-      <a href="/tests">Tests</a>
+    <a class="brand" href="/" aria-label="agentkit dashboard">
+      <span class="brand-mark" aria-hidden="true">AK</span>
+      <span>agentkit</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="/" {% if active == "dashboard" %}class="active" aria-current="page"{% endif %}>Dashboard</a>
+      <a href="/agents" {% if active == "agents" %}class="active" aria-current="page"{% endif %}>Agents</a>
+      <a href="/tests" {% if active == "tests" %}class="active" aria-current="page"{% endif %}>Tests</a>
     </nav>
   </aside>
-  <main>
+  <main id="content" tabindex="-1">
   {% block content %}{% endblock %}
   </main>
 </div>
-<script>
-// Highlight the sidebar link matching the current section.
-const p = location.pathname;
-document.querySelectorAll(".sidebar nav a").forEach((a) => {
-  const h = a.getAttribute("href");
-  if (h === "/" ? (p === "/" || p.startsWith("/runs")) : p.startsWith(h)) a.classList.add("active");
-});
-</script>
+<script src="/static/poll.js" defer></script>
 </body>
 </html>
