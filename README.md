@@ -87,6 +87,22 @@ agentkit run agentkit/packs/email --target agentkit/config/email-agent.yaml
 python examples/run_email.py   # narrates the attack + verdict
 ```
 
+### EU AI Act compliance evidence
+
+Agentic attack packs (`agentkit/packs/agentic/`) probe the OWASP Agentic Top 10 — tool
+misuse, memory poisoning (multi-turn), goal hijack, privilege abuse, human oversight — and
+the compliance report reframes the results as EU AI Act / ISO 42001 / NIST evidence:
+
+```bash
+agentkit run agentkit/packs/agentic --target agentkit/config/treasury-agent.yaml --compliance
+agentkit report --run <run_id> --format compliance        # Markdown, grouped by EU article
+agentkit report --run <run_id> --format compliance-json   # machine-readable for GRC
+```
+
+Empty or all-skipped runs fail closed (INCOMPLETE — no evidence is not a pass). This is
+technical readiness evidence, **not** a compliance/CE determination — see
+[docs/specs/compliance.md](docs/specs/compliance.md).
+
 ### Compare two runs (regression gate)
 
 ```bash

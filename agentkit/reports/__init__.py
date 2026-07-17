@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agentkit.core.schema import RunResult
 from agentkit.core.scoring import ScoreReport
+from agentkit.reports.compliance import to_compliance, to_compliance_json
 from agentkit.reports.html import to_html
 from agentkit.reports.json import to_json
 from agentkit.reports.junit import to_junit
@@ -14,6 +15,8 @@ _RENDERERS = {
     "junit": to_junit,
     "html": to_html,
     "md": to_markdown,
+    "compliance": to_compliance,
+    "compliance-json": to_compliance_json,
 }
 
 
@@ -25,4 +28,12 @@ def render(run: RunResult, score: ScoreReport, fmt: str) -> str:
     return renderer(run, score)
 
 
-__all__ = ["to_json", "to_junit", "to_html", "to_markdown", "render"]
+__all__ = [
+    "to_json",
+    "to_junit",
+    "to_html",
+    "to_markdown",
+    "to_compliance",
+    "to_compliance_json",
+    "render",
+]

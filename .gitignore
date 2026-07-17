@@ -28,4 +28,4 @@ htmlcov/
 Thumbs.db
 
 # aislop runtime artifacts
-.aislop/session.jsonl
+**/.aislop/session.jsonl

@@ -79,6 +79,7 @@ def run_cmd(
     tag: list[str] = typer.Option([], "--tag"),
     category: list[str] = typer.Option([], "--category"),
     format: str = typer.Option("table", "--format"),
+    compliance: bool = typer.Option(False, "--compliance"),
 ) -> None:
     try:
         cfg = load_target(target)
@@ -121,6 +122,10 @@ def run_cmd(
         )
     else:
         _print_table(rr, report)
+
+    if compliance:
+        typer.echo("")
+        typer.echo(render_report(rr, report, "compliance"))
 
     raise typer.Exit(0 if report.gate_passed else 1)
 
