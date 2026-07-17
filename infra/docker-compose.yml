@@ -1,6 +1,8 @@
 services:
   agentkit:
-    build: .
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
     image: agentkit
     ports:
       - "8000:8000"

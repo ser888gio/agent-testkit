@@ -1,7 +1,7 @@
 """Compliance report: reframe pass/fail results as EU AI Act / OWASP evidence.
 
 Same (run, score) -> str interface as reports/md.py. Evidence is already redacted
-upstream, so there is no new redaction path here. See MERGED-PLAN.md §0e.
+upstream, so there is no new redaction path here. See docs/archive/plans/MERGED-PLAN.md §0e.
 """
 
 from __future__ import annotations

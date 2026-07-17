@@ -6,7 +6,7 @@ Branch: `feat/dashboard-redesign-ui`
 
 ## Scope applied
 
-The research package in `dashboard-redesign-research/` was used for its transferable
+The research package in `docs/research/dashboard-redesign/` was used for its transferable
 Playwright/Cypress UX patterns:
 
 - overview to prioritized queue to detail to evidence

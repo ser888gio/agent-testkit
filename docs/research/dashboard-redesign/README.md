@@ -11,4 +11,5 @@ Prepared 2026-07-17.
 
 ## Current project status
 
-Research and planning are complete. No application source was available locally or through the connected GitHub account, so implementation, modified-file reporting, tests and before/after application screenshots remain pending repository access.
+Research and planning are complete. This package is now archived as supporting material for
+the dashboard redesign work captured in `implementation-report.md`.

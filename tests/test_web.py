@@ -540,7 +540,9 @@ def test_status_route_returns_json_for_safe_polling(tmp_path, monkeypatch):
 
 
 def test_poll_helper_avoids_html_injection_sink():
-    path = Path(__file__).resolve().parents[1] / "agentkit/web/static/poll.js"
+    import agentkit.web as web_pkg
+
+    path = Path(web_pkg.__file__).resolve().parent / "static" / "poll.js"
     js = path.read_text(encoding="utf-8")
 
     assert "innerHTML" not in js

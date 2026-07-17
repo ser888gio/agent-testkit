@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import typer
@@ -70,7 +71,7 @@ def _print_table(rr, report) -> None:
 def run_cmd(
     packs_dir: str = typer.Argument(...),
     target: str = typer.Option(..., "--target"),
-    db: str = typer.Option("agentkit.db", "--db"),
+    db: str = typer.Option("Database/agentkit.db", "--db"),
     fail_under: float = typer.Option(0.0, "--fail-under"),
     block_on_critical: bool = typer.Option(
         True, "--block-on-critical/--no-block-on-critical"
@@ -134,7 +135,7 @@ def report_cmd(
     run: str = typer.Option(..., "--run"),
     format: str = typer.Option("json", "--format"),
     out: str | None = typer.Option(None, "--out"),
-    db: str = typer.Option("agentkit.db", "--db"),
+    db: str = typer.Option("Database/agentkit.db", "--db"),
 ) -> None:
     store = Store(db)
     try:
@@ -159,7 +160,7 @@ def report_cmd(
 def compare_cmd(
     run_a: str = typer.Argument(...),
     run_b: str = typer.Argument(...),
-    db: str = typer.Option("agentkit.db", "--db"),
+    db: str = typer.Option("Database/agentkit.db", "--db"),
 ) -> None:
     store = Store(db)
     try:
@@ -194,11 +195,12 @@ def compare_cmd(
 def ui_cmd(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port"),
-    db: str = typer.Option("agentkit.db", "--db"),
+    db: str = typer.Option("Database/agentkit.db", "--db"),
 ) -> None:
     try:
         import uvicorn
 
+        os.environ["AGENTKIT_DB"] = db
         import agentkit.web.app  # noqa: F401
     except ModuleNotFoundError as exc:
         typer.echo(f"error: web UI is not available yet: {exc}", err=True)

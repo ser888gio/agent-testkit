@@ -121,7 +121,7 @@ def run_one(
         else:
             # On timeout the worker thread keeps running and may still be
             # mutating the sandbox, so the diff is not trustworthy evidence.
-            # See MERGED-PLAN.md §0a; killable isolation is Phase 2.
+            # See docs/archive/plans/MERGED-PLAN.md §0a; killable isolation is Phase 2.
             # ponytail: thread-cancel is best-effort on CPython.
             diff = None
 

@@ -3,7 +3,7 @@
 Pure data + lookup — no rules engine, no LLM, no eval. EU/ISO/NIST controls are
 inherited by every test through its Category (zero per-test annotation); the OWASP
 ASI code is refined from the test-id pack namespace because one Category
-(tool_use) spans several ASI codes. See MERGED-PLAN.md §0d.
+(tool_use) spans several ASI codes. See docs/archive/plans/MERGED-PLAN.md §0d.
 """
 
 from __future__ import annotations

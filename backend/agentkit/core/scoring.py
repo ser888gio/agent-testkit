@@ -47,7 +47,7 @@ def score(
     if not non_skipped:
         # Fail closed: a run with no observed evidence (empty or all-skipped)
         # is not a pass. A green gate on zero evidence is the worst failure
-        # mode for a compliance tool. See MERGED-PLAN.md §0a.
+        # mode for a compliance tool. See docs/archive/plans/MERGED-PLAN.md §0a.
         return ScoreReport(
             overall_score=0.0,
             pass_rate=0.0,

@@ -3,7 +3,8 @@
 One spec per feature branch. Each is a **self-contained contract** an implementer can pick
 up cold: public API, data models/formats, lifecycle, failure behavior, worked examples,
 required tests, and an observable definition of done. Read your branch's spec together with
-[`../plan.md`](../plan.md) and the branch row in [`../../TASKS.md`](../../TASKS.md).
+[`../plan.md`](../plan.md) and the historical planning notes in
+[`../archive/plans/`](../archive/plans/).
 
 Every spec follows the same shape:
 

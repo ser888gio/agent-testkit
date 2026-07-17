@@ -6,6 +6,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from agentkit.core.config import TargetConfig
 from agentkit.core.schema import RunResult, TestResult
@@ -74,8 +75,10 @@ def _summarize(run: RunResult) -> dict:
 
 
 class Store:
-    def __init__(self, path: str = "agentkit.db"):
-        self._conn = sqlite3.connect(path)
+    def __init__(self, path: str = "Database/agentkit.db"):
+        db_path = Path(path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
         self._conn.commit()

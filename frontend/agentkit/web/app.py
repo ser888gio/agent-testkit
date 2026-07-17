@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
 
+import agentkit
+
 # Eagerly import built-in domains so their sandboxes are registered before
 # `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
 # "feat/runner" section, for why this matters).
@@ -28,12 +30,12 @@ from agentkit.core.scoring import score
 from agentkit.core.store import Store
 
 BASE_DIR = Path(__file__).parent
+PACKAGE_DIR = Path(agentkit.__file__).resolve().parent
 # Roots the web run route is allowed to load targets/packs from. Callers pass
 # paths relative to these; anything resolving outside is rejected, so the route
 # can never be coaxed into loading arbitrary Python callables. See
-# MERGED-PLAN.md §0a; registered IDs replace this in Phase 1.
-_PACKAGE_DIR = BASE_DIR.parent
-_ALLOWED_ROOTS = (_PACKAGE_DIR / "config", _PACKAGE_DIR / "packs")
+# docs/archive/plans/MERGED-PLAN.md §0a; registered IDs replace this in Phase 1.
+_ALLOWED_ROOTS = (PACKAGE_DIR / "config", PACKAGE_DIR / "packs")
 
 # Loopback access token: generated per process, required for state-changing
 # routes. Reject public binding unless explicitly overridden for local dev.
@@ -82,7 +84,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 
 def get_db_path() -> str:
-    return os.environ.get("AGENTKIT_DB", "agentkit.db")
+    return os.environ.get("AGENTKIT_DB", "Database/agentkit.db")
 
 
 def get_store() -> Store:
@@ -260,12 +262,12 @@ def agents_page() -> HTMLResponse:
 @app.get("/agents/connect", response_class=HTMLResponse)
 def connect_agent_page() -> HTMLResponse:
     targets = sorted(
-        p.relative_to(_PACKAGE_DIR).as_posix()
-        for p in (_PACKAGE_DIR / "config").glob("*.yaml")
+        p.relative_to(PACKAGE_DIR).as_posix()
+        for p in (PACKAGE_DIR / "config").glob("*.yaml")
     )
     pack_roots = sorted(
-        p.relative_to(_PACKAGE_DIR).as_posix()
-        for p in (_PACKAGE_DIR / "packs").iterdir()
+        p.relative_to(PACKAGE_DIR).as_posix()
+        for p in (PACKAGE_DIR / "packs").iterdir()
         if p.is_dir()
     )
     return _render(
@@ -298,7 +300,7 @@ def agent_detail(agent_id: str) -> HTMLResponse:
 
 
 def get_packs_dir() -> Path:
-    return Path(os.environ.get("AGENTKIT_PACKS", "agentkit/packs"))
+    return Path(os.environ.get("AGENTKIT_PACKS", str(PACKAGE_DIR / "packs")))
 
 
 @app.get("/tests", response_class=HTMLResponse)
@@ -362,8 +364,8 @@ def settings_page() -> HTMLResponse:
         "settings.html",
         settings={
             "db_path": get_db_path(),
-            "package_dir": str(_PACKAGE_DIR),
-            "config_dir": str(_PACKAGE_DIR / "config"),
+            "package_dir": str(PACKAGE_DIR),
+            "config_dir": str(PACKAGE_DIR / "config"),
             "packs_dir": str(get_packs_dir()),
             "token_state": token_state,
         },
