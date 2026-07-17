@@ -1,0 +1,132 @@
+direction: down
+
+classes: {
+  python: {
+    style.stroke: "#1565C0"
+    style.stroke-width: 2
+    style.border-radius: 8
+  }
+  server: {
+    style.stroke: "#424242"
+    style.stroke-width: 2
+  }
+  users: {
+    style.stroke: "#2E7D32"
+    style.stroke-width: 2
+  }
+  db: {
+    style.stroke: "#E65100"
+    style.stroke-width: 2
+    shape: cylinder
+  }
+  file: {
+    style.stroke: "#5D4037"
+    style.stroke-width: 2
+    shape: page
+  }
+  sandbox: {
+    style.stroke: "#7B1FA2"
+    style.stroke-width: 2
+    style.border-radius: 8
+  }
+}
+
+developer: Developer / CI {
+  class: users
+  icon: https://icons.terrastruct.com/essentials%2F359-users.svg
+}
+
+machine: Developer machine {
+  packs: "Test packs (YAML + test_*.py)" {
+    class: file
+  }
+  configs: "Target configs (YAML, env-var interpolation)" {
+    class: file
+  }
+
+  cli: "agentkit CLI (Typer, Python)" {
+    class: python
+    icon: https://icons.terrastruct.com/dev%2Fpython.svg
+  }
+
+  runner: "Test runner (in-process, per-test timeout)" {
+    class: python
+    icon: https://icons.terrastruct.com/dev%2Fpython.svg
+  }
+
+  adapters: Agent adapters {
+    callable: "CallableAgent (in-process import)" {
+      class: python
+      icon: https://icons.terrastruct.com/dev%2Fpython.svg
+    }
+    httpagent: "HTTPAgent (httpx, sync)" {
+      class: python
+      icon: https://icons.terrastruct.com/dev%2Fpython.svg
+    }
+  }
+
+  sandboxes: "In-process sandboxes (no network)" {
+    treasury: "TreasurySandbox (fake bank / invoices)" {
+      class: sandbox
+    }
+    email: "EmailSandbox (fake inbox / outbound ledger)" {
+      class: sandbox
+    }
+  }
+
+  redactor: "Redactor (masks keys, emails, IBANs...)" {
+    class: python
+  }
+
+  store: "agentkit.db (SQLite)" {
+    class: db
+  }
+
+  reports: "Report artifacts (json / junit / html / md / compliance)" {
+    class: file
+  }
+
+  dashboard: "Dashboard (FastAPI + uvicorn, 127.0.0.1:8000)" {
+    class: python
+    icon: https://icons.terrastruct.com/dev%2Fpython.svg
+  }
+
+  stub: "Demo stub endpoint (uvicorn, port 8001, optional)" {
+    class: server
+    icon: https://icons.terrastruct.com/tech%2F022-server.svg
+  }
+}
+
+target: "Target agent endpoint (external, user-provided)" {
+  class: server
+  icon: https://icons.terrastruct.com/tech%2F022-server.svg
+}
+
+developer -> machine.cli: "commands (Typer argv), CI gates on exit code"
+developer -> machine.dashboard: "browser, HTTP loopback :8000" {
+  style.stroke-dash: 5
+}
+
+machine.cli -> machine.packs: "file reads (loader discovery)"
+machine.cli -> machine.configs: "file reads (target load)"
+machine.cli -> machine.runner: "in-process call (target + tests)"
+machine.cli -> machine.dashboard: "agentkit ui starts uvicorn" {
+  style.stroke-dash: 5
+}
+
+machine.runner -> machine.adapters.callable: "direct call per turn"
+machine.runner -> machine.adapters.httpagent: "request per turn"
+machine.runner -> machine.sandboxes: "reset / snapshot / diff / events (in-process)"
+machine.runner -> machine.redactor: "evidence before storage"
+
+machine.adapters.callable -> machine.sandboxes: "side effects (payments, sent mail)"
+machine.adapters.httpagent -> target: "HTTP (httpx), Bearer token from env"
+machine.adapters.httpagent -> machine.stub: "HTTP demo target :8001" {
+  style.stroke-dash: 5
+}
+
+machine.cli -> machine.store: "sqlite3 save_run / get_run (file I/O)"
+machine.store -> machine.redactor: "second redaction pass on save"
+machine.cli -> machine.reports: "render json/junit/html/md/compliance"
+
+machine.dashboard -> machine.store: "SQL reads + token-gated run inserts"

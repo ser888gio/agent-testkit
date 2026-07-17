@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from agentkit.core.config import TargetConfig
-from agentkit.core.redaction import Redactor
 from agentkit.core.schema import RunResult, TestResult
 from agentkit.core.scoring import ScoreReport
 
@@ -85,7 +84,6 @@ class Store:
         self._conn.close()
 
     def save_run(self, agent: TargetConfig, run: RunResult, score: ScoreReport) -> None:
-        redactor = Redactor(agent.evidence.redact)
         now = datetime.now(timezone.utc).isoformat()
         status = "passed" if score.gate_passed else "failed"
 
@@ -119,16 +117,6 @@ class Store:
             rows = []
             for r in run.results:
                 payload = json.loads(r.model_dump_json())
-                payload["request"] = (
-                    redactor.redact(payload["request"])
-                    if agent.evidence.store_request
-                    else None
-                )
-                payload["response"] = (
-                    redactor.redact(payload["response"])
-                    if agent.evidence.store_response
-                    else None
-                )
                 rows.append(
                     (
                         run.run_id,
@@ -152,6 +140,39 @@ class Store:
     def list_agents(self) -> list[AgentRow]:
         cur = self._conn.execute("SELECT * FROM agents ORDER BY created_at DESC")
         return [AgentRow(**dict(row)) for row in cur.fetchall()]
+
+    def list_tests(self) -> list[dict]:
+        """Distinct tests seen across all runs, with their latest status."""
+        cur = self._conn.execute(
+            """
+            SELECT tr.test_id, tr.category, tr.risk, tr.status,
+                   r.id AS run_id, r.agent_id
+            FROM test_results tr
+            JOIN runs r ON r.id = tr.run_id
+            ORDER BY r.started_at DESC, tr.id
+            """
+        )
+        seen: dict[str, dict] = {}
+        for row in cur.fetchall():
+            if row["test_id"] in seen:
+                seen[row["test_id"]]["run_count"] += 1
+                continue
+            seen[row["test_id"]] = {
+                "test_id": row["test_id"],
+                "category": row["category"],
+                "risk": row["risk"],
+                "latest_status": row["status"],
+                "latest_run_id": row["run_id"],
+                "latest_agent_id": row["agent_id"],
+                "run_count": 1,
+            }
+        return sorted(seen.values(), key=lambda t: (t["category"], t["test_id"]))
+
+    def run_count(self, agent_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM runs WHERE agent_id = ?", (agent_id,)
+        ).fetchone()
+        return row["n"]
 
     def list_runs(self, agent_id: str | None = None, limit: int = 50) -> list[RunRow]:
         if agent_id is not None:

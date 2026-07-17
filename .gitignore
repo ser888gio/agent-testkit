@@ -26,3 +26,9 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# aislop runtime artifacts
+**/.aislop/session.jsonl
+
+# Diagram plugin ephemeral state
+.diagram/

@@ -74,6 +74,11 @@ class Redactor:
     def redact(self, value: Any) -> Any:
         if isinstance(value, str):
             return self.redact_text(value)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            masked = self.redact_text(str(value))
+            return masked if masked != str(value) else value
         if isinstance(value, dict):
             return {k: self.redact(v) for k, v in value.items()}
         if isinstance(value, list):

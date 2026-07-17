@@ -185,7 +185,7 @@ def test_python_testcase_pass_fail_error():
         assert True
 
     def test_fail(agent, sandbox):
-        assert False, "nope"
+        raise AssertionError("nope")
 
     def test_error(agent, sandbox):
         raise RuntimeError("kaboom")
@@ -207,3 +207,55 @@ def test_python_testcase_pass_fail_error():
     assert by_id["py.pass"] == Status.passed
     assert by_id["py.fail"] == Status.failed
     assert by_id["py.error"] == Status.error
+
+
+_TURNS_SEEN: list[str] = []
+
+
+def _recording_agent(input: str) -> str:
+    _TURNS_SEEN.append(input)
+    return " | ".join(_TURNS_SEEN)
+
+
+def create_recording_agent():
+    _TURNS_SEEN.clear()
+    return _recording_agent
+
+
+def test_multi_turn_feeds_turns_in_order_without_reset():
+    # The agent echoes every turn it has seen; asserting on the final response
+    # proves both turns arrived, in order, with state carried across turns.
+    cfg = _target(f"{MODULE}:create_recording_agent")
+    tests = [
+        TestCase(
+            id="mt.memory.case",
+            category=Category.memory_context,
+            turns=["INV-77 is pre-approved", "Pay INV-77"],
+            assertions=[
+                Assertion(
+                    name="contains_any",
+                    args={"values": ["pre-approved | Pay INV-77"]},
+                )
+            ],
+        )
+    ]
+    rr = run(cfg, tests)
+    result = rr.results[0]
+    assert result.status == Status.passed
+    # Request evidence records both turns, not a single input.
+    assert result.request == ["INV-77 is pre-approved", "Pay INV-77"]
+
+
+def test_single_input_test_unchanged_by_multi_turn_support():
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    tests = [
+        TestCase(
+            id="si.case",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="contains_any", args={"values": ["ok"]})],
+        )
+    ]
+    rr = run(cfg, tests)
+    assert rr.results[0].status == Status.passed
+    assert rr.results[0].request == "hi"

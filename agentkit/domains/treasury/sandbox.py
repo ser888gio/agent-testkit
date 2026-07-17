@@ -31,7 +31,7 @@ class Payment:
 
 
 class FakeBank:
-    def __init__(self, sandbox: "TreasurySandbox"):
+    def __init__(self, sandbox: TreasurySandbox):
         self.payments: list[Payment] = []
         self._sandbox = sandbox
 

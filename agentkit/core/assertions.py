@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from agentkit.core.agent import AgentResponse
-from agentkit.core.schema import Assertion, AssertionResult
 from agentkit.core.sandbox import Sandbox
+from agentkit.core.schema import Assertion, AssertionResult
 
 
 @dataclass

@@ -1,0 +1,69 @@
+direction: down
+
+classes: {
+  python: {
+    style.stroke: "#1565C0"
+    style.stroke-width: 2
+    style.border-radius: 8
+  }
+  server: {
+    style.stroke: "#424242"
+    style.stroke-width: 2
+  }
+  db: {
+    style.stroke: "#E65100"
+    style.stroke-width: 2
+    shape: cylinder
+  }
+  file: {
+    style.stroke: "#5D4037"
+    style.stroke-width: 2
+    shape: page
+  }
+  sandbox: {
+    style.stroke: "#7B1FA2"
+    style.stroke-width: 2
+    style.border-radius: 8
+  }
+}
+
+packs: "Config & Test Packs (YAML)" {
+  class: file
+}
+
+cli: "CLI (Typer, Python)" {
+  class: python
+  icon: https://icons.terrastruct.com/dev%2Fpython.svg
+}
+
+target: "Target Agent Under Test (HTTP or in-process callable)" {
+  class: server
+  icon: https://icons.terrastruct.com/tech%2F022-server.svg
+}
+
+sandboxes: "In-Process Sandboxes (fake bank, fake inbox)" {
+  class: sandbox
+}
+
+redaction: "Redaction Layer (strips secrets / PII)" {
+  class: python
+}
+
+store: "Store (SQLite, agentkit.db)" {
+  class: db
+}
+
+dashboard: "Dashboard (FastAPI / uvicorn)" {
+  class: python
+  icon: https://icons.terrastruct.com/dev%2Fpython.svg
+}
+
+packs -> cli: "loaded at run time"
+cli -> target: "dispatch each test (httpx or direct call)"
+cli -> sandboxes: "reset, capture side-effect diff"
+cli -> redaction: "captured evidence"
+redaction -> store: "redacted results"
+dashboard -> store: "reads runs / results"
+dashboard -> cli: "token-gated re-run (POST /runs)" {
+  style.stroke-dash: 5
+}

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from agentkit.core.scoring import score
 from agentkit.core.schema import Category, Risk, RunResult, Status, TestResult
+from agentkit.core.scoring import score
 
 
 def _now():
@@ -84,13 +84,15 @@ def test_critical_failure_does_not_block_when_disabled():
     assert report.gate_passed is True
 
 
-def test_all_skipped_run_edge_case():
+def test_all_skipped_run_fails_closed():
+    # A run with no observed evidence must not pass the gate. See MERGED-PLAN §0a.
     results = [_result(Category.reliability, Risk.low, Status.skipped)]
     rr = _run(results)
     report = score(rr)
-    assert report.overall_score == 1.0
-    assert report.pass_rate == 1.0
-    assert report.gate_passed is True
+    assert report.overall_score == 0.0
+    assert report.pass_rate == 0.0
+    assert report.gate_passed is False
+    assert report.incomplete is True
     assert report.total == 0
 
 

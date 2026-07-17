@@ -3,26 +3,64 @@
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+import yaml
+from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from pydantic import ValidationError
 
 # Eagerly import built-in domains so their sandboxes are registered before
 # `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
 # "feat/runner" section, for why this matters).
 import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
+from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentkit.core.config import load_target
 from agentkit.core.loader import discover
 from agentkit.core.regressions import compare
 from agentkit.core.runner import run as run_tests
+from agentkit.core.schema import Category, Risk, TestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import Store
 
 BASE_DIR = Path(__file__).parent
+# Roots the web run route is allowed to load targets/packs from. Callers pass
+# paths relative to these; anything resolving outside is rejected, so the route
+# can never be coaxed into loading arbitrary Python callables. See
+# MERGED-PLAN.md §0a; registered IDs replace this in Phase 1.
+_PACKAGE_DIR = BASE_DIR.parent
+_ALLOWED_ROOTS = (_PACKAGE_DIR / "config", _PACKAGE_DIR / "packs")
+
+# Loopback access token: generated per process, required for state-changing
+# routes. Reject public binding unless explicitly overridden for local dev.
+_ACCESS_TOKEN = os.environ.get("AGENTKIT_WEB_TOKEN") or secrets.token_urlsafe(16)
+
+
+def _resolve_within_allowed(value: str) -> Path:
+    candidate = Path(value).resolve()
+    for root in _ALLOWED_ROOTS:
+        try:
+            candidate.relative_to(root.resolve())
+        except ValueError:
+            continue
+        if candidate.exists():
+            return candidate
+    raise HTTPException(
+        status_code=400,
+        detail="target/packs must resolve to a file under config/ or packs/",
+    )
+
+
+def _require_token(request: Request) -> None:
+    token = request.query_params.get("token") or request.headers.get(
+        "x-agentkit-token", ""
+    )
+    if not secrets.compare_digest(token, _ACCESS_TOKEN):
+        raise HTTPException(status_code=403, detail="missing or invalid access token")
 
 _env = Environment(
     loader=FileSystemLoader(str(BASE_DIR / "templates")),
@@ -62,7 +100,13 @@ def agents_page() -> HTMLResponse:
     rows = []
     for a in agents:
         latest = store.list_runs(a.id, limit=1)
-        rows.append({"agent": a, "latest": latest[0] if latest else None})
+        rows.append(
+            {
+                "agent": a,
+                "latest": latest[0] if latest else None,
+                "run_count": store.run_count(a.id),
+            }
+        )
     return _render("agents.html", agent_rows=rows)
 
 
@@ -71,15 +115,100 @@ def agent_detail(agent_id: str) -> HTMLResponse:
     store = get_store()
     runs = store.list_runs(agent_id)
     matrix = store.pass_fail_matrix(agent_id)
-    return _render("agent_detail.html", agent_id=agent_id, runs=runs, matrix=matrix)
+    latest_run_id = runs[0].id if runs else None
+    return _render(
+        "agent_detail.html",
+        agent_id=agent_id,
+        runs=runs,
+        matrix=matrix,
+        latest_run_id=latest_run_id,
+    )
+
+
+def get_packs_dir() -> Path:
+    return Path(os.environ.get("AGENTKIT_PACKS", "agentkit/packs"))
+
+
+@app.get("/tests", response_class=HTMLResponse)
+def tests_page() -> HTMLResponse:
+    store = get_store()
+    tests = store.list_tests()
+    return _render("tests.html", tests=tests)
+
+
+@app.get("/tests/new", response_class=HTMLResponse)
+def new_test_form(error: str | None = None, values: dict | None = None) -> HTMLResponse:
+    return _render(
+        "test_new.html",
+        categories=[c.value for c in Category],
+        risks=[r.value for r in Risk],
+        assertions=sorted(ASSERTION_REGISTRY),
+        error=error,
+        values=values or {},
+    )
+
+
+@app.post("/tests")
+def create_test(
+    test_id: str = Form(...),
+    category: str = Form(...),
+    risk: str = Form(...),
+    input: str = Form(...),
+    assertion_name: str = Form(...),
+    assertion_args: str = Form(""),
+) -> Response:
+    values = {
+        "test_id": test_id,
+        "category": category,
+        "risk": risk,
+        "input": input,
+        "assertion_name": assertion_name,
+        "assertion_args": assertion_args,
+    }
+
+    def _fail(message: str) -> HTMLResponse:
+        return new_test_form(error=message, values=values)
+
+    args: dict = {}
+    if assertion_args.strip():
+        try:
+            args = yaml.safe_load(assertion_args)
+        except yaml.YAMLError as exc:
+            return _fail(f"Assertion args are not valid YAML: {exc}")
+        if not isinstance(args, dict):
+            return _fail("Assertion args must be a YAML mapping, e.g. {values: [\"sk-\"]}")
+
+    raw = {
+        "id": test_id,
+        "category": category,
+        "risk": risk,
+        "input": input,
+        "assertions": [{"name": assertion_name, "args": args}],
+    }
+    try:
+        test_case = TestCase.model_validate(raw)
+    except ValidationError as exc:
+        return _fail(f"Invalid test: {exc.errors()[0]['msg']}")
+
+    if assertion_name not in ASSERTION_REGISTRY:
+        return _fail(f"Unknown assertion '{assertion_name}'")
+
+    dest = get_packs_dir() / "user" / f"{test_id}.yaml"
+    if dest.exists():
+        return _fail(f"A test file already exists at {dest}")
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    payload = test_case.model_dump(mode="json", exclude_defaults=True)
+    dest.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return RedirectResponse(url="/tests", status_code=303)
 
 
 def _load_run_or_404(run_id: str):
     store = get_store()
     try:
         return store.get_run(run_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"run '{run_id}' not found") from exc
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
@@ -132,10 +261,18 @@ def run_status(run_id: str, request: Request) -> Response:
     return _render("_status_fragment.html", run=rr, report=report)
 
 
+def _safe_path(p: str) -> Path:
+    resolved = Path(p).resolve()
+    if not resolved.is_relative_to(Path.cwd().resolve()):
+        raise HTTPException(status_code=400, detail="path escapes project root")
+    return resolved
+
+
 @app.post("/runs")
-def run_again(target: str, packs: str) -> RedirectResponse:
-    cfg = load_target(target)
-    tests = discover(packs)
+def run_again(target: str, packs: str, request: Request) -> RedirectResponse:
+    _require_token(request)
+    cfg = load_target(str(_resolve_within_allowed(target)))
+    tests = discover(str(_resolve_within_allowed(packs)))
     rr = run_tests(cfg, tests)
     report = score(rr)
     store = get_store()

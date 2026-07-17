@@ -1,0 +1,17 @@
+services:
+  agentkit:
+    build: .
+    image: agentkit
+    ports:
+      - "8000:8000"
+    environment:
+      # Override to point at a different packs dir or db location if needed.
+      AGENTKIT_DB: /data/agentkit.db
+      AGENTKIT_PACKS: /opt/venv/lib/python3.12/site-packages/agentkit/packs
+    volumes:
+      # Persist the sqlite run store across container restarts.
+      - agentkit-data:/data
+    restart: unless-stopped
+
+volumes:
+  agentkit-data:
