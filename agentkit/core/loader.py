@@ -57,9 +57,11 @@ def _valid_risks() -> str:
 
 
 def _build_test_case(raw: dict[str, Any], path: Path) -> TestCase:
-    for required in ("id", "input", "assertions"):
+    for required in ("id", "assertions"):
         if required not in raw:
             raise LoaderError(f"{path}: missing required field '{required}'")
+    if ("input" in raw) == ("turns" in raw):
+        raise LoaderError(f"{path}: exactly one of 'input' or 'turns' is required")
 
     if "category" in raw and raw["category"] not in {c.value for c in Category}:
         raise LoaderError(

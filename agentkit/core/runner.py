@@ -77,6 +77,17 @@ def _redact_evidence(
     return request_evidence, response_evidence
 
 
+def _redact_assertions(
+    redactor: Redactor, results: list[AssertionResult]
+) -> list[AssertionResult]:
+    # Assertion details can echo response text or sandbox values, so they are
+    # part of the evidence envelope and must be redacted before storage.
+    return [
+        r.model_copy(update={"detail": redactor.redact_text(r.detail)})
+        for r in results
+    ]
+
+
 def run_one(
     agent: Agent,
     sandbox: Sandbox | None,
@@ -94,12 +105,24 @@ def run_one(
         else:
             before = None
 
-        response = _run_with_timeout(agent, test.input, test.timeout_s)
+        # Single-input tests run one turn; multi-turn tests run each turn in
+        # sequence WITHOUT resetting the sandbox between turns, so state (and
+        # any poisoned memory) carries across turns like a server-side session.
+        # The final turn's response is what assertions run against.
+        turns = test.turns if test.turns else [test.input]
+        for turn in turns:
+            response = _run_with_timeout(agent, turn, test.timeout_s)
+            if response.error == "timeout":
+                break
 
-        if sandbox is not None:
+        if sandbox is not None and response.error != "timeout":
             after = sandbox.snapshot()
             diff = sandbox.diff(before, after)
         else:
+            # On timeout the worker thread keeps running and may still be
+            # mutating the sandbox, so the diff is not trustworthy evidence.
+            # See MERGED-PLAN.md §0a; killable isolation is Phase 2.
+            # ponytail: thread-cancel is best-effort on CPython.
             diff = None
 
         ctx = AssertionContext(
@@ -110,8 +133,9 @@ def run_one(
         )
         assertion_results = [evaluate(a, ctx) for a in test.assertions]
         status = _derive_status(response, assertion_results, test)
+        request = test.turns if test.turns else test.input
         request_evidence, response_evidence = _redact_evidence(
-            evidence, redactor, test.input, response
+            evidence, redactor, request, response
         )
 
         return TestResult(
@@ -120,11 +144,11 @@ def run_one(
             risk=test.risk,
             status=status,
             latency_ms=response.latency_ms,
-            assertion_results=assertion_results,
+            assertion_results=_redact_assertions(redactor, assertion_results),
             request=request_evidence,
             response=response_evidence,
-            sandbox_diff=diff,
-            error=response.error,
+            sandbox_diff=redactor.redact(diff) if diff is not None else None,
+            error=redactor.redact_text(response.error) if response.error else None,
             started_at=started,
             finished_at=_now(),
         )
@@ -167,9 +191,9 @@ def _run_python_test(
         latency_ms = (time.perf_counter() - t0) * 1000
 
         status = Status.passed if passed else Status.failed
-        assertion_results = [
-            AssertionResult(name=test.id, passed=passed, detail=detail)
-        ]
+        assertion_results = _redact_assertions(
+            redactor, [AssertionResult(name=test.id, passed=passed, detail=detail)]
+        )
         request_evidence, response_evidence = _redact_evidence(
             evidence, redactor, "<python test>", AgentResponse(text="", error=error)
         )
@@ -184,7 +208,7 @@ def _run_python_test(
             request=request_evidence,
             response=response_evidence,
             sandbox_diff=None,
-            error=error,
+            error=redactor.redact_text(error) if error else None,
             started_at=started,
             finished_at=_now(),
         )

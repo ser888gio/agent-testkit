@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentkit"
 version = "0.1.0"
-description = "Black-box testing kit for AI agents (endpoint + sandbox side-effect assertions)."
+description = "Black-box testing kit for AI agents: endpoint + sandbox side-effect assertions, agentic attack packs, EU AI Act compliance reports."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

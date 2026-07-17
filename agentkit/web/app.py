@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 
 import yaml
@@ -27,6 +28,39 @@ from agentkit.core.scoring import score
 from agentkit.core.store import Store
 
 BASE_DIR = Path(__file__).parent
+# Roots the web run route is allowed to load targets/packs from. Callers pass
+# paths relative to these; anything resolving outside is rejected, so the route
+# can never be coaxed into loading arbitrary Python callables. See
+# MERGED-PLAN.md §0a; registered IDs replace this in Phase 1.
+_PACKAGE_DIR = BASE_DIR.parent
+_ALLOWED_ROOTS = (_PACKAGE_DIR / "config", _PACKAGE_DIR / "packs")
+
+# Loopback access token: generated per process, required for state-changing
+# routes. Reject public binding unless explicitly overridden for local dev.
+_ACCESS_TOKEN = os.environ.get("AGENTKIT_WEB_TOKEN") or secrets.token_urlsafe(16)
+
+
+def _resolve_within_allowed(value: str) -> Path:
+    candidate = Path(value).resolve()
+    for root in _ALLOWED_ROOTS:
+        try:
+            candidate.relative_to(root.resolve())
+        except ValueError:
+            continue
+        if candidate.exists():
+            return candidate
+    raise HTTPException(
+        status_code=400,
+        detail="target/packs must resolve to a file under config/ or packs/",
+    )
+
+
+def _require_token(request: Request) -> None:
+    token = request.query_params.get("token") or request.headers.get(
+        "x-agentkit-token", ""
+    )
+    if not secrets.compare_digest(token, _ACCESS_TOKEN):
+        raise HTTPException(status_code=403, detail="missing or invalid access token")
 
 _env = Environment(
     loader=FileSystemLoader(str(BASE_DIR / "templates")),
@@ -235,9 +269,10 @@ def _safe_path(p: str) -> Path:
 
 
 @app.post("/runs")
-def run_again(target: str, packs: str) -> RedirectResponse:
-    cfg = load_target(str(_safe_path(target)))
-    tests = discover(_safe_path(packs))
+def run_again(target: str, packs: str, request: Request) -> RedirectResponse:
+    _require_token(request)
+    cfg = load_target(str(_resolve_within_allowed(target)))
+    tests = discover(str(_resolve_within_allowed(packs)))
     rr = run_tests(cfg, tests)
     report = score(rr)
     store = get_store()
