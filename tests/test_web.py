@@ -135,14 +135,40 @@ def test_run_harness_shows_findings_skills_context_summary(tmp_path, monkeypatch
 
     assert resp.status_code == 200
     assert "Test Harness" in resp.text
-    assert "Findings During Test" in resp.text
-    assert "Context Summary" in resp.text
+    assert "Workflow / History" in resp.text
+    assert "Harness Environment" in resp.text
+    assert "Memory &amp; Context" in resp.text
+    assert "No memory/context checks were included" in resp.text
     assert "Skills" in resp.text
     assert "Action Safety" in resp.text
     assert "b.fail.case" in resp.text
     assert "not_contains" in resp.text
     assert f'data-poll-url="/runs/{rr.run_id}/status"' in resp.text
     assert rr.run_id in resp.text
+    assert 'href="/harness" class="active" aria-current="page"' in resp.text
+
+
+def test_harness_nav_redirects_to_latest_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/harness", follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"/runs/{rr.run_id}/harness"
+
+
+def test_harness_nav_has_empty_state_without_runs(tmp_path, monkeypatch):
+    db = str(tmp_path / "empty.db")
+    Store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/harness")
+
+    assert resp.status_code == 200
+    assert "No harness data yet" in resp.text
+    assert 'href="/harness" class="active" aria-current="page"' in resp.text
 
 
 def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkeypatch):
@@ -165,6 +191,7 @@ def test_sidebar_shows_nav_tabs(tmp_path, monkeypatch):
     resp = client.get("/")
     assert resp.status_code == 200
     assert 'class="sidebar"' in resp.text
+    assert 'href="/harness"' in resp.text
     assert 'href="/"' in resp.text
     assert 'href="/agents"' in resp.text
     assert 'href="/tests"' in resp.text

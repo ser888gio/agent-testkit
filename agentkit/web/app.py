@@ -23,7 +23,7 @@ from agentkit.core.config import load_target
 from agentkit.core.loader import discover
 from agentkit.core.regressions import compare
 from agentkit.core.runner import run as run_tests
-from agentkit.core.schema import Category, Risk, TestCase
+from agentkit.core.schema import Category, Risk, Status, TestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import Store
 
@@ -437,6 +437,9 @@ def _load_run_or_404(run_id: str):
 def _harness_view(run, report) -> dict:
     categories = sorted({r.category.value for r in run.results})
     assertions = sorted({a.name for r in run.results for a in r.assertion_results})
+    memory_results = [
+        r for r in run.results if r.category == Category.memory_context
+    ]
     skills = []
     for category_score in report.category_scores:
         category = category_score.category.value
@@ -456,8 +459,7 @@ def _harness_view(run, report) -> dict:
 
     findings = []
     for index, result in enumerate(
-        sorted(run.results, key=lambda r: (_STATUS_RANK.get(r.status.value, 1), r.test_id)),
-        start=1,
+        sorted(run.results, key=lambda r: (r.started_at, r.test_id)), start=1
     ):
         failed_assertions = [a for a in result.assertion_results if not a.passed]
         details = [a.detail for a in failed_assertions if a.detail]
@@ -469,8 +471,11 @@ def _harness_view(run, report) -> dict:
                 "risk": result.risk.value,
                 "status": result.status.value,
                 "latency_ms": result.latency_ms,
+                "started": str(result.started_at)[:19].replace("T", " "),
                 "assertions": result.assertion_results,
-                "summary": result.error or "; ".join(details) or "No finding detail.",
+                "summary": result.error
+                or "; ".join(details)
+                or "All assertions passed.",
             }
         )
 
@@ -490,10 +495,27 @@ def _harness_view(run, report) -> dict:
             "finished": _short_date(run.finished_at),
             "categories": categories,
             "assertions": assertions,
+            "duration_ms": _duration_ms(run.started_at, run.finished_at),
+        },
+        "memory": {
+            "total": len(memory_results),
+            "passed": sum(r.status == Status.passed for r in memory_results),
+            "state_changes": sum(bool(r.sandbox_diff) for r in memory_results),
+            "results": sorted(memory_results, key=lambda r: (r.started_at, r.test_id)),
         },
         "skills": skills,
         "findings": findings,
     }
+
+
+@app.get("/harness", response_class=HTMLResponse)
+def latest_harness() -> Response:
+    latest_runs = get_store().list_runs(limit=1)
+    if not latest_runs:
+        return _render("harness_empty.html", active="harness")
+    return RedirectResponse(
+        url=f"/runs/{latest_runs[0].id}/harness", status_code=302
+    )
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
@@ -551,6 +573,7 @@ def run_harness(run_id: str) -> HTMLResponse:
         run=run,
         report=report,
         harness=_harness_view(run, report),
+        active="harness",
     )
 
 

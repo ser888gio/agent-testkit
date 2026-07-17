@@ -776,6 +776,47 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.harness-meta-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.harness-meta-summary div,
+.harness-meta-summary div:last-child {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.2rem;
+  padding: 0.75rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+}
+
+.harness-meta-summary div:last-child { border-right: 0; }
+
+.memory-check-list {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.memory-check-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.memory-empty { margin: 0.75rem 0 0; }
+
 .skill-list {
   display: grid;
   gap: 0.65rem;
@@ -967,6 +1008,16 @@ pre {
   .finding-item {
     grid-template-columns: 1fr;
   }
+
+  .harness-meta-summary { grid-template-columns: 1fr; }
+
+  .harness-meta-summary div,
+  .harness-meta-summary div:last-child {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .harness-meta-summary div:last-child { border-bottom: 0; }
 
   .finding-side {
     justify-content: start;

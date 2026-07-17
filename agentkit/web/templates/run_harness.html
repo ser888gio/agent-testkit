@@ -8,7 +8,7 @@
   <div>
     <p class="eyebrow">Page harness</p>
     <h1>Test Harness</h1>
-    <p class="page-subtitle">Live run status, finding stream, skills, context, and summary for this test pass.</p>
+    <p class="page-subtitle">Inspect the environment, skills, memory and context, and the workflow recorded during this test run.</p>
   </div>
 </header>
 
@@ -26,7 +26,7 @@
     {{ stat_card("Overall", harness.summary.overall_score ~ "%", "weighted score") }}
     {{ stat_card("Pass Rate", harness.summary.pass_rate ~ "%", harness.summary.passed ~ " of " ~ harness.summary.total ~ " tests") }}
     {{ stat_card("Critical Findings", harness.summary.critical_failures, "blocks safety gate", "danger" if harness.summary.critical_failures else "") }}
-    {{ stat_card("Findings", harness.findings | length, "ordered by attention") }}
+    {{ stat_card("Steps", harness.findings | length, "recorded workflow") }}
   </div>
 </section>
 
@@ -34,8 +34,8 @@
   <article class="panel">
     <div class="panel-header">
       <div>
-        <h2>Context Summary</h2>
-        <p>Run identity and coverage scope.</p>
+        <h2>Harness Environment</h2>
+        <p>Execution identity, timing, and coverage context.</p>
       </div>
     </div>
     <dl class="harness-meta">
@@ -43,6 +43,7 @@
       <div><dt>Run ID</dt><dd class="mono">{{ harness.context.run_id }}</dd></div>
       <div><dt>Started</dt><dd>{{ harness.context.started }}</dd></div>
       <div><dt>Finished</dt><dd>{{ harness.context.finished }}</dd></div>
+      <div><dt>Duration</dt><dd>{% if harness.context.duration_ms is not none %}{{ harness.context.duration_ms | round(1) }} ms{% else %}Unavailable{% endif %}</dd></div>
       <div><dt>Categories</dt><dd>{{ harness.context.categories | join(", ") }}</dd></div>
       <div><dt>Assertions</dt><dd>{{ harness.context.assertions | join(", ") }}</dd></div>
     </dl>
@@ -73,15 +74,41 @@
 <section class="panel">
   <div class="panel-header">
     <div>
-      <h2>Findings During Test</h2>
-      <p>Failure-first stream of each observed result and assertion outcome.</p>
+      <h2>Memory &amp; Context</h2>
+      <p>Memory/context probes and captured state changes. Agent-internal memory contents are not persisted.</p>
+    </div>
+  </div>
+  <dl class="harness-meta harness-meta-summary">
+    <div><dt>Checks</dt><dd>{{ harness.memory.total }}</dd></div>
+    <div><dt>Passed</dt><dd>{{ harness.memory.passed }} of {{ harness.memory.total }}</dd></div>
+    <div><dt>State changes</dt><dd>{{ harness.memory.state_changes }} captured</dd></div>
+  </dl>
+  {% if harness.memory.results %}
+  <ul class="memory-check-list">
+    {% for result in harness.memory.results %}
+    <li>
+      <span class="mono">{{ result.test_id }}</span>
+      {{ status_badge(result.status.value) }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="quiet memory-empty">No memory/context checks were included in this run.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Workflow / History</h2>
+      <p>Chronological record of every test step and assertion outcome.</p>
     </div>
   </div>
   <ol class="finding-stream">
     {% for finding in harness.findings %}
     <li class="finding-item">
       <div class="finding-main">
-        <span class="mono">Step {{ finding.step }}</span>
+        <span class="mono">Step {{ finding.step }} &middot; {{ finding.started }}</span>
         <h3>{{ finding.test_id }}</h3>
         <p>{{ finding.summary }}</p>
       </div>
