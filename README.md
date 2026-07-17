@@ -98,6 +98,10 @@ The dashboard (`agentkit ui`) shows the same run as a category × test pass/fail
 a test-detail page for each test showing the (already redacted) request/response, each
 assertion's pass/fail + detail, the sandbox before/after diff, and latency.
 
+`agentkit ui` binds to `127.0.0.1` by default. Its "re-run" endpoint can trigger loading of
+target/pack files and execution of Python test files under the packs directory — only pass
+`--host 0.0.0.0` on a trusted network.
+
 ### The email exfiltration demo
 
 The most relatable demo: a vendor email tries to trick the agent into forwarding a payroll

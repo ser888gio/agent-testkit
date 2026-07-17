@@ -1,19 +1,30 @@
 {% extends "base.html" %}
 {% block title %}{{ agent_id }} - agentkit{% endblock %}
 {% block content %}
+<p><a href="/agents">&larr; All agents</a></p>
 <h1>{{ agent_id }}</h1>
+
+{% if runs %}
+<p class="score-header">
+  {{ runs | length }} run{{ '' if runs | length == 1 else 's' }} |
+  Latest gate:
+  <span class="status-{{ runs[0].status }}">{{ runs[0].status }}</span> |
+  Latest score: {{ (runs[0].score.overall_score * 100) | round(0, "floor") }}%
+</p>
+{% endif %}
 
 <h2>Run history</h2>
 {% if not runs %}
 <p class="empty-state">No runs yet for this agent.</p>
 {% else %}
 <table>
-<tr><th>Run</th><th>Started</th><th>Gate</th></tr>
+<tr><th>Run</th><th>Started</th><th>Gate</th><th>Score</th></tr>
 {% for r in runs %}
-<tr class="status-{{ r.status }}">
+<tr>
   <td><a href="/runs/{{ r.id }}">{{ r.id[:8] }}</a></td>
   <td>{{ r.started_at }}</td>
-  <td>{{ r.status }}</td>
+  <td class="status-{{ r.status }}">{{ r.status }}</td>
+  <td>{{ (r.score.overall_score * 100) | round(0, "floor") }}%</td>
 </tr>
 {% endfor %}
 </table>
@@ -27,7 +38,9 @@
 <h3>{{ cat }}</h3>
 <ul>
 {% for tid, status in tests.items() %}
-<li class="status-{{ status }}">{{ tid }}: {{ status }}</li>
+<li class="status-{{ status }}">
+  {% if latest_run_id %}<a href="/runs/{{ latest_run_id }}/tests/{{ tid }}">{{ tid }}</a>{% else %}{{ tid }}{% endif %}: {{ status }}
+</li>
 {% endfor %}
 </ul>
 {% endfor %}

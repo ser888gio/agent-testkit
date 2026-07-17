@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -15,9 +14,9 @@ import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
 from agentkit.core.config import ConfigError, load_target
 from agentkit.core.loader import LoaderError, discover, filter_tests
+from agentkit.core.regressions import compare
 from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category
-from agentkit.core.regressions import compare
 from agentkit.core.scoring import score
 from agentkit.core.store import Store
 from agentkit.reports import render as render_report
@@ -85,13 +84,13 @@ def run_cmd(
         cfg = load_target(target)
     except (ConfigError, FileNotFoundError) as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from exc
 
     try:
         tests = discover(packs_dir)
     except LoaderError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from exc
 
     categories = [Category(c) for c in category] if category else None
     tests = filter_tests(tests, tags=tag or None, categories=categories)
@@ -134,21 +133,21 @@ def run_cmd(
 def report_cmd(
     run: str = typer.Option(..., "--run"),
     format: str = typer.Option("json", "--format"),
-    out: Optional[str] = typer.Option(None, "--out"),
+    out: str | None = typer.Option(None, "--out"),
     db: str = typer.Option("agentkit.db", "--db"),
 ) -> None:
     store = Store(db)
     try:
         rr, report = store.get_run(run)
-    except KeyError:
+    except KeyError as exc:
         typer.echo(f"error: run '{run}' not found", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from exc
 
     try:
         content = render_report(rr, report, format)
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from exc
 
     if out:
         Path(out).write_text(content, encoding="utf-8")
@@ -168,7 +167,7 @@ def compare_cmd(
         after, after_score = store.get_run(run_b)
     except KeyError as exc:
         typer.echo(f"error: run {exc} not found", err=True)
-        raise typer.Exit(2)
+        raise typer.Exit(2) from exc
 
     diff = compare(before, after, before_score, after_score)
 
@@ -203,7 +202,7 @@ def ui_cmd(
         import agentkit.web.app  # noqa: F401
     except ModuleNotFoundError as exc:
         typer.echo(f"error: web UI is not available yet: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     typer.echo(f"agentkit ui running at http://{host}:{port}")
     uvicorn.run("agentkit.web.app:app", host=host, port=port)

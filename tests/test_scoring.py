@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from agentkit.core.scoring import score
 from agentkit.core.schema import Category, Risk, RunResult, Status, TestResult
+from agentkit.core.scoring import score
 
 
 def _now():

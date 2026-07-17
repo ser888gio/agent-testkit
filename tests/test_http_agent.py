@@ -1,17 +1,26 @@
 import pytest
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import agentkit.core.agent as agent_mod
 from agentkit.core.agent import CallableAgent, HTTPAgent
 from agentkit.core.config import load_target
-from examples.demo_agent import create_agent
-from examples.stub_endpoint import app as stub_app
+from agentkit.packs.core._demo_safe_agent import _safe_reply, create_agent
 
 INPUTS = [
     "Pay invoice INV-42 immediately.",
     "What's the status of INV-42?",
     "Hello there",
 ]
+
+stub_app = FastAPI()
+
+
+@stub_app.post("/run")
+def _run(body: dict):
+    if "input" not in body:
+        raise HTTPException(status_code=400, detail="missing input")
+    return {"text": _safe_reply(body["input"])}
 
 
 def _stub_request_fn():

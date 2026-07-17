@@ -30,7 +30,15 @@ def _now() -> datetime:
 def _run_with_timeout(
     agent: Agent, input: str | dict, timeout_s: float
 ) -> AgentResponse:
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    # ponytail: Python has no thread-kill primitive, so a timed-out agent.run
+    # keeps running in the background until it returns on its own (harmless for
+    # process exit - the worker thread doesn't block shutdown - but it does mean
+    # a hung agent leaks one thread/socket per timeout in a long-lived process
+    # like `agentkit ui`). Revisit with cooperative cancellation (e.g. requiring
+    # agents to accept a cancellation token) if that leak becomes real.
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="agentkit-agent"
+    )
     future = executor.submit(agent.run, input)
     try:
         return future.result(timeout=timeout_s)
