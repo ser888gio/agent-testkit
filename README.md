@@ -3,10 +3,31 @@
 Black-box testing kit for AI agents. Test agents through their **endpoints** — the way
 customers will actually expose them (no prompts, tools, orchestration, or source shared) —
 and, where it matters, assert on the state of the **fake tools/services** the agent was
-given (e.g. "was a payment actually created?").
+given (e.g. "was a payment actually created?"). Supports single- and multi-turn scenarios,
+agentic attack packs (OWASP Agentic Top 10), and EU AI Act / ISO 42001 / NIST compliance
+reporting.
 
-> Status: MVP complete. First demo vertical is **treasury/payment approval**; **email
-> triage** (phishing/exfiltration) ships as the second.
+> Status: MVP complete, with two demo verticals — **treasury/payment approval** and **email
+> triage** (phishing/exfiltration) — plus agentic attack packs and compliance evidence
+> reports.
+
+## System Overview
+
+### Infrastructure
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./diagrams/infrastructure-simplified-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./diagrams/infrastructure-simplified-light.svg">
+  <img alt="Infrastructure Overview" src="./diagrams/infrastructure-simplified-light.svg">
+</picture>
+
+### Architecture
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./diagrams/architecture-simplified-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./diagrams/architecture-simplified-light.svg">
+  <img alt="Architecture Overview" src="./diagrams/architecture-simplified-light.svg">
+</picture>
+
+[More diagrams →](./diagrams/README.md)
 
 ## What it does
 

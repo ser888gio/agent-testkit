@@ -1,0 +1,76 @@
+direction: down
+
+classes: {
+  shell: {
+    style.stroke: "#3949AB"
+    style.stroke-width: 2
+    style.border-radius: 12
+  }
+  core: {
+    style.stroke: "#00838F"
+    style.stroke-width: 2
+    style.border-radius: 8
+  }
+  domain: {
+    style.stroke: "#FF8F00"
+    style.stroke-width: 2
+    style.border-radius: 8
+  }
+  data: {
+    style.stroke: "#5D4037"
+    style.stroke-width: 2
+    shape: page
+  }
+  db: {
+    style.stroke: "#E65100"
+    style.stroke-width: 2
+    shape: cylinder
+  }
+}
+
+cli: "CLI (Typer)" {
+  class: shell
+  icon: https://icons.terrastruct.com/dev%2Fpython.svg
+}
+
+dashboard: "Dashboard (FastAPI + Jinja2)" {
+  class: shell
+  icon: https://icons.terrastruct.com/dev%2Fpython.svg
+}
+
+packs: "Test Packs (YAML / Python)" {
+  class: data
+}
+
+pipeline: "Test Runner Pipeline (Pydantic core)" {
+  class: core
+  icon: https://icons.terrastruct.com/dev%2Fpython.svg
+}
+
+adapters: "Agent Adapters (HTTPAgent via httpx / CallableAgent)" {
+  class: core
+}
+
+sandboxes: "Sandboxes (fake bank / fake inbox)" {
+  class: domain
+}
+
+store: "Store (SQLite)" {
+  class: db
+}
+
+reports: "Reports (JSON / JUnit / HTML / MD / Compliance)" {
+  class: data
+}
+
+cli -> pipeline: "triggers run (load, execute, score)"
+packs -> pipeline: "declares inputs + assertions"
+pipeline -> adapters: "test input -> agent response"
+pipeline -> sandboxes: "reset / snapshot / diff side effects"
+pipeline -> store: "saves redacted results"
+cli -> reports: "renders stored or fresh run"
+dashboard -> reports: "renders compliance / exports"
+dashboard -> store: "reads runs / agents / results"
+dashboard -> pipeline: "token-gated re-run" {
+  style.stroke-dash: 5
+}
