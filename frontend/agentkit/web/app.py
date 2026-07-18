@@ -5,21 +5,14 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-
-import yaml
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-from pydantic import ValidationError
-
-import agentkit
+from urllib.parse import quote
 
 # Eagerly import built-in domains so their sandboxes are registered before
 # `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
 # "feat/runner" section, for why this matters).
 import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
+import yaml
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentkit.core.config import load_target
 from agentkit.core.loader import LoaderError, discover
@@ -28,7 +21,26 @@ from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category, Risk, Status, TestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import Store
-from agentkit.web.auth import Principal, auth_enabled, current_principal
+from agentkit.web.auth import (
+    LOGIN_STATE_COOKIE,
+    SESSION_COOKIE,
+    Principal,
+    auth_enabled,
+    begin_browser_login,
+    complete_browser_login,
+    cookie_secure,
+    current_principal,
+    end_browser_session,
+    require_admin,
+    reset_auth_state,
+)
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from pydantic import ValidationError
+
+import agentkit
 
 BASE_DIR = Path(__file__).parent
 PACKAGE_DIR = Path(agentkit.__file__).resolve().parent
@@ -98,10 +110,19 @@ def get_store() -> Store:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    global _store, _store_path
+    # Validate authentication before accepting traffic. An unset mode is a
+    # deployment error; loopback development must opt in explicitly.
+    auth_enabled()
     get_store()
-    yield
-    if _store is not None:
-        _store.close()
+    try:
+        yield
+    finally:
+        reset_auth_state()
+        if _store is not None:
+            _store.close()
+        _store = None
+        _store_path = None
 
 
 # Swagger/ReDoc/openapi.json are off: they cannot carry a principal, so they
@@ -120,8 +141,53 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 def _render(template_name: str, status_code: int = 200, **context) -> HTMLResponse:
     context.setdefault("active", "dashboard")
     context.setdefault("status_labels", _STATUS_LABELS)
+    context.setdefault("oidc_enabled", auth_enabled())
     template = _env.get_template(template_name)
     return HTMLResponse(template.render(**context), status_code=status_code)
+
+
+@app.get("/login", include_in_schema=False)
+def login(next: str | None = None) -> RedirectResponse:  # noqa: A002
+    destination, state = begin_browser_login(next)
+    response = RedirectResponse(destination, status_code=302)
+    if state:
+        response.set_cookie(
+            LOGIN_STATE_COOKIE,
+            state,
+            max_age=300,
+            httponly=True,
+            secure=cookie_secure(),
+            samesite="lax",
+        )
+    return response
+
+
+@app.get("/auth/callback", include_in_schema=False)
+def auth_callback(code: str, state: str, request: Request) -> RedirectResponse:
+    session_id, _principal, destination = complete_browser_login(
+        code,
+        state,
+        request.cookies.get(LOGIN_STATE_COOKIE, ""),
+    )
+    response = RedirectResponse(destination, status_code=303)
+    response.delete_cookie(LOGIN_STATE_COOKIE)
+    response.set_cookie(
+        SESSION_COOKIE,
+        session_id,
+        max_age=3600,
+        httponly=True,
+        secure=cookie_secure(),
+        samesite="lax",
+    )
+    return response
+
+
+@app.get("/logout", include_in_schema=False)
+def logout(request: Request) -> RedirectResponse:
+    destination = end_browser_session(request.cookies.get(SESSION_COOKIE))
+    response = RedirectResponse(destination, status_code=302)
+    response.delete_cookie(SESSION_COOKIE)
+    return response
 
 
 def _pct(value: float | int | None) -> int:
@@ -332,14 +398,16 @@ def get_packs_dir() -> Path:
 
 
 def _test_rows(store: Store, org_id: str) -> list[dict]:
-    """Authored tests plus tests observed in this org's runs, merged by id.
+    """Authored tests plus tests observed in this org's runs.
 
     An authored test that has never run still belongs on the page; run history
-    supplies its latest status once it has one.
+    supplies its latest status when a test id identifies exactly one authored
+    test. Test ids are only unique within a pack, so duplicate ids must remain
+    separate instead of silently overwriting one another.
     """
-    rows: dict[str, dict] = {}
+    rows: dict[tuple[str | None, str], dict] = {}
     for t in store.list_authored_tests(org_id):
-        rows[t["test_id"]] = {
+        rows[(t["pack_id"], t["test_id"])] = {
             **t,
             "id": t["test_id"],
             "status": "never run",
@@ -350,7 +418,9 @@ def _test_rows(store: Store, org_id: str) -> list[dict]:
             "authored": True,
         }
     for t in store.list_tests(org_id):
-        row = rows.setdefault(t["test_id"], {"authored": False})
+        matches = [key for key in rows if key[1] == t["test_id"]]
+        key = matches[0] if len(matches) == 1 else (None, t["test_id"])
+        row = rows.setdefault(key, {"authored": False, "pack_id": None})
         row.update(t)
         row["id"] = t["test_id"]
         row["status"] = t["latest_status"]
@@ -392,12 +462,16 @@ def tests_page(request: Request, principal: Principal = Depends(current_principa
 def new_test_form(
     principal: Principal = Depends(current_principal),
 ) -> HTMLResponse:
-    return _test_form()
+    return _test_form(csrf_token=principal.csrf_token)
 
 
 # Separate from the route above so `create_test` can re-render the form with an
 # error without going through dependency resolution.
-def _test_form(error: str | None = None, values: dict | None = None) -> HTMLResponse:
+def _test_form(
+    error: str | None = None,
+    values: dict | None = None,
+    csrf_token: str = "",
+) -> HTMLResponse:
     return _render(
         "test_new.html",
         categories=[c.value for c in Category],
@@ -405,6 +479,7 @@ def _test_form(error: str | None = None, values: dict | None = None) -> HTMLResp
         assertions=sorted(ASSERTION_REGISTRY),
         error=error,
         values=values or {},
+        csrf_token=csrf_token,
         active="tests",
     )
 
@@ -414,7 +489,7 @@ def settings_page(principal: Principal = Depends(current_principal)) -> HTMLResp
     auth_state = (
         f"OIDC ({os.environ['AGENTKIT_OIDC_ISSUER']})"
         if auth_enabled()
-        else "Unauthenticated (single-tenant dev mode, loopback only)"
+        else "Local development principal (single-tenant, loopback only)"
     )
     return _render(
         "settings.html",
@@ -437,7 +512,7 @@ def create_test(
     input: str = Form(...),
     assertion_name: str = Form(...),
     assertion_args: str = Form(""),
-    principal: Principal = Depends(current_principal),
+    principal: Principal = Depends(require_admin),
 ) -> Response:
     values = {
         "test_id": test_id,
@@ -449,7 +524,11 @@ def create_test(
     }
 
     def _fail(message: str) -> HTMLResponse:
-        return _test_form(error=message, values=values)
+        return _test_form(
+            error=message,
+            values=values,
+            csrf_token=principal.csrf_token,
+        )
 
     args: dict = {}
     if assertion_args.strip():
@@ -728,8 +807,11 @@ def _safe_path(p: str) -> Path:
 
 
 @app.post("/runs")
-def run_again(target: str, packs: str, request: Request) -> RedirectResponse:
-    principal = current_principal(request)
+def run_again(
+    target: str,
+    packs: str,
+    principal: Principal = Depends(require_admin),
+) -> RedirectResponse:
     cfg = load_target(str(_resolve_within_allowed(target)))
     tests = discover(str(_resolve_within_allowed(packs)))
     rr = run_tests(cfg, tests)
@@ -763,6 +845,21 @@ def compare_runs(a: str, b: str, principal: Principal = Depends(current_principa
 async def http_error(request: Request, exc: HTTPException) -> Response:
     if "application/json" in request.headers.get("accept", "").lower():
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    browser_navigation = request.method in {"GET", "HEAD"} and (
+        "text/html" in request.headers.get("accept", "").lower()
+        or request.headers.get("accept", "") == "*/*"
+    )
+    public_auth_paths = {"/login", "/auth/callback"}
+    if (
+        exc.status_code == 401
+        and auth_enabled()
+        and browser_navigation
+        and request.url.path not in public_auth_paths
+    ):
+        next_url = request.url.path
+        if request.url.query:
+            next_url += f"?{request.url.query}"
+        return RedirectResponse(f"/login?next={quote(next_url, safe='')}", status_code=303)
     return _render(
         "error.html",
         status_code=exc.status_code,

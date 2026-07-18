@@ -1,0 +1,19 @@
+# Keep the repository-root Docker build context small and free of local data.
+.git
+.github
+.aislop
+.claude
+.diagram
+.pytest_cache
+.ruff_cache
+.venv
+**/__pycache__
+*.py[cod]
+*.db
+*.sqlite3
+*.egg-info
+build
+dist
+docs
+examples
+tests

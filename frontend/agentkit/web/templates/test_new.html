@@ -6,7 +6,7 @@
   <div>
     <p class="eyebrow">Coverage authoring</p>
     <h1>Define Test</h1>
-    <p class="page-subtitle">Add a reusable YAML-backed test pack entry.</p>
+    <p class="page-subtitle">Add a reusable database-backed test pack entry.</p>
   </div>
 </header>
 
@@ -15,6 +15,7 @@
 {% endif %}
 
 <form method="post" action="/tests" class="test-form">
+  {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
   <label>Test ID
     <input type="text" name="test_id" required
            placeholder="user.data_leakage.my_probe"

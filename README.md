@@ -161,9 +161,10 @@ The dashboard (`agentkit ui`) shows the same run as a category × test pass/fail
 a test-detail page for each test showing the (already redacted) request/response, each
 assertion's pass/fail + detail, the sandbox before/after diff, and latency.
 
-`agentkit ui` binds to `127.0.0.1` by default. Its "re-run" endpoint can trigger loading of
-target/pack files and execution of Python test files under the packs directory — only pass
-`--host 0.0.0.0` on a trusted network.
+`agentkit ui` binds to `127.0.0.1` and explicitly enables local development authentication by
+default. A non-loopback bind is rejected unless `AGENTKIT_AUTH_MODE=oidc` and the complete OIDC
+configuration is present. The local Keycloak stack and token contract are documented in
+[`docs/keycloak.md`](docs/keycloak.md).
 
 ### The email exfiltration demo
 

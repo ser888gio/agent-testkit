@@ -42,6 +42,8 @@ Delegates to `feat/reports`; writes to `--out` or stdout.
 agentkit ui [--host 127.0.0.1] [--port 8000] [--db …]
 ```
 Launches uvicorn on `agentkit.web.app:app`; prints the URL.
+Loopback startup selects explicit local development authentication when no mode is configured.
+Non-loopback startup requires `AGENTKIT_AUTH_MODE=oidc` and complete OIDC settings.
 
 ## Failure behavior
 - Missing target file / invalid config → stderr message, exit `2` (not a traceback).

@@ -22,7 +22,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 
 ISSUER = "https://keycloak.test/realms/agentkit"
-AUDIENCE = "agentkit-web"
+AUDIENCE = "agentkit-api"
+CLIENT_ID = "agentkit-web"
 JWKS_URL = "https://keycloak.test/realms/agentkit/protocol/openid-connect/certs"
 
 _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -37,6 +38,8 @@ def _token(key=_KEY, alg="RS256", **overrides) -> str:
         "sub": "user-1",
         "email": "user@acme.test",
         "org_id": "acme",
+        "typ": "Bearer",
+        "realm_access": {"roles": ["viewer"]},
         "iat": now,
         "exp": now + 300,
     }
@@ -47,14 +50,17 @@ def _token(key=_KEY, alg="RS256", **overrides) -> str:
 
 def _request(token: str | None) -> SimpleNamespace:
     headers = {"authorization": f"Bearer {token}"} if token else {}
-    return SimpleNamespace(headers=headers)
+    return SimpleNamespace(headers=headers, cookies={}, method="GET")
 
 
 @pytest.fixture
 def oidc(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
     monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", JWKS_URL)
     monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", ISSUER)
     monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", AUDIENCE)
+    monkeypatch.setenv("AGENTKIT_OIDC_CLIENT_ID", CLIENT_ID)
+    monkeypatch.setenv("AGENTKIT_OIDC_REDIRECT_URI", "https://agentkit.test/auth/callback")
     # Stand in for the network-backed key set. `.uri` must match so `_client`
     # reuses the stub rather than constructing a real PyJWKClient.
     stub = SimpleNamespace(
@@ -73,8 +79,9 @@ def _expect_401(request):
 
 def test_valid_token_yields_principal(oidc):
     principal = auth.current_principal(_request(_token()))
-    assert principal == ("acme", "user-1", "user@acme.test")
     assert principal.org_id == "acme"
+    assert principal.subject == "user-1"
+    assert principal.roles == frozenset({"viewer"})
 
 
 def test_missing_header_is_401(oidc):
@@ -99,6 +106,16 @@ def test_wrong_audience_is_401(oidc):
 
 def test_bad_signature_is_401(oidc):
     _expect_401(_request(_token(key=_OTHER_KEY)))
+
+
+def test_jwks_outage_is_503_not_bad_credentials(oidc):
+    def unavailable(_token):
+        raise jwt.exceptions.PyJWKClientConnectionError("offline")
+
+    oidc.get_signing_key_from_jwt = unavailable
+    with pytest.raises(HTTPException) as exc:
+        auth.current_principal(_request(_token()))
+    assert exc.value.status_code == 503
 
 
 def test_unsigned_token_is_401(oidc):
@@ -137,6 +154,12 @@ def test_missing_sub_is_401(oidc):
     _expect_401(_request(_token(sub=None)))
 
 
+def test_token_without_application_role_is_403(oidc):
+    with pytest.raises(HTTPException) as exc:
+        auth.current_principal(_request(_token(realm_access={"roles": ["offline_access"]})))
+    assert exc.value.status_code == 403
+
+
 def test_org_id_query_parameter_is_ignored(oidc):
     """org_id comes from the claim only, never from the request."""
     request = SimpleNamespace(
@@ -146,19 +169,23 @@ def test_org_id_query_parameter_is_ignored(oidc):
     assert auth.current_principal(request).org_id == "acme"
 
 
-def test_unconfigured_falls_back_to_dev_principal(monkeypatch):
-    for var in (
-        "AGENTKIT_OIDC_JWKS_URL",
-        "AGENTKIT_OIDC_ISSUER",
-        "AGENTKIT_OIDC_AUDIENCE",
-    ):
-        monkeypatch.delenv(var, raising=False)
+def test_unconfigured_fails_closed(monkeypatch):
+    monkeypatch.delenv("AGENTKIT_AUTH_MODE", raising=False)
+    with pytest.raises(auth.AuthConfigError):
+        auth.auth_enabled()
+    with pytest.raises(auth.AuthConfigError):
+        auth.current_principal(_request(None))
+
+
+def test_explicit_dev_mode_uses_local_principal(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
     assert not auth.auth_enabled()
     assert auth.current_principal(_request(None)) == auth.DEV_PRINCIPAL
 
 
 def test_partial_config_raises_instead_of_falling_back(monkeypatch):
     """A typo'd variable must not silently disable authentication."""
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
     monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", ISSUER)
     monkeypatch.delenv("AGENTKIT_OIDC_JWKS_URL", raising=False)
     monkeypatch.delenv("AGENTKIT_OIDC_AUDIENCE", raising=False)
@@ -166,3 +193,35 @@ def test_partial_config_raises_instead_of_falling_back(monkeypatch):
         auth.auth_enabled()
     with pytest.raises(auth.AuthConfigError):
         auth.current_principal(_request(_token()))
+
+
+def test_id_token_is_rejected_even_if_other_claims_are_valid(oidc):
+    _expect_401(_request(_token(typ="ID")))
+
+
+def test_code_pkce_callback_creates_server_side_session(oidc, monkeypatch):
+    _destination, state = auth.begin_browser_login("https://evil.test/redirect")
+    monkeypatch.setattr(
+        auth,
+        "_exchange_code",
+        lambda _settings, _code, _verifier: {"access_token": "access-token"},
+    )
+    claims = {"exp": int(time.time()) + 300}
+    principal = auth.Principal(
+        "acme", "user-1", "user@acme.test", frozenset({"viewer"})
+    )
+    monkeypatch.setattr(
+        auth,
+        "_principal_from_token",
+        lambda _token, _settings: (principal, claims),
+    )
+
+    session_id, session_principal, next_url = auth.complete_browser_login(
+        "authorization-code", state, state
+    )
+
+    request = SimpleNamespace(headers={}, cookies={auth.SESSION_COOKIE: session_id}, method="GET")
+    assert auth.current_principal(request) == session_principal
+    assert session_principal.auth_method == "session"
+    assert session_principal.csrf_token
+    assert next_url == "/"

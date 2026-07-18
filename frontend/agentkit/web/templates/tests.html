@@ -46,12 +46,15 @@
   <div class="table-wrap">
 <table>
 <thead>
-<tr><th scope="col">Test</th><th scope="col">Category</th><th scope="col">Risk</th><th scope="col">Runs</th><th scope="col">Latest status</th></tr>
+<tr><th scope="col">Test</th><th scope="col">Pack</th><th scope="col">Category</th><th scope="col">Risk</th><th scope="col">Runs</th><th scope="col">Latest status</th></tr>
 </thead>
 <tbody>
 {% for t in tests %}
 <tr>
-  <td data-label="Test"><a href="/runs/{{ t.latest_run_id }}/tests/{{ t.test_id }}">{{ t.test_id }}</a></td>
+  <td data-label="Test">
+    {% if t.latest_run_id %}<a href="/runs/{{ t.latest_run_id }}/tests/{{ t.test_id }}">{{ t.test_id }}</a>{% else %}{{ t.test_id }}{% endif %}
+  </td>
+  <td data-label="Pack">{{ t.pack_id or "Run history" }}</td>
   <td data-label="Category">{{ t.category }}</td>
   <td data-label="Risk">{{ status_badge(t.risk) }}</td>
   <td data-label="Runs">{{ t.run_count }}</td>

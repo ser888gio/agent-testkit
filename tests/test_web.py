@@ -1,15 +1,21 @@
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
+import pytest
 from agentkit.core.config import CallableSpec, TargetConfig
 from agentkit.core.redaction import EvidencePolicy
 from agentkit.core.runner import run
-from agentkit.core.schema import Assertion, Category, TestCase
+from agentkit.core.schema import Assertion, Category
+from agentkit.core.schema import TestCase as SchemaTestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import DEFAULT_ORG, Store
+from fastapi.testclient import TestClient
 
 MODULE = "tests.test_web"
+
+
+@pytest.fixture(autouse=True)
+def explicit_dev_auth(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
 
 
 def _agent_with_secret(input: str) -> str:
@@ -29,13 +35,13 @@ def _seed_store(db_path: str):
         evidence=EvidencePolicy(),
     )
     tests = [
-        TestCase(
+        SchemaTestCase(
             id="a.pass.case",
             category=Category.reliability,
             input="hi",
             assertions=[Assertion(name="status_ok")],
         ),
-        TestCase(
+        SchemaTestCase(
             id="b.fail.case",
             category=Category.action_safety,
             risk="critical",
@@ -59,7 +65,7 @@ def _seed_passing_store(db_path: str):
         evidence=EvidencePolicy(),
     )
     tests = [
-        TestCase(
+        SchemaTestCase(
             id="clean.pass.case",
             category=Category.reliability,
             input="hi",
@@ -559,9 +565,12 @@ def test_poll_helper_avoids_html_injection_sink():
 
 def _oidc_env(monkeypatch):
     """Turn on auth without standing up Keycloak; no token will ever verify."""
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
     monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", "https://kc.test/certs")
     monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", "https://kc.test/realms/agentkit")
-    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-web")
+    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-api")
+    monkeypatch.setenv("AGENTKIT_OIDC_CLIENT_ID", "agentkit-web")
+    monkeypatch.setenv("AGENTKIT_OIDC_REDIRECT_URI", "https://agentkit.test/auth/callback")
 
 
 def _concrete_paths() -> list[tuple[str, str]]:
@@ -572,7 +581,11 @@ def _concrete_paths() -> list[tuple[str, str]]:
     for route in app.routes:
         path = getattr(route, "path", "")
         methods = getattr(route, "methods", set()) or set()
-        if not path.startswith("/") or path.startswith("/static"):
+        if (
+            not path.startswith("/")
+            or path.startswith("/static")
+            or path in {"/login", "/auth/callback", "/logout"}
+        ):
             continue
         for method in methods & {"GET", "POST"}:
             filled = (
@@ -597,10 +610,126 @@ def test_every_route_requires_a_token(tmp_path, monkeypatch):
     unprotected = []
     for method, path in paths:
         resp = client.request(method, path, params={"a": "x", "b": "y",
-                                                    "target": "t", "packs": "p"})
+                                                    "target": "t", "packs": "p"},
+                              headers={"Accept": "application/json"})
         if resp.status_code != 401:
             unprotected.append((method, path, resp.status_code))
     assert not unprotected
+
+
+def test_browser_request_starts_code_pkce_login(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "web.db"))
+    _oidc_env(monkeypatch)
+    from agentkit.web.app import app
+
+    client = TestClient(app)
+    response = client.get("/runs", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login?next=")
+
+    login = client.get(response.headers["location"], follow_redirects=False)
+    assert login.status_code == 302
+    assert login.headers["location"].startswith(
+        "https://kc.test/realms/agentkit/protocol/openid-connect/auth?"
+    )
+    assert "code_challenge_method=S256" in login.headers["location"]
+    assert "agentkit_login_state=" in login.headers["set-cookie"]
+
+
+def test_viewer_cannot_create_test(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    Store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
+        DEFAULT_ORG, "viewer", "viewer@example.test", frozenset({"viewer"})
+    )
+    try:
+        response = TestClient(web_app.app).post(
+            "/tests",
+            data={
+                "test_id": "viewer.forbidden",
+                "category": "reliability",
+                "risk": "low",
+                "input": "hi",
+                "assertion_name": "response_nonempty",
+                "assertion_args": "",
+            },
+        )
+    finally:
+        web_app.app.dependency_overrides.clear()
+    assert response.status_code == 403
+    assert Store(db).list_authored_tests(DEFAULT_ORG) == []
+
+
+def test_session_mutation_requires_csrf_token(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    Store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
+        DEFAULT_ORG,
+        "admin",
+        "admin@example.test",
+        frozenset({"admin"}),
+        auth_method="session",
+        csrf_token="expected-token",
+    )
+    try:
+        response = TestClient(web_app.app).post(
+            "/tests",
+            data={
+                "test_id": "csrf.forbidden",
+                "category": "reliability",
+                "risk": "low",
+                "input": "hi",
+                "assertion_name": "response_nonempty",
+                "assertion_args": "",
+            },
+        )
+    finally:
+        web_app.app.dependency_overrides.clear()
+    assert response.status_code == 403
+    assert Store(db).list_authored_tests(DEFAULT_ORG) == []
+
+
+def test_session_mutation_accepts_matching_csrf_token(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    Store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
+        DEFAULT_ORG,
+        "admin",
+        "admin@example.test",
+        frozenset({"admin"}),
+        auth_method="session",
+        csrf_token="expected-token",
+    )
+    try:
+        response = TestClient(web_app.app).post(
+            "/tests",
+            data={
+                "csrf_token": "expected-token",
+                "test_id": "csrf.allowed",
+                "category": "reliability",
+                "risk": "low",
+                "input": "hi",
+                "assertion_name": "response_nonempty",
+                "assertion_args": "",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        web_app.app.dependency_overrides.clear()
+    assert response.status_code == 303
+    assert Store(db).list_authored_tests(DEFAULT_ORG)[0]["test_id"] == "csrf.allowed"
 
 
 def test_run_of_another_org_is_404_not_403(tmp_path, monkeypatch):
@@ -617,7 +746,7 @@ def test_run_of_another_org_is_404_not_403(tmp_path, monkeypatch):
     assert client.get(f"/runs/{rr.run_id}").status_code == 200
 
     web_app.app.dependency_overrides[web_app.current_principal] = (
-        lambda: Principal("other-org", "sub-b", "b@other.test")
+        lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
         resp = client.get(f"/runs/{rr.run_id}")
@@ -638,7 +767,7 @@ def test_runs_of_another_org_are_not_listed(tmp_path, monkeypatch):
     assert "web-target" in client.get("/runs").text
 
     web_app.app.dependency_overrides[web_app.current_principal] = (
-        lambda: Principal("other-org", "sub-b", "b@other.test")
+        lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
         for path in ("/runs", "/agents", "/tests"):
@@ -714,7 +843,7 @@ def test_authored_test_is_invisible_to_another_org(tmp_path, monkeypatch):
     assert "orga.secret.probe" in client.get("/tests").text
 
     web_app.app.dependency_overrides[web_app.current_principal] = (
-        lambda: Principal("org-b", "sub-b", "b@other.test")
+        lambda: Principal("org-b", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
         assert "orga.secret.probe" not in client.get("/tests").text
@@ -758,6 +887,28 @@ def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
     body = client.get("/tests").text
     assert "never.run.probe" in body
     assert "never run" in body
+
+
+def test_authored_duplicate_ids_from_different_packs_remain_distinct():
+    from agentkit.web.app import _test_rows
+
+    class FakeStore:
+        def list_authored_tests(self, _org_id):
+            return [
+                {"pack_id": "one", "test_id": "shared.id", "category": "reliability",
+                 "risk": "low", "created_by": None, "created_by_email": None},
+                {"pack_id": "two", "test_id": "shared.id", "category": "security",
+                 "risk": "high", "created_by": None, "created_by_email": None},
+            ]
+
+        def list_tests(self, _org_id):
+            return []
+
+    rows = _test_rows(FakeStore(), DEFAULT_ORG)
+    assert {(row["pack_id"], row["test_id"]) for row in rows} == {
+        ("one", "shared.id"),
+        ("two", "shared.id"),
+    }
 
 
 # --- T10: one long-lived Store, not one connection per request -------------
@@ -804,8 +955,18 @@ def test_store_is_reused_across_requests(tmp_path, monkeypatch):
     assert get_store() is first
 
 
+def test_app_lifespan_can_restart_after_closing_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "restart.db"))
+    from agentkit.web.app import app
+
+    with TestClient(app) as first_client:
+        assert first_client.get("/runs").status_code == 200
+    with TestClient(app) as second_client:
+        assert second_client.get("/runs").status_code == 200
+
+
 def test_store_serves_concurrent_threads(tmp_path):
-    """Each thread gets its own connection; sqlite3 would otherwise refuse."""
+    """Pool leases connections exclusively and stays within its configured bound."""
     from concurrent.futures import ThreadPoolExecutor
 
     db = str(tmp_path / "threads.db")
@@ -823,3 +984,4 @@ def test_store_serves_concurrent_threads(tmp_path):
         results = list(pool.map(read_and_write, range(8)))
     assert all(r > 0 for r in results)
     assert len(store.list_runs(DEFAULT_ORG)) == 9  # 1 seeded + 8 written
+    assert store._pool._created <= 4  # noqa: SLF001 - verify the pool bound

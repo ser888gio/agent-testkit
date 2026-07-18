@@ -19,7 +19,7 @@ dependencies = [
     "typer",
     "alembic",
     "sqlalchemy",
-    "pyjwt[crypto]>=2.5",
+    "pyjwt[crypto]>=2.8",
 ]
 
 [project.optional-dependencies]

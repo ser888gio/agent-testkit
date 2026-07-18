@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from agentkit.core.agent import AgentResponse
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.redaction import EvidencePolicy, RedactionConfig, Redactor
@@ -19,9 +20,16 @@ from agentkit.core.schema import (
     Category,
     Risk,
     Status,
-    TestCase,
+)
+from agentkit.core.schema import (
+    TestCase as SchemaTestCase,
 )
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def explicit_dev_auth(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
 
 # --- scoring fails closed (covered in test_scoring.py::test_all_skipped_run_fails_closed)
 
@@ -37,11 +45,18 @@ def _web_client() -> TestClient:
 
 def test_post_runs_rejects_missing_token(monkeypatch):
     # With OIDC configured, an unauthenticated caller never reaches the runner.
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
     monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", "https://kc.test/certs")
     monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", "https://kc.test/realms/agentkit")
-    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-web")
+    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-api")
+    monkeypatch.setenv("AGENTKIT_OIDC_CLIENT_ID", "agentkit-web")
+    monkeypatch.setenv("AGENTKIT_OIDC_REDIRECT_URI", "https://agentkit.test/auth/callback")
     client = _web_client()
-    resp = client.post("/runs", params={"target": "x", "packs": "y"})
+    resp = client.post(
+        "/runs",
+        params={"target": "x", "packs": "y"},
+        headers={"Accept": "application/json"},
+    )
     assert resp.status_code == 401
 
 
@@ -89,7 +104,7 @@ class _CountingSandbox(Sandbox):
 
 def test_timeout_does_not_produce_trusted_diff():
     redactor = Redactor(RedactionConfig())
-    test = TestCase(
+    test = SchemaTestCase(
         id="t.timeout.case",
         category=Category.reliability,
         input="hi",
@@ -126,7 +141,7 @@ class _FailingSandbox(_CountingSandbox):
 
 
 def test_runner_redacts_unexpected_exception_messages():
-    test = TestCase(
+    test = SchemaTestCase(
         id="t.exception.case",
         category=Category.reliability,
         input="hi",
