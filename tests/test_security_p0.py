@@ -35,25 +35,24 @@ def _web_client() -> TestClient:
     return TestClient(app)
 
 
-def test_post_runs_rejects_missing_token():
+def test_post_runs_rejects_missing_token(monkeypatch):
+    # With OIDC configured, an unauthenticated caller never reaches the runner.
+    monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", "https://kc.test/certs")
+    monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", "https://kc.test/realms/agentkit")
+    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-web")
     client = _web_client()
     resp = client.post("/runs", params={"target": "x", "packs": "y"})
-    assert resp.status_code == 403
+    assert resp.status_code == 401
 
 
 def test_post_runs_rejects_path_outside_allowlist():
-    from agentkit.web.app import _ACCESS_TOKEN
-
     client = _web_client()
-    # A valid token but a target path escaping config/ and packs/ must be refused,
-    # so the route can never load an arbitrary Python callable.
+    # An authorized caller (dev mode) with a target path escaping config/ and
+    # packs/ must still be refused, so the route can never load an arbitrary
+    # Python callable.
     resp = client.post(
         "/runs",
-        params={
-            "target": "/etc/passwd",
-            "packs": "../../evil",
-            "token": _ACCESS_TOKEN,
-        },
+        params={"target": "/etc/passwd", "packs": "../../evil"},
     )
     assert resp.status_code == 400
 

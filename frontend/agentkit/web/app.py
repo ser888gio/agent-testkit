@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import secrets
 from pathlib import Path
 
 import yaml
@@ -28,6 +27,7 @@ from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category, Risk, Status, TestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import DEFAULT_ORG, Store
+from agentkit.web.auth import auth_enabled, current_principal
 
 BASE_DIR = Path(__file__).parent
 PACKAGE_DIR = Path(agentkit.__file__).resolve().parent
@@ -36,10 +36,6 @@ PACKAGE_DIR = Path(agentkit.__file__).resolve().parent
 # can never be coaxed into loading arbitrary Python callables. See
 # docs/archive/plans/MERGED-PLAN.md §0a; registered IDs replace this in Phase 1.
 _ALLOWED_ROOTS = (PACKAGE_DIR / "config", PACKAGE_DIR / "packs")
-
-# Loopback access token: generated per process, required for state-changing
-# routes. Reject public binding unless explicitly overridden for local dev.
-_ACCESS_TOKEN = os.environ.get("AGENTKIT_WEB_TOKEN") or secrets.token_urlsafe(16)
 
 
 def _resolve_within_allowed(value: str) -> Path:
@@ -56,13 +52,6 @@ def _resolve_within_allowed(value: str) -> Path:
         detail="target/packs must resolve to a file under config/ or packs/",
     )
 
-
-def _require_token(request: Request) -> None:
-    token = request.query_params.get("token") or request.headers.get(
-        "x-agentkit-token", ""
-    )
-    if not secrets.compare_digest(token, _ACCESS_TOKEN):
-        raise HTTPException(status_code=403, detail="missing or invalid access token")
 
 _env = Environment(
     loader=FileSystemLoader(str(BASE_DIR / "templates")),
@@ -355,10 +344,10 @@ def new_test_form(error: str | None = None, values: dict | None = None) -> HTMLR
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page() -> HTMLResponse:
-    token_state = (
-        "Configured"
-        if os.environ.get("AGENTKIT_WEB_TOKEN")
-        else "Generated per process"
+    auth_state = (
+        f"OIDC ({os.environ['AGENTKIT_OIDC_ISSUER']})"
+        if auth_enabled()
+        else "Unauthenticated (single-tenant dev mode, loopback only)"
     )
     return _render(
         "settings.html",
@@ -367,7 +356,7 @@ def settings_page() -> HTMLResponse:
             "package_dir": str(PACKAGE_DIR),
             "config_dir": str(PACKAGE_DIR / "config"),
             "packs_dir": str(get_packs_dir()),
-            "token_state": token_state,
+            "auth_state": auth_state,
         },
         active="settings",
     )
@@ -653,13 +642,13 @@ def _safe_path(p: str) -> Path:
 
 @app.post("/runs")
 def run_again(target: str, packs: str, request: Request) -> RedirectResponse:
-    _require_token(request)
+    principal = current_principal(request)
     cfg = load_target(str(_resolve_within_allowed(target)))
     tests = discover(str(_resolve_within_allowed(packs)))
     rr = run_tests(cfg, tests)
     report = score(rr)
     store = get_store()
-    store.save_run(DEFAULT_ORG, cfg, rr, report)
+    store.save_run(principal.org_id, cfg, rr, report)
     return RedirectResponse(url=f"/runs/{rr.run_id}", status_code=303)
 
 

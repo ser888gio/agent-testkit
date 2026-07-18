@@ -226,7 +226,7 @@ def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
     assert "Run Inputs" in resp.text
     assert "Security" in resp.text
     assert db in resp.text
-    assert "AGENTKIT_WEB_TOKEN" not in resp.text
+    assert "AGENTKIT_OIDC" not in resp.text
     assert 'href="/settings" class="active" aria-current="page"' in resp.text
 
 
