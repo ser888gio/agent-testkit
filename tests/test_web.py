@@ -283,7 +283,7 @@ def test_new_test_form_renders_choices(tmp_path, monkeypatch):
     assert "data_leakage" in resp.text  # a category
 
 
-def test_create_test_writes_yaml_pack(tmp_path, monkeypatch):
+def test_create_test_stores_db_row(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     packs = tmp_path / "packs"
@@ -305,13 +305,14 @@ def test_create_test_writes_yaml_pack(tmp_path, monkeypatch):
     assert resp.status_code == 303
     assert resp.headers["location"] == "/tests"
 
-    written = packs / "user" / "user.data_leakage.probe.yaml"
-    assert written.exists()
+    # Stored as an org-scoped DB row, and nothing was written to the packs dir.
+    assert not packs.exists()
+    rows = Store(db).get_pack_tests(DEFAULT_ORG, "user")
+    assert len(rows) == 1
     # round-trips through the real loader
-    from agentkit.core.loader import load_file
+    from agentkit.core.loader import load_tests_from_rows
 
-    cases = load_file(written)
-    assert len(cases) == 1
+    cases = load_tests_from_rows(rows)
     assert cases[0].id == "user.data_leakage.probe"
     assert cases[0].assertions[0].name == "not_contains"
 
@@ -358,7 +359,7 @@ def test_create_test_rejects_duplicate(tmp_path, monkeypatch):
     assert first.status_code == 303
     second = client.post("/tests", data=payload)
     assert second.status_code == 200
-    assert "already exists" in second.text
+    assert "duplicate test id" in second.text
 
 
 def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
@@ -685,3 +686,75 @@ def test_cli_run_has_no_attribution(tmp_path):
     row = next(r for r in Store(db).list_runs(DEFAULT_ORG) if r.id == rr.run_id)
     assert row.created_by is None
     assert row.created_by_email is None
+
+
+# --- T9: authored tests are org-scoped DB rows, never shared files ---------
+
+
+def test_authored_test_is_invisible_to_another_org(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    packs = tmp_path / "packs"
+    monkeypatch.setenv("AGENTKIT_PACKS", str(packs))
+    monkeypatch.setenv("AGENTKIT_DB", db)
+
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    client = TestClient(web_app.app)
+    payload = {
+        "test_id": "orga.secret.probe",
+        "category": "data_leakage",
+        "risk": "high",
+        "input": "leak something",
+        "assertion_name": "response_nonempty",
+        "assertion_args": "",
+    }
+    assert client.post("/tests", data=payload, follow_redirects=False).status_code == 303
+    assert "orga.secret.probe" in client.get("/tests").text
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("org-b", "sub-b", "b@other.test")
+    )
+    try:
+        assert "orga.secret.probe" not in client.get("/tests").text
+        # Org B may reuse the id without colliding with org A's row.
+        assert client.post(
+            "/tests", data=payload, follow_redirects=False
+        ).status_code == 303
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+    assert Store(db).get_pack_tests("org-b", "user")[0]["id"] == "orga.secret.probe"
+    assert len(Store(db).get_pack_tests(DEFAULT_ORG, "user")) == 1
+    assert not packs.exists()
+
+
+def test_no_code_path_writes_to_packs_user_dir():
+    """The filesystem write is gone, not merely bypassed."""
+    source = Path("frontend/agentkit/web/app.py").read_text(encoding="utf-8")
+    assert "write_text" not in source
+    assert "mkdir" not in source
+
+
+def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    Store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web.app import app
+
+    client = TestClient(app)
+    client.post(
+        "/tests",
+        data={
+            "test_id": "never.run.probe",
+            "category": "reliability",
+            "risk": "low",
+            "input": "hi",
+            "assertion_name": "response_nonempty",
+            "assertion_args": "",
+        },
+    )
+    body = client.get("/tests").text
+    assert "never.run.probe" in body
+    assert "never run" in body

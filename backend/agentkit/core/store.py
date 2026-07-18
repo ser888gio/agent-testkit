@@ -387,6 +387,43 @@ class Store:
                 ],
             )
 
+    def ensure_pack(self, org_id: str, pack_id: str, name: str) -> None:
+        """Create a pack if absent, leaving any existing tests alone.
+
+        `save_pack` replaces a pack wholesale, so it cannot be used to
+        lazily create the pack an authored test is about to be added to.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn:
+            self._ensure_org(org_id, now)
+            self._conn.execute(
+                "INSERT INTO packs (id, org_id, name, created_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(org_id, id) DO NOTHING",
+                (pack_id, org_id, name, now),
+            )
+
+    def list_authored_tests(self, org_id: str) -> list[dict]:
+        """Every stored pack test for this org, across all its packs."""
+        cur = self._conn.execute(
+            "SELECT pack_id, test_id, test_json, created_by, created_by_email "
+            "FROM pack_tests WHERE org_id = ? ORDER BY pack_id, test_id",
+            (org_id,),
+        )
+        out = []
+        for row in cur.fetchall():
+            test = json.loads(row["test_json"])
+            out.append(
+                {
+                    "pack_id": row["pack_id"],
+                    "test_id": row["test_id"],
+                    "category": test.get("category", "reliability"),
+                    "risk": test.get("risk", "medium"),
+                    "created_by": row["created_by"],
+                    "created_by_email": row["created_by_email"],
+                }
+            )
+        return out
+
     def save_pack_test(
         self,
         org_id: str,

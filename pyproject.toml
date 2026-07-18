@@ -82,4 +82,4 @@ target-version = "py310"
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["typer.Option"]
+extend-immutable-calls = ["typer.Option", "fastapi.Depends"]

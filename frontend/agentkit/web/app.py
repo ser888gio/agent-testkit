@@ -21,7 +21,7 @@ import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentkit.core.config import load_target
-from agentkit.core.loader import discover
+from agentkit.core.loader import LoaderError, discover
 from agentkit.core.regressions import compare
 from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category, Risk, Status, TestCase
@@ -36,6 +36,9 @@ PACKAGE_DIR = Path(agentkit.__file__).resolve().parent
 # can never be coaxed into loading arbitrary Python callables. See
 # docs/archive/plans/MERGED-PLAN.md §0a; registered IDs replace this in Phase 1.
 _ALLOWED_ROOTS = (PACKAGE_DIR / "config", PACKAGE_DIR / "packs")
+
+# Pack that tenant-authored tests land in, one per org.
+USER_PACK_ID = "user"
 
 
 def _resolve_within_allowed(value: str) -> Path:
@@ -297,6 +300,32 @@ def get_packs_dir() -> Path:
     return Path(os.environ.get("AGENTKIT_PACKS", str(PACKAGE_DIR / "packs")))
 
 
+def _test_rows(store: Store, org_id: str) -> list[dict]:
+    """Authored tests plus tests observed in this org's runs, merged by id.
+
+    An authored test that has never run still belongs on the page; run history
+    supplies its latest status once it has one.
+    """
+    rows: dict[str, dict] = {}
+    for t in store.list_authored_tests(org_id):
+        rows[t["test_id"]] = {
+            **t,
+            "id": t["test_id"],
+            "status": "never run",
+            "latest_status": "never run",
+            "latest_run_id": None,
+            "latest_agent_id": None,
+            "run_count": 0,
+            "authored": True,
+        }
+    for t in store.list_tests(org_id):
+        row = rows.setdefault(t["test_id"], {"authored": False})
+        row.update(t)
+        row["id"] = t["test_id"]
+        row["status"] = t["latest_status"]
+    return list(rows.values())
+
+
 @app.get("/tests", response_class=HTMLResponse)
 def tests_page(request: Request, principal: Principal = Depends(current_principal)) -> HTMLResponse:
     store = get_store()
@@ -304,13 +333,7 @@ def tests_page(request: Request, principal: Principal = Depends(current_principa
     status = request.query_params.get("status", "all")
     risk = request.query_params.get("risk", "all")
     category = request.query_params.get("category", "all")
-    tests = store.list_tests(principal.org_id)
-    rows = []
-    for t in tests:
-        row = dict(t)
-        row["id"] = row["test_id"]
-        row["status"] = row["latest_status"]
-        rows.append(row)
+    rows = _test_rows(store, principal.org_id)
     rows = _filter_rows(rows, q=q, status=status)
     if risk != "all":
         rows = [r for r in rows if r["risk"] == risk]
@@ -421,13 +444,20 @@ def create_test(
     if assertion_name not in ASSERTION_REGISTRY:
         return _fail(f"Unknown assertion '{assertion_name}'")
 
-    dest = get_packs_dir() / "user" / f"{test_id}.yaml"
-    if dest.exists():
-        return _fail(f"A test file already exists at {dest}")
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    payload = test_case.model_dump(mode="json", exclude_defaults=True)
-    dest.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    # Authored tests are DB rows scoped to the caller's org, never files: the
+    # packs directory is shared, and every org's discover() walks all of it.
+    store = get_store()
+    store.ensure_pack(principal.org_id, USER_PACK_ID, "User-authored tests")
+    try:
+        store.save_pack_test(
+            principal.org_id,
+            USER_PACK_ID,
+            test_case.model_dump(mode="json", exclude_defaults=True),
+            created_by=principal.subject,
+            created_by_email=principal.email,
+        )
+    except LoaderError as exc:
+        return _fail(str(exc))
     return RedirectResponse(url="/tests", status_code=303)
 
 
@@ -524,7 +554,11 @@ def latest_harness(principal: Principal = Depends(current_principal)) -> Respons
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
-def run_detail(run_id: str, request: Request, principal: Principal = Depends(current_principal)) -> HTMLResponse:
+def run_detail(
+    run_id: str,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+) -> HTMLResponse:
     rr, report = _load_run_or_404(principal.org_id, run_id)
     q = request.query_params.get("q", "")
     status = request.query_params.get("status", "all")
@@ -583,7 +617,11 @@ def run_harness(run_id: str, principal: Principal = Depends(current_principal)) 
 
 
 @app.get("/runs/{run_id}/tests/{test_id}", response_class=HTMLResponse)
-def test_detail(run_id: str, test_id: str, principal: Principal = Depends(current_principal)) -> HTMLResponse:
+def test_detail(
+    run_id: str,
+    test_id: str,
+    principal: Principal = Depends(current_principal),
+) -> HTMLResponse:
     rr, _report = _load_run_or_404(principal.org_id, run_id)
     result = next((r for r in rr.results if r.test_id == test_id), None)
     if result is None:
@@ -625,7 +663,11 @@ def test_detail(run_id: str, test_id: str, principal: Principal = Depends(curren
 
 
 @app.get("/runs/{run_id}/status", response_class=HTMLResponse)
-def run_status(run_id: str, request: Request, principal: Principal = Depends(current_principal)) -> Response:
+def run_status(
+    run_id: str,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+) -> Response:
     rr, report = _load_run_or_404(principal.org_id, run_id)
     if "application/json" in request.headers.get("accept", "").lower():
         if rr.finished_at:
