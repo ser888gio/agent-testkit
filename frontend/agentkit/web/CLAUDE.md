@@ -1,0 +1,41 @@
+# `agentkit.web` — FastAPI dashboard
+
+Imported as `agentkit.web.*`. Served by `agentkit ui` / `bash infra/dev.sh`.
+
+## Entry points
+
+- `app.py` — the whole application: route handlers, run-harness endpoints, and the
+  `Store` queries that feed them. Templates in `templates/`, assets in `static/`.
+- `templates/base.html` + `_components.html` — shared layout and partials; new pages should
+  extend/include these rather than restating markup.
+- `_status_fragment.html` + `static/poll.js` — the polling pattern used for in-progress runs.
+  Reuse it for any new async status surface instead of inventing a second mechanism.
+
+## Constraints
+
+- **Read-mostly control plane.** This app consumes `RunResult`/`ScoreReport` from `Store`.
+  The one exception is the re-run endpoint, which invokes `core.runner.run`. Do not add
+  further paths that call agents directly.
+- **Never render unredacted evidence.** Everything reaching a template has already passed
+  through the `Redactor` on the way into the store. Do not add a route that bypasses `Store`
+  to read raw data.
+- **Binds `127.0.0.1` by default, and that default matters.** The re-run endpoint can load
+  target/pack files and execute Python test modules under the packs directory. Any change
+  that widens the default bind, accepts a user-supplied path, or relaxes path validation is
+  security-sensitive — see `.claude/rules/security-sensitive.md`.
+- **`app.py` is ~700 lines.** Prefer pushing new logic into `core/` where it is testable
+  without a `TestClient`, rather than growing this file.
+- Sandbox registration is import-triggered: the `agentkit.domains.*.sandbox`
+  `# noqa: F401` imports at the top of `app.py` are load-bearing. Do not "clean up" them.
+
+## Testing expectations
+
+`tests/test_web.py` drives routes through Starlette's `TestClient`. Every new route needs a
+test there covering at least the happy path and the not-found/error path (`error.html`
+exists for a reason).
+
+Validation: `python -m pytest tests/test_web.py`, then load the page manually with
+`bash infra/dev.sh` for template changes — the test client will not catch broken CSS or
+a Jinja block that renders empty.
+
+Spec: [`docs/specs/web-ui.md`](../../../docs/specs/web-ui.md).

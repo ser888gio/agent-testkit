@@ -1,5 +1,20 @@
 # agentkit
 
+Adaptive black-box testing for AI agents.
+
+Generate an agent-specific harness, run targeted adversarial evaluations, and produce
+evidence for safety, reliability, and compliance.
+
+`agentkit` evaluates AI agents the way they are actually deployed: as black-box systems with
+real goals, exposed interfaces, and risk-bearing actions. Instead of relying on one static
+suite, it assembles and runs an agent-specific attack harness, selects the most relevant
+tests from reusable libraries, and adapts based on what it learns during execution.
+
+At its most ambitious, `agentkit` is an adaptive assurance platform for AI agents. It learns
+an agent's purpose and risk profile, generates a tailored harness around its interface and
+side effects, and turns adversarial and policy test results into a redacted, auditable
+evidence package for engineering, security, and compliance teams.
+
 Black-box testing kit for AI agents. Test agents through their **endpoints** — the way
 customers will actually expose them (no prompts, tools, orchestration, or source shared) —
 and, where it matters, assert on the state of the **fake tools/services** the agent was
@@ -10,6 +25,54 @@ reporting.
 > Status: MVP complete, with two demo verticals — **treasury/payment approval** and **email
 > triage** (phishing/exfiltration) — plus agentic attack packs and compliance evidence
 > reports.
+
+## Product Thesis
+
+`agentkit` helps companies validate AI agents by generating a tailored black-box test
+harness that tries to break them, then turns the results into safety and compliance
+evidence.
+
+Enterprise framing:
+
+`agentkit` is a black-box testing and assurance platform for AI agents that discovers agent
+behavior, assembles targeted adversarial evaluations, and produces evidence for risk,
+safety, and compliance decisions.
+
+### Why it is different
+
+- **Tailored to each agent** - Understands the agent's role, interfaces, and risks before
+  testing.
+- **Designed to break things** - Iteratively probes for prompt injection, misuse, leakage,
+  and unsafe actions.
+- **Built for evidence** - Produces redacted, auditable results for engineering, security,
+  and compliance teams.
+
+### Core loop
+
+`discover -> profile -> generate harness -> select tests -> attack iteratively -> score -> report evidence`
+
+1. **Discover** - learn the interface, schema, tasks, tools, side effects, and risky
+   actions.
+2. **Profile** - model purpose, domain, capabilities, trust boundaries, likely failure
+   modes, and policy controls.
+3. **Generate harness** - create the conversation driver, stubs, hooks, observers, and
+   artifact capture needed for this agent.
+4. **Select tests** - rank the best-fit adversarial, misuse, leakage, robustness, and
+   compliance checks.
+5. **Attack iteratively** - branch into deeper multi-turn probes and adapt based on prior
+   responses.
+6. **Score** - summarize severity, exploitability, reproducibility, policy impact,
+   regression status, and confidence.
+7. **Report evidence** - produce concrete traces and decision-ready artifacts.
+
+### Current repo vs vision
+
+This repository is the execution and evidence core of that broader platform.
+
+- **Current repo** - fixed packs, fixed sandboxes, fixed run flow, fixed scoring, and a
+  strong black-box execution/reporting foundation.
+- **Target product** - automated discovery, generated harnesses, dynamic test planning,
+  adaptive iterative attacks, and risk-aware coverage.
 
 ## System Overview
 

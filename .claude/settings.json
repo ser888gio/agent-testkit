@@ -3,10 +3,31 @@
     "allow": [
       "Bash(python -m pytest*)",
       "Bash(.venv/Scripts/python -m pytest*)",
-      "Bash(agentkit *)"
+      "Bash(agentkit *)",
+      "Bash(uv run --extra dev pytest*)",
+      "Bash(uv run --extra dev ruff*)",
+      "Bash(uv sync*)",
+      "Bash(uv build)",
+      "Bash(uv lock)",
+      "Bash(bash tools/affected.sh*)",
+      "Bash(bash tools/validate.sh*)",
+      "Bash(git diff*)",
+      "Bash(git status*)",
+      "Bash(git log*)"
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/guard-protected-paths.sh\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",

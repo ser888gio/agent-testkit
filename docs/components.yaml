@@ -1,0 +1,182 @@
+# Machine-readable component map for agentkit.
+#
+# Referenced from CLAUDE.md. Update this file when component boundaries, entry points, or
+# dependencies change.
+#
+# NOTE ON PATHS: the `agentkit` package is a setuptools namespace package assembled from
+# three source roots (`.`, `backend`, `frontend` — see pyproject.toml). `path` below is the
+# on-disk location; `import_path` is how the module is imported. They differ, and import
+# statements never contain `backend` or `frontend`.
+#
+# Relationships here were derived by inspecting import statements. Anything not directly
+# verifiable from an import is marked `inferred: true`.
+
+meta:
+  package_manager: uv
+  test_runner: pytest
+  linter: ruff
+  type_checker: none            # no type-checker is configured in this repository
+  default_branch: develop
+  full_validation: bash tools/validate.sh
+  affected_validation: bash tools/validate.sh --affected
+
+components:
+
+  core:
+    path: backend/agentkit/core
+    import_path: agentkit.core
+    type: library
+    owns:
+      - Agent adapters (callable + HTTP) and the network boundary
+      - Sandbox ABC and the sandbox registry
+      - TestCase/TestResult/RunResult schema (the shared contract)
+      - Test discovery and loading from YAML/JSON/Python packs
+      - Test execution (single- and multi-turn), which never raises
+      - Assertion registry and evaluation
+      - Redaction and evidence policy
+      - Risk-weighted scoring
+      - Compliance control mapping (EU AI Act / ISO 42001 / NIST)
+      - Run-to-run regression comparison
+      - SQLite persistence (the only SQL in the repository)
+    entry_points:
+      - backend/agentkit/core/runner.py       # run()
+      - backend/agentkit/core/loader.py       # discover()
+      - backend/agentkit/core/agent.py        # build_agent()
+      - backend/agentkit/core/sandbox.py      # build_sandbox(), register_sandbox()
+      - backend/agentkit/core/store.py        # Store
+    depends_on: []                            # bottom of the graph; imports nothing else in agentkit
+    used_by: [cli, web, reports, domains]
+    public_contracts:
+      - backend/agentkit/core/schema.py       # TestCase, TestResult, RunResult, Category, Risk, Status
+      - backend/agentkit/core/config.py       # TargetConfig
+      - backend/agentkit/core/assertions.py   # REGISTRY (referenced by name from YAML packs)
+      - backend/agentkit/core/sandbox.py      # Sandbox ABC
+    constraints:
+      - "httpx is imported only in agent.py"
+      - "SQLite is accessed only through store.py"
+      - "runner.py must never propagate an exception"
+      - "redaction runs before TestResult construction and again in store.save_run"
+    validation:
+      - python -m pytest tests/test_runner.py tests/test_assertions.py tests/test_schema.py tests/test_loader.py tests/test_scoring.py tests/test_store.py tests/test_redaction.py tests/test_config.py tests/test_agent.py tests/test_compliance.py tests/test_regressions.py tests/test_sandbox_core.py
+    specs: docs/specs
+
+  domains:
+    path: backend/agentkit/domains
+    import_path: agentkit.domains
+    type: library
+    owns:
+      - "treasury: fake bank + invoice store (TreasurySandbox) and demo agent"
+      - "email: fake inbox + contacts + outbound ledger (EmailSandbox), demo agent, trusting-forwarder agent"
+    entry_points:
+      - backend/agentkit/domains/treasury/sandbox.py
+      - backend/agentkit/domains/treasury/agent.py
+      - backend/agentkit/domains/email/sandbox.py
+      - backend/agentkit/domains/email/agent.py
+    depends_on: [core]                        # core.sandbox only
+    used_by: [cli, web, packs]
+    constraints:
+      - "registered into core at runtime via @register_sandbox; core never imports domains"
+      - "registration requires an explicit import in cli.py and web/app.py (# noqa: F401)"
+      - "snapshot() must be JSON-serializable and deterministic"
+    validation:
+      - python -m pytest tests/test_treasury.py tests/test_email.py tests/test_sandbox_core.py
+
+  reports:
+    path: backend/agentkit/reports
+    import_path: agentkit.reports
+    type: library
+    owns:
+      - JSON, JUnit XML, self-contained HTML, Markdown, and compliance renderers
+    entry_points:
+      - backend/agentkit/reports/__init__.py  # render()
+    depends_on: [core]
+    used_by: [cli]
+    constraints:
+      - "control-plane: consumes already-redacted RunResult/ScoreReport; never calls an agent"
+      - "compliance rendering fails closed (empty/all-skipped => INCOMPLETE)"
+    validation:
+      - python -m pytest tests/test_reports.py tests/test_compliance.py
+
+  cli:
+    path: backend/agentkit/cli.py
+    import_path: agentkit.cli
+    type: application
+    owns:
+      - "`agentkit` console script: run, report, compare, ui"
+      - CI gating via exit codes (fail_under threshold)
+    entry_points:
+      - backend/agentkit/cli.py
+    depends_on: [core, reports, domains]
+    used_by: []
+    public_contracts:
+      - agentkit/config                       # target config YAML consumed by load_target
+    validation:
+      - python -m pytest tests/test_cli.py
+
+  web:
+    path: frontend/agentkit/web
+    import_path: agentkit.web
+    type: application
+    owns:
+      - FastAPI dashboard: run history, pass/fail matrix, test detail, run comparison
+      - Run harness (re-run) endpoints
+    entry_points:
+      - frontend/agentkit/web/app.py
+      - infra/dev.sh                          # launches it locally
+    depends_on: [core, reports, domains]
+    used_by: []
+    constraints:
+      - "binds 127.0.0.1 by default; the re-run endpoint can execute Python from the packs dir"
+      - "control-plane except for the documented re-run path into core.runner.run"
+      - "renders only already-redacted evidence read through Store"
+    validation:
+      - python -m pytest tests/test_web.py
+    specs: docs/specs/web-ui.md
+
+  packs:
+    path: agentkit/packs
+    type: data
+    owns:
+      - "core: endpoint contract, robustness, prompt injection, data leakage, performance, reliability"
+      - "treasury, email: vertical starter packs"
+      - "agentic: OWASP Agentic Top 10 probes"
+    entry_points:
+      - agentkit/packs/core
+      - agentkit/packs/agentic
+    depends_on: [core, domains]
+    used_by: [cli, web]
+    inferred: true                            # dependency is by string reference (assertion
+                                              # names, category/risk values), not by import
+    constraints:
+      - "product test content, not pytest tests; loaded by core.loader:discover"
+      - "pack `id` values are the stable keys for regression comparison across runs"
+    validation:
+      - python -m pytest tests/test_packs_core.py tests/test_packs_domain.py
+      - agentkit run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml
+
+  tests:
+    path: tests
+    type: tests
+    owns:
+      - pytest suite for agentkit itself (one file per module)
+      - integration coverage (HTTP/callable parity, web routes, CLI, security)
+    entry_points:
+      - tests/_fixtures.py
+    depends_on: [core, domains, reports, cli, web, packs]
+    used_by: []
+    validation:
+      - python -m pytest
+
+  infra:
+    path: infra
+    type: infrastructure
+    owns:
+      - Docker image and compose definition for the dashboard
+      - local dev launcher
+    entry_points:
+      - infra/Dockerfile
+      - infra/docker-compose.yml
+      - infra/dev.sh
+    depends_on: [cli, web]
+    used_by: []
+    inferred: true                            # invokes the CLI/web at runtime, no import edge
