@@ -88,6 +88,10 @@ def load_target_dict(raw: Any, source: str = "<dict>") -> TargetConfig:
         )
 
     agent = raw.get("agent") or {}
+    if not isinstance(agent, dict):
+        raise ConfigError(
+            f"agent for config '{config_id}' must be a mapping, got {type(agent).__name__}"
+        )
     if agent.get("type") == "http" and not agent.get("endpoint"):
         raise ConfigError(f"http target '{config_id}' requires endpoint")
 

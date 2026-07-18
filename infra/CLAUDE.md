@@ -25,6 +25,9 @@ a second way to touch the database.
   copy `0001_baseline_schema.py` and bump the revision id/`down_revision` by hand.
 - Apply: `agentkit migrate --db <path>`. Status: `agentkit migrate --db <path> --status`
   (lists pending revisions in application order, or prints `up to date`).
+- Docker Compose implements the explicit deploy step with a one-shot `migrate` service; the UI
+  depends on its successful completion. CLI database options fall back to `AGENTKIT_DB`, so the
+  Compose `/data/agentkit.db` volume is used unless `--db` explicitly overrides it.
 - Migrations are forward-only in production — applied at deploy time by explicit command,
   never implicitly on app startup, so two replicas booting together can't race.
 

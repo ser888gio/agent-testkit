@@ -220,18 +220,26 @@ python -m pytest tests/test_config.py tests/test_cli.py
 python -m pytest tests/test_loader.py
 ```
 
-### T5: Targets and Packs as DB Rows
+### T5: Targets and Packs as DB Rows - Done
 
 **Dependencies:** T2, T3, T4
 **Files:** `backend/agentkit/core/store.py`, new migration, `tests/test_store.py`
 
-- Add `targets (id, org_id, name, config_json, created_at)`.
+- Add `targets (id, org_id, name, config_json, created_at, secret_ref)`.
 - Add `packs (id, org_id, name, created_at)`.
-- Add `pack_tests (id, pack_id, test_json)`, one serialized `TestCase` per row.
-- Add Store CRUD, all `org_id`-scoped per T2's convention.
-- Secrets are not in `config_json`. Store a `secret_ref` string; resolution is T15. Never persist a literal credential.
+- Add `pack_tests (id, org_id, pack_id, test_id, test_json)`, one serialized `TestCase` per
+  row, unique by `(org_id, pack_id, test_id)`.
+- Add target, pack, and pack-test CRUD, all `org_id`-scoped per T2's convention.
+- Secrets are not in `config_json`. Sensitive values remain `${ENV_VAR}` references and require
+  a separate opaque `scheme://` `secret_ref`; resolution remains T15. Literal credentials are
+  rejected before persistence.
+- Target row IDs must equal the stored config ID. DB-backed packs reject duplicate test IDs just
+  like filesystem discovery.
 
-**Acceptance:** A target round-trips through `config_json -> load_target_dict -> equal TargetConfig`; a pack round-trips via `load_tests_from_rows`; cross-org reads return nothing.
+**Acceptance:** A target round-trips through `config_json -> load_target_dict -> equal
+TargetConfig`; a pack round-trips via `load_tests_from_rows`; cross-org reads and mutations see
+nothing; literal secrets, mismatched target IDs, malformed tests, and duplicate test IDs are
+rejected without partial writes.
 
 **Validate:**
 
@@ -564,3 +572,11 @@ alembic revision -m "<name>"
 ```
 
 Alternatively, create the revision by hand following `0001_baseline_schema.py`'s pattern. Do not add a new `infra/migrations/NNNN_name.sql` file; that directory no longer exists.
+
+### T5 Integrity Follow-up
+
+T5 originally landed as revision `0003`. The review fixes ship in follow-up revision `0004`
+rather than rewriting an applied revision. It adds `targets.secret_ref`, gives `pack_tests` an
+explicit tenant-scoped test identity and uniqueness constraint, and validates foreign-key lineage
+after rebuilding tables. Direct `Store` initialization and the full Alembic chain are required to
+produce equivalent schemas.

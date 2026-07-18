@@ -163,7 +163,7 @@ def run_one(
             request=None,
             response=None,
             sandbox_diff=None,
-            error=str(exc),
+            error=redactor.redact_text(str(exc)),
             started_at=started,
             finished_at=_now(),
         )
@@ -223,7 +223,7 @@ def _run_python_test(
             request=None,
             response=None,
             sandbox_diff=None,
-            error=str(exc),
+            error=redactor.redact_text(str(exc)),
             started_at=started,
             finished_at=_now(),
         )

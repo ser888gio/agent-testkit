@@ -143,6 +143,13 @@ def upgrade() -> None:
     op.execute("DROP TABLE agents_legacy")
     _create_indexes()
 
+    violations = op.get_bind().exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+    if violations:
+        sample = ", ".join(f"{row[0]} row {row[1]}" for row in violations[:3])
+        raise RuntimeError(
+            f"cannot migrate 0002: {len(violations)} foreign key violations remain ({sample})"
+        )
+
 
 def downgrade() -> None:
     collision = (

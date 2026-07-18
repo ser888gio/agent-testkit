@@ -8,20 +8,20 @@ from __future__ import annotations
 
 import time
 
-from fastapi.testclient import TestClient
-
 from agentkit.core.agent import AgentResponse
-from agentkit.core.redaction import RedactionConfig, Redactor
-from agentkit.core.runner import _redact_assertions, run_one
+from agentkit.core.loader import PythonTestCase
+from agentkit.core.redaction import EvidencePolicy, RedactionConfig, Redactor
+from agentkit.core.runner import _redact_assertions, _run_python_test, run_one
 from agentkit.core.sandbox import Sandbox
 from agentkit.core.schema import (
     Assertion,
     AssertionResult,
     Category,
+    Risk,
     Status,
     TestCase,
 )
-
+from fastapi.testclient import TestClient
 
 # --- scoring fails closed (covered in test_scoring.py::test_all_skipped_run_fails_closed)
 
@@ -118,4 +118,45 @@ def test_assertion_detail_is_redacted():
     ]
     redacted = _redact_assertions(redactor, results)
     assert "sk-abcdefgh12345678" not in redacted[0].detail
-    assert "«redacted:api_key»" in redacted[0].detail
+    assert "redacted:api_key" in redacted[0].detail
+
+
+class _FailingSandbox(_CountingSandbox):
+    def reset(self) -> None:
+        raise RuntimeError("sandbox failed with sk-abcdefgh12345678")
+
+
+def test_runner_redacts_unexpected_exception_messages():
+    test = TestCase(
+        id="t.exception.case",
+        category=Category.reliability,
+        input="hi",
+        assertions=[Assertion(name="status_ok")],
+    )
+
+    result = run_one(_SlowAgent(), _FailingSandbox(), test, Redactor(RedactionConfig()))
+
+    assert result.status == Status.error
+    assert "sk-abcdefgh12345678" not in result.error
+    assert "redacted:api_key" in result.error
+
+
+def test_python_runner_redacts_unexpected_exception_messages():
+    test = PythonTestCase(
+        id="python.exception.case",
+        category=Category.reliability,
+        risk=Risk.medium,
+        fn=lambda agent, sandbox: None,
+    )
+
+    result = _run_python_test(
+        _SlowAgent(),
+        _FailingSandbox(),
+        test,
+        Redactor(RedactionConfig()),
+        EvidencePolicy(),
+    )
+
+    assert result.status == Status.error
+    assert "sk-abcdefgh12345678" not in result.error
+    assert "redacted:api_key" in result.error

@@ -1,6 +1,8 @@
-import pytest
+from pathlib import Path
 
-from agentkit.core.config import ConfigError, load_target
+import pytest
+import yaml
+from agentkit.core.config import ConfigError, load_target, load_target_dict
 
 TREASURY_CALLABLE_YAML = "agentkit/config/treasury-agent.yaml"
 TREASURY_HTTP_YAML = "agentkit/config/treasury-http.yaml"
@@ -52,3 +54,17 @@ def test_unknown_sandbox_raises(tmp_path):
     )
     with pytest.raises(ConfigError, match="valid sandboxes"):
         load_target(bad)
+
+
+@pytest.mark.parametrize("path", sorted(Path("agentkit/config").glob("*.yaml")))
+def test_file_and_dict_loaders_match_for_all_shipped_configs(path, monkeypatch):
+    monkeypatch.setenv("AGENT_TOKEN", "test-token")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert load_target(path) == load_target_dict(raw, source=str(path))
+
+
+@pytest.mark.parametrize("agent", ["http", ["http"]])
+def test_non_mapping_agent_raises_config_error(agent):
+    with pytest.raises(ConfigError, match="agent.*mapping"):
+        load_target_dict({"id": "bad-agent", "agent": agent})

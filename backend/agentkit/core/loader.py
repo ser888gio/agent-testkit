@@ -57,6 +57,8 @@ def _valid_risks() -> str:
 
 
 def _build_test_case(raw: dict[str, Any], path: Path) -> TestCase:
+    if not isinstance(raw, dict):
+        raise LoaderError(f"{path}: expected a mapping, got {type(raw).__name__}")
     for required in ("id", "assertions"):
         if required not in raw:
             raise LoaderError(f"{path}: missing required field '{required}'")
@@ -88,7 +90,18 @@ def _build_test_case(raw: dict[str, Any], path: Path) -> TestCase:
 
 def load_tests_from_rows(rows: list[dict[str, Any]]) -> list[TestCase]:
     """Same validation as load_file, for tests stored as DB rows instead of files."""
-    return [_build_test_case(raw, Path(f"<row {i}>")) for i, raw in enumerate(rows)]
+    tests: list[TestCase] = []
+    seen: dict[str, int] = {}
+    for index, raw in enumerate(rows):
+        test = _build_test_case(raw, Path(f"<row {index}>"))
+        if test.id in seen:
+            raise LoaderError(
+                f"<row {index}>: duplicate test id '{test.id}' "
+                f"(first seen in <row {seen[test.id]}>)"
+            )
+        seen[test.id] = index
+        tests.append(test)
+    return tests
 
 
 def load_file(path: str | Path) -> list[TestCase]:

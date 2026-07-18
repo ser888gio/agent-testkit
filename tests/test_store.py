@@ -105,22 +105,46 @@ def test_pass_fail_matrix_reflects_latest_run():
     assert matrix == {"reliability": {"new.pass.case": "passed"}}
 
 
-def test_store_response_false_persists_null_response():
-    cfg, rr, report = _run_and_score(evidence=EvidencePolicy(store_response=False))
+def test_store_evidence_policy_persists_null_request_and_response():
+    cfg, rr, report = _run_and_score(
+        evidence=EvidencePolicy(store_request=False, store_response=False)
+    )
+    rr.results[0].request = {"text": "must not be stored"}
+    rr.results[0].response = {"text": "must not be stored"}
     store = Store(":memory:")
     store.save_run(DEFAULT_ORG, cfg, rr, report)
 
     rr2, _ = store.get_run(DEFAULT_ORG, rr.run_id)
+    assert rr2.results[0].request is None
     assert rr2.results[0].response is None
 
 
 def test_secret_redacted_in_stored_evidence():
     cfg, rr, report = _run_and_score()
+    rr.results[0].request = "sk-requestboundary12345678"
+    rr.results[0].response = {"text": "sk-storeboundary12345678"}
+    rr.results[0].error = "Bearer store.boundary-token"
+    rr.results[0].assertion_results[0].detail = "sk-assertionboundary12345678"
+    rr.results[0].sandbox_diff = {"secret": "sk-sandboxboundary12345678"}
     store = Store(":memory:")
     store.save_run(DEFAULT_ORG, cfg, rr, report)
 
     rr2, _ = store.get_run(DEFAULT_ORG, rr.run_id)
-    assert "sk-abcdefgh12345678" not in str(rr2.results[0].response)
+    persisted = str(rr2.results[0])
+    for secret in (
+        "sk-requestboundary12345678",
+        "sk-storeboundary12345678",
+        "store.boundary-token",
+        "sk-assertionboundary12345678",
+        "sk-sandboxboundary12345678",
+    ):
+        assert secret not in persisted
+
+    raw = store._conn.execute(  # noqa: SLF001 - inspect the persistence boundary
+        "SELECT result_json FROM test_results WHERE run_id = ?", (rr.run_id,)
+    ).fetchone()[0]
+    assert "boundary12345678" not in raw
+    assert "store.boundary-token" not in raw
 
 
 def test_get_unknown_run_raises_keyerror():
@@ -216,10 +240,15 @@ def test_no_public_method_defaults_org_id():
         "pass_fail_matrix",
         "save_target",
         "get_target",
+        "get_target_secret_ref",
         "list_targets",
+        "delete_target",
         "save_pack",
+        "save_pack_test",
         "get_pack_tests",
         "list_packs",
+        "delete_pack_test",
+        "delete_pack",
     ):
         parameters = list(inspect.signature(getattr(Store, name)).parameters.values())
         assert [parameter.name for parameter in parameters[:2]] == ["self", "org_id"], name
@@ -248,6 +277,91 @@ def test_target_row_round_trips_through_load_target_dict():
     assert [t.id for t in store.list_targets("org-a")] == ["stored-agent"]
 
 
+def test_target_secret_reference_round_trips_without_entering_config_json(monkeypatch):
+    monkeypatch.setenv("AGENT_TOKEN", "resolved-value")
+    store = Store(":memory:")
+    raw = {
+        "id": "stored-agent",
+        "agent": {
+            "type": "http",
+            "endpoint": "https://example.test/agent",
+            "headers": {"Authorization": "Bearer ${AGENT_TOKEN}"},
+        },
+    }
+
+    store.save_target(
+        "org-a", "stored-agent", "Stored", raw, secret_ref="vault://org-a/agent-token"
+    )
+
+    assert load_target_dict(store.get_target("org-a", "stored-agent")).agent.headers == {
+        "Authorization": "Bearer resolved-value"
+    }
+    assert store.get_target_secret_ref("org-a", "stored-agent") == (
+        "vault://org-a/agent-token"
+    )
+    stored_json = store._conn.execute(  # noqa: SLF001 - inspect raw secret boundary
+        "SELECT config_json FROM targets WHERE org_id = ? AND id = ?",
+        ("org-a", "stored-agent"),
+    ).fetchone()[0]
+    assert "${AGENT_TOKEN}" in stored_json
+    assert "resolved-value" not in stored_json
+    assert "vault://" not in stored_json
+
+
+def test_target_literal_sensitive_value_is_rejected():
+    store = Store(":memory:")
+    raw = {
+        "id": "stored-agent",
+        "agent": {
+            "type": "http",
+            "endpoint": "https://example.test/agent",
+            "headers": {"Authorization": "Bearer literal-token"},
+        },
+    }
+
+    with pytest.raises(ValueError, match="literal credential"):
+        store.save_target("org-a", "stored-agent", "Stored", raw)
+
+    assert store.list_targets("org-a") == []
+
+
+def test_target_allows_non_sensitive_request_text():
+    store = Store(":memory:")
+    config = {
+        "id": "stored-agent",
+        "agent": {
+            "type": "http",
+            "endpoint": "https://example.test/agent",
+            "request": {"contact": "user@example.com"},
+        },
+    }
+
+    store.save_target("org-a", "stored-agent", "Stored", config)
+
+    assert store.get_target("org-a", "stored-agent") == config
+
+
+def test_target_secret_placeholder_requires_separate_secret_reference():
+    store = Store(":memory:")
+    raw = {
+        "id": "stored-agent",
+        "agent": {
+            "type": "http",
+            "endpoint": "https://example.test/agent",
+            "headers": {"Authorization": "Bearer ${AGENT_TOKEN}"},
+        },
+    }
+
+    with pytest.raises(ValueError, match="secret_ref is required"):
+        store.save_target("org-a", "stored-agent", "Stored", raw)
+
+
+def test_target_row_id_must_match_config_id():
+    store = Store(":memory:")
+    with pytest.raises(ValueError, match="target id"):
+        store.save_target("org-a", "row-id", "Stored", _TARGET_CONFIG)
+
+
 def test_pack_rows_round_trip_through_load_tests_from_rows():
     store = Store(":memory:")
     store.save_pack("org-a", "p1", "Pack One", [_PACK_TEST])
@@ -265,13 +379,55 @@ def test_save_pack_replaces_previous_tests():
     assert [t["id"] for t in store.get_pack_tests("org-a", "p1")] == ["pack.t1"]
 
 
-def test_bad_assertion_in_a_row_raises_loadererror():
+def test_pack_rejects_duplicate_test_ids():
+    store = Store(":memory:")
+    with pytest.raises(LoaderError, match="duplicate test id"):
+        store.save_pack("org-a", "p1", "Pack One", [_PACK_TEST, _PACK_TEST])
+
+
+def test_pack_test_crud_is_scoped_and_duplicate_safe():
+    store = Store(":memory:")
+    store.save_pack("org-a", "p1", "Pack A", [])
+    store.save_pack("org-b", "p1", "Pack B", [])
+
+    store.save_pack_test("org-a", "p1", _PACK_TEST)
+    assert [row["id"] for row in store.get_pack_tests("org-a", "p1")] == ["pack.t1"]
+    assert store.get_pack_tests("org-b", "p1") == []
+    with pytest.raises(LoaderError, match="duplicate test id"):
+        store.save_pack_test("org-a", "p1", _PACK_TEST)
+
+    assert store.delete_pack_test("org-b", "p1", "pack.t1") is False
+    assert store.delete_pack_test("org-a", "p1", "pack.t1") is True
+    assert store.delete_pack_test("org-a", "p1", "pack.t1") is False
+
+
+def test_target_and_pack_deletion_is_scoped():
+    store = Store(":memory:")
+    for org_id in ("org-a", "org-b"):
+        store.save_target(org_id, "stored-agent", "Stored", _TARGET_CONFIG)
+        store.save_pack(org_id, "p1", "Pack One", [_PACK_TEST])
+
+    assert store.delete_target("org-a", "stored-agent") is True
+    assert store.delete_target("org-a", "stored-agent") is False
+    assert [row.id for row in store.list_targets("org-b")] == ["stored-agent"]
+
+    assert store.delete_pack("org-a", "p1") is True
+    assert store.delete_pack("org-a", "p1") is False
+    assert [row.id for row in store.list_packs("org-b")] == ["p1"]
+    remaining = store._conn.execute(  # noqa: SLF001 - verify child cleanup
+        "SELECT COUNT(*) FROM pack_tests WHERE org_id = ?", ("org-a",)
+    ).fetchone()[0]
+    assert remaining == 0
+
+
+def test_bad_assertion_is_rejected_before_pack_persistence():
     store = Store(":memory:")
     bad = dict(_PACK_TEST, assertions=[{"name": "no_such_assertion", "value": "x"}])
-    store.save_pack("org-a", "p1", "Pack One", [bad])
 
     with pytest.raises(LoaderError):
-        load_tests_from_rows(store.get_pack_tests("org-a", "p1"))
+        store.save_pack("org-a", "p1", "Pack One", [bad])
+
+    assert store.list_packs("org-a") == []
 
 
 def test_targets_and_packs_are_scoped_to_the_calling_org():

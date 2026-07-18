@@ -1,9 +1,24 @@
 services:
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+    image: agentkit
+    command: ["agentkit", "migrate", "--db", "/data/agentkit.db"]
+    environment:
+      AGENTKIT_DB: /data/agentkit.db
+    volumes:
+      - agentkit-data:/data
+    restart: "no"
+
   agentkit:
     build:
       context: .
       dockerfile: infra/Dockerfile
     image: agentkit
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     environment:

@@ -28,6 +28,12 @@ from agentkit.core.scoring import score
 from agentkit.core.store import DEFAULT_ORG, Store
 from agentkit.reports import render as render_report
 
+DEFAULT_DB_PATH = "database/agentkit.db"
+
+
+def _resolve_db_path(db: str | None) -> str:
+    return db or os.environ.get("AGENTKIT_DB", DEFAULT_DB_PATH)
+
 
 def _alembic_config(db_path: Path) -> AlembicConfig:
     cfg = AlembicConfig()
@@ -101,7 +107,7 @@ def _print_table(rr, report) -> None:
 def run_cmd(
     packs_dir: str = typer.Argument(...),
     target: str = typer.Option(..., "--target"),
-    db: str = typer.Option("database/agentkit.db", "--db"),
+    db: str | None = typer.Option(None, "--db"),
     fail_under: float = typer.Option(0.0, "--fail-under"),
     block_on_critical: bool = typer.Option(
         True, "--block-on-critical/--no-block-on-critical"
@@ -111,6 +117,7 @@ def run_cmd(
     format: str = typer.Option("table", "--format"),
     compliance: bool = typer.Option(False, "--compliance"),
 ) -> None:
+    db = _resolve_db_path(db)
     try:
         cfg = load_target(target)
     except (ConfigError, FileNotFoundError) as exc:
@@ -165,9 +172,9 @@ def report_cmd(
     run: str = typer.Option(..., "--run"),
     format: str = typer.Option("json", "--format"),
     out: str | None = typer.Option(None, "--out"),
-    db: str = typer.Option("database/agentkit.db", "--db"),
+    db: str | None = typer.Option(None, "--db"),
 ) -> None:
-    store = Store(db)
+    store = Store(_resolve_db_path(db))
     try:
         rr, report = store.get_run(DEFAULT_ORG, run)
     except KeyError as exc:
@@ -190,9 +197,9 @@ def report_cmd(
 def compare_cmd(
     run_a: str = typer.Argument(...),
     run_b: str = typer.Argument(...),
-    db: str = typer.Option("database/agentkit.db", "--db"),
+    db: str | None = typer.Option(None, "--db"),
 ) -> None:
-    store = Store(db)
+    store = Store(_resolve_db_path(db))
     try:
         before, before_score = store.get_run(DEFAULT_ORG, run_a)
         after, after_score = store.get_run(DEFAULT_ORG, run_b)
@@ -223,10 +230,10 @@ def compare_cmd(
 
 @app.command("migrate")
 def migrate_cmd(
-    db: str = typer.Option("database/agentkit.db", "--db"),
+    db: str | None = typer.Option(None, "--db"),
     status_only: bool = typer.Option(False, "--status"),
 ) -> None:
-    db_path = Path(db)
+    db_path = Path(_resolve_db_path(db))
     db_path.parent.mkdir(parents=True, exist_ok=True)
     cfg = _alembic_config(db_path)
     if status_only:
@@ -244,12 +251,12 @@ def migrate_cmd(
 def ui_cmd(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port"),
-    db: str = typer.Option("database/agentkit.db", "--db"),
+    db: str | None = typer.Option(None, "--db"),
 ) -> None:
     try:
         import uvicorn
 
-        os.environ["AGENTKIT_DB"] = db
+        os.environ["AGENTKIT_DB"] = _resolve_db_path(db)
         import agentkit.web.app  # noqa: F401
     except ModuleNotFoundError as exc:
         typer.echo(f"error: web UI is not available yet: {exc}", err=True)
