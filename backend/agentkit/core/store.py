@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS runs (
     status TEXT NOT NULL,
     summary_json TEXT NOT NULL,
     score_json TEXT NOT NULL,
+    created_by TEXT,
+    created_by_email TEXT,
     UNIQUE (org_id, id),
     FOREIGN KEY (org_id) REFERENCES orgs(id),
     FOREIGN KEY (org_id, agent_id) REFERENCES agents(org_id, id)
@@ -85,6 +87,8 @@ CREATE TABLE IF NOT EXISTS pack_tests (
     pack_id TEXT NOT NULL,
     test_id TEXT NOT NULL,
     test_json TEXT NOT NULL,
+    created_by TEXT,
+    created_by_email TEXT,
     UNIQUE (org_id, pack_id, test_id),
     FOREIGN KEY (org_id, pack_id) REFERENCES packs(org_id, id) ON DELETE CASCADE
 );
@@ -134,6 +138,8 @@ class RunRow:
     status: str
     summary: dict
     score: dict
+    created_by: str | None = None
+    created_by_email: str | None = None
 
 
 Matrix = dict[str, dict[str, str]]
@@ -381,7 +387,14 @@ class Store:
                 ],
             )
 
-    def save_pack_test(self, org_id: str, pack_id: str, test: dict) -> None:
+    def save_pack_test(
+        self,
+        org_id: str,
+        pack_id: str,
+        test: dict,
+        created_by: str | None = None,
+        created_by_email: str | None = None,
+    ) -> None:
         validated = load_tests_from_rows([test])[0]
         try:
             with self._conn:
@@ -391,13 +404,15 @@ class Store:
                 if pack is None:
                     raise KeyError(pack_id)
                 self._conn.execute(
-                    "INSERT INTO pack_tests (org_id, pack_id, test_id, test_json) "
-                    "VALUES (?, ?, ?, ?)",
+                    "INSERT INTO pack_tests (org_id, pack_id, test_id, test_json, "
+                    "created_by, created_by_email) VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         org_id,
                         pack_id,
                         validated.id,
                         validated.model_dump_json(exclude_defaults=True),
+                        created_by,
+                        created_by_email,
                     ),
                 )
         except sqlite3.IntegrityError as exc:
@@ -451,8 +466,21 @@ class Store:
         return cursor.rowcount == 1
 
     def save_run(
-        self, org_id: str, agent: TargetConfig, run: RunResult, score: ScoreReport
+        self,
+        org_id: str,
+        agent: TargetConfig,
+        run: RunResult,
+        score: ScoreReport,
+        created_by: str | None = None,
+        created_by_email: str | None = None,
     ) -> None:
+        """Persist a run.
+
+        `created_by` is the Keycloak `sub` of whoever launched it, with the
+        email denormalized alongside for display. Both are optional because the
+        CLI has no human principal; unlike `org_id` a missing value here is a
+        display gap, not a cross-tenant read.
+        """
         now = datetime.now(timezone.utc).isoformat()
         status = "passed" if score.gate_passed else "failed"
 
@@ -471,8 +499,8 @@ class Store:
             self._conn.execute(
                 """
                 INSERT INTO runs (id, org_id, agent_id, started_at, finished_at, status,
-                                   summary_json, score_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                   summary_json, score_json, created_by, created_by_email)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run.run_id,
@@ -483,6 +511,8 @@ class Store:
                     status,
                     json.dumps(_summarize(run)),
                     score.model_dump_json(),
+                    created_by,
+                    created_by_email,
                 ),
             )
             rows = []
@@ -574,6 +604,8 @@ class Store:
                 status=row["status"],
                 summary=json.loads(row["summary_json"]),
                 score=json.loads(row["score_json"]),
+                created_by=row["created_by"],
+                created_by_email=row["created_by_email"],
             )
             for row in cur.fetchall()
         ]

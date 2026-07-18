@@ -551,3 +551,137 @@ def test_poll_helper_avoids_html_injection_sink():
     assert 'Accept: "application/json"' in js
     assert "requestSubmit" in js
     assert "setTimeout(submit, 350)" in js
+
+
+# --- T8: every route is authenticated and org-scoped -----------------------
+
+
+def _oidc_env(monkeypatch):
+    """Turn on auth without standing up Keycloak; no token will ever verify."""
+    monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", "https://kc.test/certs")
+    monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", "https://kc.test/realms/agentkit")
+    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-web")
+
+
+def _concrete_paths() -> list[tuple[str, str]]:
+    """Every app route, with path params filled in. Static mount excluded."""
+    from agentkit.web.app import app
+
+    out = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", set()) or set()
+        if not path.startswith("/") or path.startswith("/static"):
+            continue
+        for method in methods & {"GET", "POST"}:
+            filled = (
+                path.replace("{run_id}", "some-run")
+                .replace("{test_id}", "some-test")
+                .replace("{agent_id:path}", "some-agent")
+            )
+            out.append((method, filled))
+    return out
+
+
+def test_every_route_requires_a_token(tmp_path, monkeypatch):
+    """A new route that forgets `current_principal` fails here."""
+    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "web.db"))
+    _oidc_env(monkeypatch)
+    from agentkit.web.app import app
+
+    client = TestClient(app)
+    paths = _concrete_paths()
+    assert paths, "route table came back empty; the introspection is wrong"
+
+    unprotected = []
+    for method, path in paths:
+        resp = client.request(method, path, params={"a": "x", "b": "y",
+                                                    "target": "t", "packs": "p"})
+        if resp.status_code != 401:
+            unprotected.append((method, path, resp.status_code))
+    assert not unprotected
+
+
+def test_run_of_another_org_is_404_not_403(tmp_path, monkeypatch):
+    """Org B must not learn that org A's run id exists."""
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    client = TestClient(web_app.app)
+    # The run was seeded under DEFAULT_ORG; the dev principal is that org.
+    assert client.get(f"/runs/{rr.run_id}").status_code == 200
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("other-org", "sub-b", "b@other.test")
+    )
+    try:
+        resp = client.get(f"/runs/{rr.run_id}")
+    finally:
+        web_app.app.dependency_overrides.clear()
+    assert resp.status_code == 404
+
+
+def test_runs_of_another_org_are_not_listed(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    client = TestClient(web_app.app)
+    assert "web-target" in client.get("/runs").text
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("other-org", "sub-b", "b@other.test")
+    )
+    try:
+        for path in ("/runs", "/agents", "/tests"):
+            assert "web-target" not in client.get(path).text, path
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+
+def _seed_attributed_store(db: str) -> str:
+    """One CLI-launched run (no principal) plus one launched by a human."""
+    cfg, _rr, _report = _seed_store(db)
+    from agentkit.core.runner import run as run_tests
+
+    rr2 = run_tests(cfg, [])
+    Store(db).save_run(
+        DEFAULT_ORG, cfg, rr2, score(rr2),
+        created_by="kc-sub-1", created_by_email="launcher@acme.test",
+    )
+    return rr2.run_id
+
+
+def test_run_records_who_launched_it(tmp_path):
+    db = str(tmp_path / "attr.db")
+    run_id = _seed_attributed_store(db)
+    row = next(r for r in Store(db).list_runs(DEFAULT_ORG) if r.id == run_id)
+    assert row.created_by == "kc-sub-1"
+    assert row.created_by_email == "launcher@acme.test"
+
+
+def test_runs_page_shows_who_launched_each_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "attr.db")
+    _seed_attributed_store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web.app import app
+
+    body = TestClient(app).get("/runs").text
+    assert "launcher@acme.test" in body
+    assert "CLI" in body  # the seeded run has no principal
+
+
+def test_cli_run_has_no_attribution(tmp_path):
+    """The CLI has no human principal; attribution is null, not invented."""
+    db = str(tmp_path / "cli.db")
+    _cfg, rr, _report = _seed_store(db)
+    row = next(r for r in Store(db).list_runs(DEFAULT_ORG) if r.id == rr.run_id)
+    assert row.created_by is None
+    assert row.created_by_email is None
