@@ -758,3 +758,68 @@ def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
     body = client.get("/tests").text
     assert "never.run.probe" in body
     assert "never run" in body
+
+
+# --- T10: one long-lived Store, not one connection per request -------------
+
+
+def test_store_is_constructed_once_across_many_requests(tmp_path, monkeypatch):
+    """The old get_store() built a Store -- and a connection -- per handler call.
+
+    Counting live sqlite3.Connection objects cannot show this: CPython
+    refcounting reclaims the orphan as soon as the handler returns. Counting
+    constructions is what actually distinguishes the two implementations.
+    """
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    import agentkit.web.app as web_app
+
+    client.get("/runs")  # warm up
+    built = 0
+    real_init = Store.__init__
+
+    def counting_init(self, *args, **kwargs):
+        nonlocal built
+        built += 1
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(Store, "__init__", counting_init)
+    for _ in range(25):
+        assert client.get("/runs").status_code == 200
+    assert built == 0, f"{built} Stores built across 25 requests"
+    assert web_app._store is not None
+
+
+def test_store_is_reused_across_requests(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+    from agentkit.web.app import get_store
+
+    client.get("/runs")
+    first = get_store()
+    client.get("/runs")
+    assert get_store() is first
+
+
+def test_store_serves_concurrent_threads(tmp_path):
+    """Each thread gets its own connection; sqlite3 would otherwise refuse."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    db = str(tmp_path / "threads.db")
+    cfg, _rr, _report = _seed_store(db)
+    store = Store(db)
+
+    def read_and_write(n: int) -> int:
+        from agentkit.core.runner import run as run_tests
+
+        rr = run_tests(cfg, [])
+        store.save_run(DEFAULT_ORG, cfg, rr, score(rr))
+        return len(store.list_runs(DEFAULT_ORG))
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(read_and_write, range(8)))
+    assert all(r > 0 for r in results)
+    assert len(store.list_runs(DEFAULT_ORG)) == 9  # 1 seeded + 8 written

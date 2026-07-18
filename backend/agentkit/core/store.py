@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -274,17 +275,48 @@ def _summarize(run: RunResult) -> dict:
 
 
 class Store:
+    """The only SQLite access point. Safe to share across threads.
+
+    Each thread gets its own connection, opened on first use and reused
+    afterwards, so a long-lived Store holds one connection per live thread
+    rather than one per call. A single shared connection would not do: sqlite3
+    runs in serialized mode, which makes individual statements safe but still
+    lets two threads interleave statements inside `save_run`'s transaction and
+    commit each other's partial work.
+
+    ponytail: thread-local connections, not a real pool with a checkout/return
+    cycle. That is enough while the threadpool is bounded and the backend is
+    SQLite; Postgres will want an actual pool.
+    """
+
     def __init__(self, path: str = "database/agentkit.db"):
         db_path = Path(path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path))
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        self._path = str(db_path)
+        self._local = threading.local()
+        self._connect()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        # `IF NOT EXISTS` throughout, so re-running per thread is a no-op.
+        conn.executescript(_SCHEMA)
+        conn.commit()
+        self._local.conn = conn
+        return conn
+
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        return conn if conn is not None else self._connect()
 
     def close(self) -> None:
-        self._conn.close()
+        """Close this thread's connection. Other threads keep theirs."""
+        conn = getattr(self._local, 'conn', None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
 
     def _ensure_org(self, org_id: str, now: str) -> None:
         self._conn.execute(

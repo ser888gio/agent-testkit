@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import yaml
@@ -71,19 +72,49 @@ _STATUS_LABELS = {
     "skipped": "Skipped",
 }
 
-# Swagger/ReDoc/openapi.json are off: they cannot carry a principal, so they
-# would be the only unauthenticated routes on a partner-facing deployment, and
-# they publish the whole route surface for free.
-app = FastAPI(title="agentkit", docs_url=None, redoc_url=None, openapi_url=None)
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-
-
 def get_db_path() -> str:
     return os.environ.get("AGENTKIT_DB", "database/agentkit.db")
 
 
+# One long-lived Store per process instead of one connection per handler call.
+# Store hands each thread its own connection and reuses it, so the open-handle
+# count tracks the (bounded) threadpool rather than the request count.
+_store: Store | None = None
+_store_path: str | None = None
+
+
 def get_store() -> Store:
-    return Store(get_db_path())
+    global _store, _store_path
+    path = get_db_path()
+    if _store is None or _store_path != path:
+        # The path only changes under tests, which point AGENTKIT_DB at a tmp
+        # dir per case; closing the old one keeps them from accumulating.
+        if _store is not None:
+            _store.close()
+        _store = Store(path)
+        _store_path = path
+    return _store
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    get_store()
+    yield
+    if _store is not None:
+        _store.close()
+
+
+# Swagger/ReDoc/openapi.json are off: they cannot carry a principal, so they
+# would be the only unauthenticated routes on a partner-facing deployment, and
+# they publish the whole route surface for free.
+app = FastAPI(
+    title="agentkit",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    lifespan=_lifespan,
+)
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
 def _render(template_name: str, status_code: int = 200, **context) -> HTMLResponse:
