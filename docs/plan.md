@@ -252,7 +252,7 @@ python -m pytest
 
 Ships before any external partner gets interactive access. A shared credential has no attribution on who launched a run, and revoking one person logs out the whole org. For a tool whose output is evidence, unattributable actions defeat the product.
 
-### T6: Keycloak Infrastructure and Realm
+### T6: Keycloak Infrastructure and Realm - Done
 
 **Dependencies:** none
 **Files:** `infra/docker-compose.yml`, `infra/keycloak/realm.json`, `docs/`
@@ -270,7 +270,7 @@ Ships before any external partner gets interactive access. A shared credential h
 
 **Validate:** Manual. Document the exact `curl` that fetches a token and shows the claim.
 
-### T7: JWT Validation Dependency
+### T7: JWT Validation Dependency - Done
 
 **Human review required.**
 
@@ -293,7 +293,7 @@ python -m pytest tests/test_web.py
 
 **Review:** Signature/claim validation that is subtly wrong can pass tests and still be exploitable. A human reads this diff.
 
-### T8: Scope Every Route
+### T8: Scope Every Route - Done
 
 **Dependencies:** T7, T5
 **Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
@@ -311,7 +311,7 @@ python -m pytest tests/test_web.py
 python -m pytest
 ```
 
-### T9: Delete the Filesystem Test Write
+### T9: Delete the Filesystem Test Write - Done
 
 **Dependencies:** T5, T8
 **Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
@@ -330,7 +330,7 @@ This closes the crosstalk hole. `app.py:421` currently writes tenant-authored te
 python -m pytest tests/test_web.py
 ```
 
-### T10: Connection Pool
+### T10: Connection Pool - Done
 
 **Dependencies:** T2
 **Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
