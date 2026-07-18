@@ -15,6 +15,13 @@ consumed by the loader).
 - No `conftest.py` exists today. Add fixtures to `_fixtures.py` first; only introduce a
   `conftest.py` if a fixture genuinely needs pytest injection.
 
+## test_migrate.py
+
+Covers `agentkit migrate` (the Alembic-backed CLI subcommand, `backend/agentkit/cli.py`) and
+`infra/alembic/versions/0001_baseline_schema.py`. Tests fresh and repeated application,
+resuming from a partially-created baseline, and the captured pending/up-to-date status
+output. Database assertions verify both the schema and Alembic revision state.
+
 ## Known collection warning
 
 `agentkit.core.schema.TestCase` triggers `PytestCollectionWarning` wherever it is imported —

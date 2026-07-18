@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+from importlib.resources import files
 from pathlib import Path
 
 import typer
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine
 
 # Eagerly import built-in domains so their sandboxes are registered before
 # `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
@@ -21,6 +27,30 @@ from agentkit.core.schema import Category
 from agentkit.core.scoring import score
 from agentkit.core.store import Store
 from agentkit.reports import render as render_report
+
+
+def _alembic_config(db_path: Path) -> AlembicConfig:
+    cfg = AlembicConfig()
+    try:
+        migration_package = files("agentkit.migrations")
+    except ModuleNotFoundError:
+        migration_package = Path(__file__).resolve().parents[2] / "infra" / "alembic"
+    cfg.set_main_option("script_location", str(migration_package))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+    return cfg
+
+
+def _pending_migrations(cfg: AlembicConfig) -> list[tuple[str, str]]:
+    scripts = ScriptDirectory.from_config(cfg)
+    engine = create_engine(cfg.get_main_option("sqlalchemy.url"))
+    try:
+        with engine.connect() as connection:
+            current_heads = MigrationContext.configure(connection).get_current_heads()
+    finally:
+        engine.dispose()
+
+    pending = list(scripts.iterate_revisions(scripts.get_heads(), current_heads))
+    return [(revision.revision, revision.doc or "") for revision in reversed(pending)]
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -189,6 +219,25 @@ def compare_cmd(
     )
 
     raise typer.Exit(1 if diff.critical_regressions else 0)
+
+
+@app.command("migrate")
+def migrate_cmd(
+    db: str = typer.Option("database/agentkit.db", "--db"),
+    status_only: bool = typer.Option(False, "--status"),
+) -> None:
+    db_path = Path(db)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg = _alembic_config(db_path)
+    if status_only:
+        pending = _pending_migrations(cfg)
+        if not pending:
+            typer.echo("up to date")
+            return
+        for revision, name in pending:
+            typer.echo(f"pending {revision}: {name}")
+    else:
+        alembic_command.upgrade(cfg, "head")
 
 
 @app.command("ui")

@@ -71,13 +71,17 @@ Suggested next product milestones:
 4. Iterative attack loop with branching and retries.
 5. Reporting that explains why a test was selected for a given agent.
 
-**Non-obvious structural fact:** the `agentkit` package is physically split across three
-top-level directories and reassembled by setuptools namespace packages
-(`pyproject.toml` → `[tool.setuptools.packages.find] where = [".", "backend", "frontend"]`).
-At import time there is exactly one `agentkit` package. `agentkit.core` lives under
-`backend/` (including `agentkit.cli`), `agentkit.web` under `frontend/`, and
-`agentkit.packs`/`agentkit.config` at the root.
-Import paths never mention `backend`/`frontend`.
+**Non-obvious structural fact:** the `agentkit` package is physically split across four
+top-level directories and reassembled by an explicit setuptools package map
+(`pyproject.toml` → `[tool.setuptools] packages = [...]` + `[tool.setuptools.package-dir]`,
+one entry per subpackage). This replaced the earlier implicit namespace-package discovery
+(`[tool.setuptools.packages.find] where = [".", "backend", "frontend"]`) so that
+`infra/alembic/` (migrations) ships inside the installed wheel as `agentkit.migrations` /
+`agentkit.migrations.versions` — namespace-package `find` had no way to reach outside
+`where`. At import time there is exactly one `agentkit` package. `agentkit.core` lives under
+`backend/` (including `agentkit.cli`), `agentkit.web` under `frontend/`,
+`agentkit.packs`/`agentkit.config` at the root, and `agentkit.migrations` under
+`infra/alembic/`. Import paths never mention `backend`/`frontend`/`infra`.
 
 Where things live:
 
@@ -88,7 +92,9 @@ Where things live:
 - **CLI** — `backend/agentkit/cli.py` (Typer; the `agentkit` console script)
 - **Test content (data, not code)** — `agentkit/packs/**/*.yaml`
 - **Repo tests** — `tests/` (pytest, one file per module)
-- **Infrastructure** — `infra/` (Dockerfile, compose, `dev.sh`)
+- **Infrastructure** — `infra/` (Dockerfile, compose, `dev.sh`, `infra/alembic/` migrations)
+- **DB schema migrations** — `infra/alembic/` (Alembic, raw SQL via `op.execute`, no ORM
+  models); driven by the `agentkit migrate` CLI subcommand, config in root `alembic.ini`
 
 Generated / vendored — **never edit by hand:** `dist/`, `agentkit.egg-info/`, `.venv/`,
 `agentkit.db`, `**/__pycache__/`, `uv.lock` (regenerate via `uv lock`),
@@ -108,7 +114,7 @@ frontend/agentkit/web/ app.py · templates/ · static/
 tests/                 pytest suite · _fixtures.py
 docs/                  architecture.md · plan.md · specs/ · diagrams/ · components.yaml
 tools/                 validate.sh · affected.sh · guard-protected-paths.sh
-infra/                 Dockerfile · docker-compose.yml · dev.sh
+infra/                 Dockerfile · docker-compose.yml · dev.sh · alembic/ (DB migrations)
 ```
 
 Machine-readable component map with dependencies and validation commands:
@@ -122,12 +128,14 @@ All commands below were executed successfully in this repository.
 | --- | --- |
 | Install deps | `uv sync --extra dev` |
 | Editable install | `pip install -e .` |
-| Unit tests (full suite, 174 tests, ~2.5s) | `python -m pytest` |
+| Unit tests (full suite, 179 tests, ~2.5s) | `python -m pytest` |
 | Single test file | `python -m pytest tests/test_runner.py` |
 | Single test | `python -m pytest tests/test_runner.py -k name` |
 | Lint | `python -m ruff check .` |
 | Format | `python -m ruff format .` |
 | Build dists | `uv build` |
+| Apply DB migrations | `agentkit migrate --db <path>` |
+| Migration status | `agentkit migrate --db <path> --status` |
 | Dev dashboard | `bash infra/dev.sh` (serves `127.0.0.1:8000`) |
 | Affected scope | `bash tools/affected.sh` |
 | Affected validation | `bash tools/validate.sh --affected` |

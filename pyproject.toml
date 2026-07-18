@@ -17,6 +17,8 @@ dependencies = [
     "pyyaml",
     "httpx",
     "typer",
+    "alembic",
+    "sqlalchemy",
 ]
 
 [project.optional-dependencies]
@@ -28,20 +30,45 @@ dev = [
 [project.scripts]
 agentkit = "agentkit.cli:app"
 
-[tool.setuptools.packages.find]
-where = [".", "backend", "frontend"]
-include = ["agentkit*"]
-namespaces = true
+[tool.setuptools]
+include-package-data = false
+packages = [
+    "agentkit",
+    "agentkit.config",
+    "agentkit.packs",
+    "agentkit.packs.core",
+    "agentkit.core",
+    "agentkit.domains",
+    "agentkit.domains.email",
+    "agentkit.domains.treasury",
+    "agentkit.reports",
+    "agentkit.web",
+    "agentkit.migrations",
+    "agentkit.migrations.versions",
+]
+
+[tool.setuptools.package-dir]
+agentkit = "backend/agentkit"
+"agentkit.config" = "agentkit/config"
+"agentkit.packs" = "agentkit/packs"
+"agentkit.packs.core" = "agentkit/packs/core"
+"agentkit.core" = "backend/agentkit/core"
+"agentkit.domains" = "backend/agentkit/domains"
+"agentkit.domains.email" = "backend/agentkit/domains/email"
+"agentkit.domains.treasury" = "backend/agentkit/domains/treasury"
+"agentkit.reports" = "backend/agentkit/reports"
+"agentkit.web" = "frontend/agentkit/web"
+"agentkit.migrations" = "infra/alembic"
+"agentkit.migrations.versions" = "infra/alembic/versions"
 
 [tool.setuptools.package-data]
-agentkit = [
-    "config/*.yaml",
-    "packs/**/*.yaml",
-]
+"agentkit.config" = ["*.yaml"]
+"agentkit.packs" = ["**/*.yaml"]
 "agentkit.web" = [
     "static/*",
     "templates/*",
 ]
+"agentkit.migrations" = ["script.py.mako"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

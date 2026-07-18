@@ -15,8 +15,9 @@ RUN python -m venv "$VIRTUAL_ENV"
 # Copy metadata first so dependency install is cached independently of source.
 COPY pyproject.toml README.md ./
 COPY agentkit ./agentkit
-COPY BE ./BE
-COPY FE ./FE
+COPY backend ./backend
+COPY frontend ./frontend
+COPY infra/alembic ./infra/alembic
 
 RUN pip install .
 
