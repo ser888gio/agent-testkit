@@ -1,6 +1,5 @@
-from typer.testing import CliRunner
-
 from agentkit.cli import app
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -167,3 +166,32 @@ def test_report_format_junit_emits_xml_to_stdout(tmp_path):
     )
     assert report_result.exit_code == 0, report_result.output
     assert report_result.output.strip().startswith("<testsuite")
+
+
+def test_ui_rejects_public_bind_without_oidc(monkeypatch):
+    monkeypatch.delenv("AGENTKIT_AUTH_MODE", raising=False)
+    result = runner.invoke(app, ["ui", "--host", "0.0.0.0"])
+    assert result.exit_code == 1
+    assert "requires AGENTKIT_AUTH_MODE=oidc" in result.output
+
+
+def test_ui_rejects_dev_mode_on_public_bind(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
+    result = runner.invoke(app, ["ui", "--host", "0.0.0.0"])
+    assert result.exit_code == 1
+    assert "loopback-only" in result.output
+
+
+def test_ui_rejects_incomplete_oidc_configuration(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
+    for name in (
+        "AGENTKIT_OIDC_JWKS_URL",
+        "AGENTKIT_OIDC_ISSUER",
+        "AGENTKIT_OIDC_AUDIENCE",
+        "AGENTKIT_OIDC_CLIENT_ID",
+        "AGENTKIT_OIDC_REDIRECT_URI",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    result = runner.invoke(app, ["ui"])
+    assert result.exit_code == 1
+    assert "OIDC is incompletely configured" in result.output

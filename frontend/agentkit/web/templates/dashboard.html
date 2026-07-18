@@ -98,7 +98,7 @@
   <div class="table-wrap">
   <table>
 <thead>
-<tr><th scope="col">Run</th><th scope="col">Agent</th><th scope="col">Started</th><th scope="col">Gate</th><th scope="col">Score</th><th scope="col">Evidence</th></tr>
+<tr><th scope="col">Run</th><th scope="col">Agent</th><th scope="col">Started</th><th scope="col">Launched by</th><th scope="col">Gate</th><th scope="col">Score</th><th scope="col">Evidence</th></tr>
 </thead>
 <tbody>
 {% for r in runs %}
@@ -106,6 +106,7 @@
   <td data-label="Run"><a class="mono" href="/runs/{{ r.id }}">{{ r.short_id }}</a></td>
   <td data-label="Agent"><a href="/agents/{{ r.agent_id | urlencode }}">{{ r.agent_id }}</a></td>
   <td class="mono" data-label="Started">{{ r.started }}</td>
+  <td data-label="Launched by">{{ r.launched_by }}</td>
   <td data-label="Gate">{{ status_badge(r.status) }}</td>
   <td data-label="Score">{{ score_bar(r.score_percent, "Overall score") }} <span>{{ r.score_percent }}%</span></td>
   <td data-label="Evidence"><span class="{% if r.critical_failures %}critical-count{% endif %}">{{ r.critical_failures }}</span> critical, {{ r.failed }} failed</td>

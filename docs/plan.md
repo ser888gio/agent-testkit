@@ -252,10 +252,10 @@ python -m pytest
 
 Ships before any external partner gets interactive access. A shared credential has no attribution on who launched a run, and revoking one person logs out the whole org. For a tool whose output is evidence, unattributable actions defeat the product.
 
-### T6: Keycloak Infrastructure and Realm
+### T6: Keycloak Infrastructure and Realm - Done
 
 **Dependencies:** none
-**Files:** `infra/docker-compose.yml`, `infra/keycloak/realm.json`, `docs/`
+**Files:** `infra/docker-compose.yml`, `infra/keycloak/agentkit-realm.json`, `docs/`
 
 - Add a Keycloak service with its own database, separate from AgentKit's.
 - Use one realm and one group per org.
@@ -268,16 +268,18 @@ Ships before any external partner gets interactive access. A shared credential h
 
 **Acceptance:** `docker compose up` yields a realm importable from checked-in JSON; a test user in an org group receives a token carrying the `org_id` claim.
 
-**Validate:** Manual. Document the exact `curl` that fetches a token and shows the claim.
+**Validate:** Static deployment-contract tests plus a manual browser login and decoded access-token
+check. Service accounts use client credentials; human passwords are never sent to the token endpoint.
 
-### T7: JWT Validation Dependency
+### T7: JWT Validation Dependency - Done
 
 **Human review required.**
 
 **Dependencies:** T6, T2
 **Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
 
-- Replace process-global `_ACCESS_TOKEN` / `_require_token` (`app.py:42`, `app.py:60`) with `current_principal(request) -> (org_id, subject, email)`.
+- Replace process-global `_ACCESS_TOKEN` / `_require_token` with a typed `Principal` carrying org,
+  subject, email, realm roles, and authentication method.
 - Validate JWTs against Keycloak's JWKS. Cache keys and refresh on unknown `kid`.
 - Read `org_id` from the validated claim only, never from a request parameter, path segment, or form field.
 - Verify signature, `exp`, `iss`, and `aud`. A token failing any check is `401`.
@@ -293,16 +295,21 @@ python -m pytest tests/test_web.py
 
 **Review:** Signature/claim validation that is subtly wrong can pass tests and still be exploitable. A human reads this diff.
 
-### T8: Scope Every Route
+### T8: Scope Every Route - Done
 
 **Dependencies:** T7, T5
 **Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
 
-- Apply `current_principal` to every route, not just state-changing ones. Reads are the leak.
+- Apply `current_principal` to every application route, not just state-changing ones. The login,
+  callback, and logout protocol endpoints are deliberately public.
+- Require the coarse `admin` role for mutations; `viewer` is read-only. Browser-session mutations
+  also require a CSRF token.
 - Pass `org_id` into every Store call. Because T2 made it required, a missed route fails loudly rather than serving another partner's data.
 - Record `created_by` using the Keycloak `sub`, plus denormalized email for display, on runs and authored tests.
 
-**Acceptance:** Every route returns `401` without a token; org B fetching org A's run id gets `404`, not `403`; runs display who launched them.
+**Acceptance:** Every protected route rejects an unauthenticated API caller; browser requests enter
+Authorization Code + PKCE; viewers cannot mutate; org B fetching org A's run id gets `404`, not
+`403`; runs display who launched them.
 
 **Validate:**
 
@@ -311,7 +318,7 @@ python -m pytest tests/test_web.py
 python -m pytest
 ```
 
-### T9: Delete the Filesystem Test Write
+### T9: Delete the Filesystem Test Write - Done
 
 **Dependencies:** T5, T8
 **Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
@@ -330,14 +337,17 @@ This closes the crosstalk hole. `app.py:421` currently writes tenant-authored te
 python -m pytest tests/test_web.py
 ```
 
-### T10: Connection Pool
+### T10: Connection Pool - Done
 
 **Dependencies:** T2
 **Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
 
-`get_store()` (`app.py:90`) opens a fresh connection per handler call and never closes it. Replace it with one pool created at app startup, handed to handlers via a dependency.
+Use one long-lived `Store` and a bounded SQLite connection pool. Each operation exclusively leases
+a connection for its complete transaction, then returns it. App shutdown closes idle connections
+immediately and leased connections when they return.
 
-**Acceptance:** Connection count stays flat across many requests; no leaked handles.
+**Acceptance:** Connection count stays within the configured bound across requests and concurrent
+threads; `close()` rejects new checkouts and leaks no idle handles.
 
 **Validate:**
 

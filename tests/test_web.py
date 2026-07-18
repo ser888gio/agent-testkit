@@ -1,15 +1,21 @@
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
+import pytest
 from agentkit.core.config import CallableSpec, TargetConfig
 from agentkit.core.redaction import EvidencePolicy
 from agentkit.core.runner import run
-from agentkit.core.schema import Assertion, Category, TestCase
+from agentkit.core.schema import Assertion, Category
+from agentkit.core.schema import TestCase as SchemaTestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import DEFAULT_ORG, Store
+from fastapi.testclient import TestClient
 
 MODULE = "tests.test_web"
+
+
+@pytest.fixture(autouse=True)
+def explicit_dev_auth(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
 
 
 def _agent_with_secret(input: str) -> str:
@@ -29,13 +35,13 @@ def _seed_store(db_path: str):
         evidence=EvidencePolicy(),
     )
     tests = [
-        TestCase(
+        SchemaTestCase(
             id="a.pass.case",
             category=Category.reliability,
             input="hi",
             assertions=[Assertion(name="status_ok")],
         ),
-        TestCase(
+        SchemaTestCase(
             id="b.fail.case",
             category=Category.action_safety,
             risk="critical",
@@ -59,7 +65,7 @@ def _seed_passing_store(db_path: str):
         evidence=EvidencePolicy(),
     )
     tests = [
-        TestCase(
+        SchemaTestCase(
             id="clean.pass.case",
             category=Category.reliability,
             input="hi",
@@ -226,7 +232,7 @@ def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
     assert "Run Inputs" in resp.text
     assert "Security" in resp.text
     assert db in resp.text
-    assert "AGENTKIT_WEB_TOKEN" not in resp.text
+    assert "AGENTKIT_OIDC" not in resp.text
     assert 'href="/settings" class="active" aria-current="page"' in resp.text
 
 
@@ -283,7 +289,7 @@ def test_new_test_form_renders_choices(tmp_path, monkeypatch):
     assert "data_leakage" in resp.text  # a category
 
 
-def test_create_test_writes_yaml_pack(tmp_path, monkeypatch):
+def test_create_test_stores_db_row(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     packs = tmp_path / "packs"
@@ -305,13 +311,14 @@ def test_create_test_writes_yaml_pack(tmp_path, monkeypatch):
     assert resp.status_code == 303
     assert resp.headers["location"] == "/tests"
 
-    written = packs / "user" / "user.data_leakage.probe.yaml"
-    assert written.exists()
+    # Stored as an org-scoped DB row, and nothing was written to the packs dir.
+    assert not packs.exists()
+    rows = Store(db).get_pack_tests(DEFAULT_ORG, "user")
+    assert len(rows) == 1
     # round-trips through the real loader
-    from agentkit.core.loader import load_file
+    from agentkit.core.loader import load_tests_from_rows
 
-    cases = load_file(written)
-    assert len(cases) == 1
+    cases = load_tests_from_rows(rows)
     assert cases[0].id == "user.data_leakage.probe"
     assert cases[0].assertions[0].name == "not_contains"
 
@@ -358,7 +365,7 @@ def test_create_test_rejects_duplicate(tmp_path, monkeypatch):
     assert first.status_code == 303
     second = client.post("/tests", data=payload)
     assert second.status_code == 200
-    assert "already exists" in second.text
+    assert "duplicate test id" in second.text
 
 
 def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
@@ -551,3 +558,430 @@ def test_poll_helper_avoids_html_injection_sink():
     assert 'Accept: "application/json"' in js
     assert "requestSubmit" in js
     assert "setTimeout(submit, 350)" in js
+
+
+# --- T8: every route is authenticated and org-scoped -----------------------
+
+
+def _oidc_env(monkeypatch):
+    """Turn on auth without standing up Keycloak; no token will ever verify."""
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
+    monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", "https://kc.test/certs")
+    monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", "https://kc.test/realms/agentkit")
+    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-api")
+    monkeypatch.setenv("AGENTKIT_OIDC_CLIENT_ID", "agentkit-web")
+    monkeypatch.setenv("AGENTKIT_OIDC_REDIRECT_URI", "https://agentkit.test/auth/callback")
+
+
+def _concrete_paths() -> list[tuple[str, str]]:
+    """Every app route, with path params filled in. Static mount excluded."""
+    from agentkit.web.app import app
+
+    out = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", set()) or set()
+        if (
+            not path.startswith("/")
+            or path.startswith("/static")
+            or path in {"/login", "/auth/callback", "/logout"}
+        ):
+            continue
+        for method in methods & {"GET", "POST"}:
+            filled = (
+                path.replace("{run_id}", "some-run")
+                .replace("{test_id}", "some-test")
+                .replace("{agent_id:path}", "some-agent")
+            )
+            out.append((method, filled))
+    return out
+
+
+def test_every_route_requires_a_token(tmp_path, monkeypatch):
+    """A new route that forgets `current_principal` fails here."""
+    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "web.db"))
+    _oidc_env(monkeypatch)
+    from agentkit.web.app import app
+
+    client = TestClient(app)
+    paths = _concrete_paths()
+    assert paths, "route table came back empty; the introspection is wrong"
+
+    unprotected = []
+    for method, path in paths:
+        resp = client.request(method, path, params={"a": "x", "b": "y",
+                                                    "target": "t", "packs": "p"},
+                              headers={"Accept": "application/json"})
+        if resp.status_code != 401:
+            unprotected.append((method, path, resp.status_code))
+    assert not unprotected
+
+
+def test_browser_request_starts_code_pkce_login(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "web.db"))
+    _oidc_env(monkeypatch)
+    from agentkit.web.app import app
+
+    client = TestClient(app)
+    response = client.get("/runs", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login?next=")
+
+    login = client.get(response.headers["location"], follow_redirects=False)
+    assert login.status_code == 302
+    assert login.headers["location"].startswith(
+        "https://kc.test/realms/agentkit/protocol/openid-connect/auth?"
+    )
+    assert "code_challenge_method=S256" in login.headers["location"]
+    assert "agentkit_login_state=" in login.headers["set-cookie"]
+
+
+def test_viewer_cannot_create_test(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    Store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
+        DEFAULT_ORG, "viewer", "viewer@example.test", frozenset({"viewer"})
+    )
+    try:
+        response = TestClient(web_app.app).post(
+            "/tests",
+            data={
+                "test_id": "viewer.forbidden",
+                "category": "reliability",
+                "risk": "low",
+                "input": "hi",
+                "assertion_name": "response_nonempty",
+                "assertion_args": "",
+            },
+        )
+    finally:
+        web_app.app.dependency_overrides.clear()
+    assert response.status_code == 403
+    assert Store(db).list_authored_tests(DEFAULT_ORG) == []
+
+
+def test_session_mutation_requires_csrf_token(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    Store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
+        DEFAULT_ORG,
+        "admin",
+        "admin@example.test",
+        frozenset({"admin"}),
+        auth_method="session",
+        csrf_token="expected-token",
+    )
+    try:
+        response = TestClient(web_app.app).post(
+            "/tests",
+            data={
+                "test_id": "csrf.forbidden",
+                "category": "reliability",
+                "risk": "low",
+                "input": "hi",
+                "assertion_name": "response_nonempty",
+                "assertion_args": "",
+            },
+        )
+    finally:
+        web_app.app.dependency_overrides.clear()
+    assert response.status_code == 403
+    assert Store(db).list_authored_tests(DEFAULT_ORG) == []
+
+
+def test_session_mutation_accepts_matching_csrf_token(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    Store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
+        DEFAULT_ORG,
+        "admin",
+        "admin@example.test",
+        frozenset({"admin"}),
+        auth_method="session",
+        csrf_token="expected-token",
+    )
+    try:
+        response = TestClient(web_app.app).post(
+            "/tests",
+            data={
+                "csrf_token": "expected-token",
+                "test_id": "csrf.allowed",
+                "category": "reliability",
+                "risk": "low",
+                "input": "hi",
+                "assertion_name": "response_nonempty",
+                "assertion_args": "",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        web_app.app.dependency_overrides.clear()
+    assert response.status_code == 303
+    assert Store(db).list_authored_tests(DEFAULT_ORG)[0]["test_id"] == "csrf.allowed"
+
+
+def test_run_of_another_org_is_404_not_403(tmp_path, monkeypatch):
+    """Org B must not learn that org A's run id exists."""
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    client = TestClient(web_app.app)
+    # The run was seeded under DEFAULT_ORG; the dev principal is that org.
+    assert client.get(f"/runs/{rr.run_id}").status_code == 200
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
+    )
+    try:
+        resp = client.get(f"/runs/{rr.run_id}")
+    finally:
+        web_app.app.dependency_overrides.clear()
+    assert resp.status_code == 404
+
+
+def test_runs_of_another_org_are_not_listed(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    client = TestClient(web_app.app)
+    assert "web-target" in client.get("/runs").text
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
+    )
+    try:
+        for path in ("/runs", "/agents", "/tests"):
+            assert "web-target" not in client.get(path).text, path
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+
+def _seed_attributed_store(db: str) -> str:
+    """One CLI-launched run (no principal) plus one launched by a human."""
+    cfg, _rr, _report = _seed_store(db)
+    from agentkit.core.runner import run as run_tests
+
+    rr2 = run_tests(cfg, [])
+    Store(db).save_run(
+        DEFAULT_ORG, cfg, rr2, score(rr2),
+        created_by="kc-sub-1", created_by_email="launcher@acme.test",
+    )
+    return rr2.run_id
+
+
+def test_run_records_who_launched_it(tmp_path):
+    db = str(tmp_path / "attr.db")
+    run_id = _seed_attributed_store(db)
+    row = next(r for r in Store(db).list_runs(DEFAULT_ORG) if r.id == run_id)
+    assert row.created_by == "kc-sub-1"
+    assert row.created_by_email == "launcher@acme.test"
+
+
+def test_runs_page_shows_who_launched_each_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "attr.db")
+    _seed_attributed_store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web.app import app
+
+    body = TestClient(app).get("/runs").text
+    assert "launcher@acme.test" in body
+    assert "CLI" in body  # the seeded run has no principal
+
+
+def test_cli_run_has_no_attribution(tmp_path):
+    """The CLI has no human principal; attribution is null, not invented."""
+    db = str(tmp_path / "cli.db")
+    _cfg, rr, _report = _seed_store(db)
+    row = next(r for r in Store(db).list_runs(DEFAULT_ORG) if r.id == rr.run_id)
+    assert row.created_by is None
+    assert row.created_by_email is None
+
+
+# --- T9: authored tests are org-scoped DB rows, never shared files ---------
+
+
+def test_authored_test_is_invisible_to_another_org(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    packs = tmp_path / "packs"
+    monkeypatch.setenv("AGENTKIT_PACKS", str(packs))
+    monkeypatch.setenv("AGENTKIT_DB", db)
+
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    client = TestClient(web_app.app)
+    payload = {
+        "test_id": "orga.secret.probe",
+        "category": "data_leakage",
+        "risk": "high",
+        "input": "leak something",
+        "assertion_name": "response_nonempty",
+        "assertion_args": "",
+    }
+    assert client.post("/tests", data=payload, follow_redirects=False).status_code == 303
+    assert "orga.secret.probe" in client.get("/tests").text
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("org-b", "sub-b", "b@other.test", frozenset({"admin"}))
+    )
+    try:
+        assert "orga.secret.probe" not in client.get("/tests").text
+        # Org B may reuse the id without colliding with org A's row.
+        assert client.post(
+            "/tests", data=payload, follow_redirects=False
+        ).status_code == 303
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+    assert Store(db).get_pack_tests("org-b", "user")[0]["id"] == "orga.secret.probe"
+    assert len(Store(db).get_pack_tests(DEFAULT_ORG, "user")) == 1
+    assert not packs.exists()
+
+
+def test_no_code_path_writes_to_packs_user_dir():
+    """The filesystem write is gone, not merely bypassed."""
+    source = Path("frontend/agentkit/web/app.py").read_text(encoding="utf-8")
+    assert "write_text" not in source
+    assert "mkdir" not in source
+
+
+def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    Store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web.app import app
+
+    client = TestClient(app)
+    client.post(
+        "/tests",
+        data={
+            "test_id": "never.run.probe",
+            "category": "reliability",
+            "risk": "low",
+            "input": "hi",
+            "assertion_name": "response_nonempty",
+            "assertion_args": "",
+        },
+    )
+    body = client.get("/tests").text
+    assert "never.run.probe" in body
+    assert "never run" in body
+
+
+def test_authored_duplicate_ids_from_different_packs_remain_distinct():
+    from agentkit.web.app import _test_rows
+
+    class FakeStore:
+        def list_authored_tests(self, _org_id):
+            return [
+                {"pack_id": "one", "test_id": "shared.id", "category": "reliability",
+                 "risk": "low", "created_by": None, "created_by_email": None},
+                {"pack_id": "two", "test_id": "shared.id", "category": "security",
+                 "risk": "high", "created_by": None, "created_by_email": None},
+            ]
+
+        def list_tests(self, _org_id):
+            return []
+
+    rows = _test_rows(FakeStore(), DEFAULT_ORG)
+    assert {(row["pack_id"], row["test_id"]) for row in rows} == {
+        ("one", "shared.id"),
+        ("two", "shared.id"),
+    }
+
+
+# --- T10: one long-lived Store, not one connection per request -------------
+
+
+def test_store_is_constructed_once_across_many_requests(tmp_path, monkeypatch):
+    """The old get_store() built a Store -- and a connection -- per handler call.
+
+    Counting live sqlite3.Connection objects cannot show this: CPython
+    refcounting reclaims the orphan as soon as the handler returns. Counting
+    constructions is what actually distinguishes the two implementations.
+    """
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    import agentkit.web.app as web_app
+
+    client.get("/runs")  # warm up
+    built = 0
+    real_init = Store.__init__
+
+    def counting_init(self, *args, **kwargs):
+        nonlocal built
+        built += 1
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(Store, "__init__", counting_init)
+    for _ in range(25):
+        assert client.get("/runs").status_code == 200
+    assert built == 0, f"{built} Stores built across 25 requests"
+    assert web_app._store is not None
+
+
+def test_store_is_reused_across_requests(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+    from agentkit.web.app import get_store
+
+    client.get("/runs")
+    first = get_store()
+    client.get("/runs")
+    assert get_store() is first
+
+
+def test_app_lifespan_can_restart_after_closing_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "restart.db"))
+    from agentkit.web.app import app
+
+    with TestClient(app) as first_client:
+        assert first_client.get("/runs").status_code == 200
+    with TestClient(app) as second_client:
+        assert second_client.get("/runs").status_code == 200
+
+
+def test_store_serves_concurrent_threads(tmp_path):
+    """Pool leases connections exclusively and stays within its configured bound."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    db = str(tmp_path / "threads.db")
+    cfg, _rr, _report = _seed_store(db)
+    store = Store(db)
+
+    def read_and_write(n: int) -> int:
+        from agentkit.core.runner import run as run_tests
+
+        rr = run_tests(cfg, [])
+        store.save_run(DEFAULT_ORG, cfg, rr, score(rr))
+        return len(store.list_runs(DEFAULT_ORG))
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(read_and_write, range(8)))
+    assert all(r > 0 for r in results)
+    assert len(store.list_runs(DEFAULT_ORG)) == 9  # 1 seeded + 8 written
+    assert store._pool._created <= 4  # noqa: SLF001 - verify the pool bound

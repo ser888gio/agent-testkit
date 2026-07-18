@@ -1,0 +1,138 @@
+{
+  "realm": "agentkit",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "accessTokenLifespan": 60,
+  "roles": {
+    "realm": [
+      { "name": "admin", "description": "May read and mutate resources within the org" },
+      { "name": "viewer", "description": "Read-only access within the org" }
+    ]
+  },
+  "groups": [
+    {
+      "name": "acme",
+      "path": "/acme",
+      "attributes": { "org_id": ["acme"] },
+      "realmRoles": ["viewer"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "agentkit-api",
+      "name": "AgentKit API audience",
+      "enabled": true,
+      "bearerOnly": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "agentkit-web",
+      "name": "AgentKit dashboard",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8000/*"
+      },
+      "redirectUris": ["http://localhost:8000/auth/callback"],
+      "webOrigins": ["http://localhost:8000"],
+      "defaultClientScopes": ["profile", "email", "roles", "org", "agentkit-api-audience"]
+    },
+    {
+      "clientId": "agentkit-ci-acme",
+      "name": "AgentKit CI (acme)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${AGENTKIT_CI_ACME_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "defaultClientScopes": ["roles", "org", "agentkit-api-audience"],
+      "protocolMappers": [
+        {
+          "name": "org_id (service account)",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "org_id",
+            "claim.value": "acme",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "admin role (service account)",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-role-mapper",
+          "config": { "role": "admin", "access.token.claim": "true" }
+        }
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "org",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "org_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "org_id",
+            "claim.name": "org_id",
+            "jsonType.label": "String",
+            "aggregate.attrs": "true",
+            "multivalued": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "agentkit-api-audience",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "agentkit-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "agentkit-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "acme-user",
+      "enabled": true,
+      "email": "acme-user@example.com",
+      "emailVerified": true,
+      "firstName": "Acme",
+      "lastName": "User",
+      "credentials": [
+        { "type": "password", "value": "${AGENTKIT_DEMO_USER_PASSWORD}", "temporary": false }
+      ],
+      "groups": ["/acme"]
+    }
+  ]
+}

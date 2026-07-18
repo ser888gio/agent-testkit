@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from importlib.resources import files
+from ipaddress import ip_address
 from pathlib import Path
 
 import typer
@@ -33,6 +34,15 @@ DEFAULT_DB_PATH = "database/agentkit.db"
 
 def _resolve_db_path(db: str | None) -> str:
     return db or os.environ.get("AGENTKIT_DB", DEFAULT_DB_PATH)
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ip_address(host.strip("[]")).is_loopback
+    except ValueError:
+        return False
 
 
 def _alembic_config(db_path: Path) -> AlembicConfig:
@@ -256,10 +266,28 @@ def ui_cmd(
     try:
         import uvicorn
 
+        mode = os.environ.get("AGENTKIT_AUTH_MODE", "").strip().lower()
+        if not mode:
+            if not _is_loopback_host(host):
+                typer.echo(
+                    "error: public UI binding requires AGENTKIT_AUTH_MODE=oidc",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            os.environ["AGENTKIT_AUTH_MODE"] = "dev"
+        elif mode == "dev" and not _is_loopback_host(host):
+            typer.echo("error: dev authentication is loopback-only", err=True)
+            raise typer.Exit(1)
+
         os.environ["AGENTKIT_DB"] = _resolve_db_path(db)
-        import agentkit.web.app  # noqa: F401
+        import agentkit.web.app as web_app
+
+        web_app.auth_enabled()
     except ModuleNotFoundError as exc:
         typer.echo(f"error: web UI is not available yet: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    except RuntimeError as exc:
+        typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     typer.echo(f"agentkit ui running at http://{host}:{port}")

@@ -13,6 +13,8 @@ env/
 *.db
 *.sqlite3
 agentkit.db
+.env
+infra/.env
 
 # Tooling
 .pytest_cache/

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from agentkit.core.agent import AgentResponse
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.redaction import EvidencePolicy, RedactionConfig, Redactor
@@ -19,9 +20,16 @@ from agentkit.core.schema import (
     Category,
     Risk,
     Status,
-    TestCase,
+)
+from agentkit.core.schema import (
+    TestCase as SchemaTestCase,
 )
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def explicit_dev_auth(monkeypatch):
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
 
 # --- scoring fails closed (covered in test_scoring.py::test_all_skipped_run_fails_closed)
 
@@ -35,25 +43,31 @@ def _web_client() -> TestClient:
     return TestClient(app)
 
 
-def test_post_runs_rejects_missing_token():
+def test_post_runs_rejects_missing_token(monkeypatch):
+    # With OIDC configured, an unauthenticated caller never reaches the runner.
+    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
+    monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", "https://kc.test/certs")
+    monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", "https://kc.test/realms/agentkit")
+    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-api")
+    monkeypatch.setenv("AGENTKIT_OIDC_CLIENT_ID", "agentkit-web")
+    monkeypatch.setenv("AGENTKIT_OIDC_REDIRECT_URI", "https://agentkit.test/auth/callback")
     client = _web_client()
-    resp = client.post("/runs", params={"target": "x", "packs": "y"})
-    assert resp.status_code == 403
+    resp = client.post(
+        "/runs",
+        params={"target": "x", "packs": "y"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 401
 
 
 def test_post_runs_rejects_path_outside_allowlist():
-    from agentkit.web.app import _ACCESS_TOKEN
-
     client = _web_client()
-    # A valid token but a target path escaping config/ and packs/ must be refused,
-    # so the route can never load an arbitrary Python callable.
+    # An authorized caller (dev mode) with a target path escaping config/ and
+    # packs/ must still be refused, so the route can never load an arbitrary
+    # Python callable.
     resp = client.post(
         "/runs",
-        params={
-            "target": "/etc/passwd",
-            "packs": "../../evil",
-            "token": _ACCESS_TOKEN,
-        },
+        params={"target": "/etc/passwd", "packs": "../../evil"},
     )
     assert resp.status_code == 400
 
@@ -90,7 +104,7 @@ class _CountingSandbox(Sandbox):
 
 def test_timeout_does_not_produce_trusted_diff():
     redactor = Redactor(RedactionConfig())
-    test = TestCase(
+    test = SchemaTestCase(
         id="t.timeout.case",
         category=Category.reliability,
         input="hi",
@@ -127,7 +141,7 @@ class _FailingSandbox(_CountingSandbox):
 
 
 def test_runner_redacts_unexpected_exception_messages():
-    test = TestCase(
+    test = SchemaTestCase(
         id="t.exception.case",
         category=Category.reliability,
         input="hi",

@@ -14,7 +14,7 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 # Bump when a new revision lands in infra/alembic/versions/.
-HEAD = "0004"
+HEAD = "0005"
 APPLICATION_TABLES = (
     "orgs",
     "agents",
@@ -266,6 +266,7 @@ def test_cli_migrate_status_lists_pending_migrations(tmp_path):
     assert "pending 0002: orgs table + org_id on agents, runs, test_results" in result.output
     assert "pending 0003: targets, packs and pack_tests tables" in result.output
     assert "pending 0004: phase 1 persistence integrity" in result.output
+    assert "pending 0005: run and authored-test attribution" in result.output
     assert _current_revision(db) is None
 
 

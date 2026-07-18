@@ -7,7 +7,8 @@ from agentkit.core.config import CallableSpec, TargetConfig, load_target_dict
 from agentkit.core.loader import LoaderError, load_tests_from_rows
 from agentkit.core.redaction import EvidencePolicy
 from agentkit.core.runner import run
-from agentkit.core.schema import Assertion, Category, TestCase
+from agentkit.core.schema import Assertion, Category
+from agentkit.core.schema import TestCase as SchemaTestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import DEFAULT_ORG, Store
 
@@ -43,7 +44,7 @@ def _run_and_score(
     cfg = _target(evidence, target_id)
     assertion = Assertion(name="status_ok") if passing else Assertion(name="is_valid_json")
     tests = [
-        TestCase(
+        SchemaTestCase(
             id=test_id,
             category=Category.reliability,
             input="hi",
@@ -140,9 +141,10 @@ def test_secret_redacted_in_stored_evidence():
     ):
         assert secret not in persisted
 
-    raw = store._conn.execute(  # noqa: SLF001 - inspect the persistence boundary
-        "SELECT result_json FROM test_results WHERE run_id = ?", (rr.run_id,)
-    ).fetchone()[0]
+    with store._connection() as conn:  # noqa: SLF001 - inspect persistence boundary
+        raw = conn.execute(
+            "SELECT result_json FROM test_results WHERE run_id = ?", (rr.run_id,)
+        ).fetchone()[0]
     assert "boundary12345678" not in raw
     assert "store.boundary-token" not in raw
 
@@ -190,27 +192,27 @@ def test_tenant_constraints_reject_mismatched_result_owner():
     store = Store(":memory:")
     cfg, rr, report = _run_and_score()
     store.save_run("org-a", cfg, rr, report)
-    store._conn.execute(  # noqa: SLF001 - verify the database boundary directly
-        "INSERT INTO orgs (id, name, created_at) VALUES ('org-b', 'B', 'now')"
-    )
+    with store._connection() as conn, conn:  # noqa: SLF001 - inspect database boundary
+        conn.execute("INSERT INTO orgs (id, name, created_at) VALUES ('org-b', 'B', 'now')")
 
     with pytest.raises(sqlite3.IntegrityError):
-        store._conn.execute(  # noqa: SLF001 - intentionally violate tenant lineage
-            "UPDATE test_results SET org_id = 'org-b' WHERE run_id = ?", (rr.run_id,)
-        )
+        with store._connection() as conn, conn:  # noqa: SLF001 - violate tenant lineage
+            conn.execute(
+                "UPDATE test_results SET org_id = 'org-b' WHERE run_id = ?", (rr.run_id,)
+            )
 
 
 def test_reads_fail_closed_for_inconsistent_tenant_markers():
     store = Store(":memory:")
     cfg, rr, report = _run_and_score()
     store.save_run("org-a", cfg, rr, report)
-    store._conn.commit()  # noqa: SLF001 - create legacy/corrupt data for a read-boundary test
-    store._conn.execute("PRAGMA foreign_keys = OFF")  # noqa: SLF001
-    store._conn.execute(  # noqa: SLF001
-        "UPDATE test_results SET org_id = 'org-b' WHERE run_id = ?", (rr.run_id,)
-    )
-    store._conn.commit()  # noqa: SLF001
-    store._conn.execute("PRAGMA foreign_keys = ON")  # noqa: SLF001
+    with store._connection() as conn:  # noqa: SLF001 - create legacy/corrupt data
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute(
+            "UPDATE test_results SET org_id = 'org-b' WHERE run_id = ?", (rr.run_id,)
+        )
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys = ON")
 
     assert store.list_tests("org-b") == []
     assert store.pass_fail_matrix("org-a", cfg.id) == {}
@@ -299,10 +301,11 @@ def test_target_secret_reference_round_trips_without_entering_config_json(monkey
     assert store.get_target_secret_ref("org-a", "stored-agent") == (
         "vault://org-a/agent-token"
     )
-    stored_json = store._conn.execute(  # noqa: SLF001 - inspect raw secret boundary
-        "SELECT config_json FROM targets WHERE org_id = ? AND id = ?",
-        ("org-a", "stored-agent"),
-    ).fetchone()[0]
+    with store._connection() as conn:  # noqa: SLF001 - inspect raw secret boundary
+        stored_json = conn.execute(
+            "SELECT config_json FROM targets WHERE org_id = ? AND id = ?",
+            ("org-a", "stored-agent"),
+        ).fetchone()[0]
     assert "${AGENT_TOKEN}" in stored_json
     assert "resolved-value" not in stored_json
     assert "vault://" not in stored_json
@@ -414,9 +417,10 @@ def test_target_and_pack_deletion_is_scoped():
     assert store.delete_pack("org-a", "p1") is True
     assert store.delete_pack("org-a", "p1") is False
     assert [row.id for row in store.list_packs("org-b")] == ["p1"]
-    remaining = store._conn.execute(  # noqa: SLF001 - verify child cleanup
-        "SELECT COUNT(*) FROM pack_tests WHERE org_id = ?", ("org-a",)
-    ).fetchone()[0]
+    with store._connection() as conn:  # noqa: SLF001 - verify child cleanup
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM pack_tests WHERE org_id = ?", ("org-a",)
+        ).fetchone()[0]
     assert remaining == 0
 
 
@@ -453,3 +457,10 @@ def test_reopening_existing_db_does_not_error_or_duplicate(tmp_path):
     store2 = Store(db_path)
     runs = store2.list_runs(DEFAULT_ORG, cfg.id)
     assert len(runs) == 1
+
+
+def test_store_close_rejects_future_checkouts():
+    store = Store(":memory:")
+    store.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        store.list_runs(DEFAULT_ORG)
