@@ -25,7 +25,7 @@ from agentkit.core.regressions import compare
 from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category
 from agentkit.core.scoring import score
-from agentkit.core.store import Store
+from agentkit.core.store import DEFAULT_ORG, Store
 from agentkit.reports import render as render_report
 
 
@@ -134,7 +134,7 @@ def run_cmd(
     report = score(rr, fail_under=fail_under, block_on_critical=block_on_critical)
 
     store = Store(db)
-    store.save_run(cfg, rr, report)
+    store.save_run(DEFAULT_ORG, cfg, rr, report)
 
     if format == "json":
         typer.echo(
@@ -169,7 +169,7 @@ def report_cmd(
 ) -> None:
     store = Store(db)
     try:
-        rr, report = store.get_run(run)
+        rr, report = store.get_run(DEFAULT_ORG, run)
     except KeyError as exc:
         typer.echo(f"error: run '{run}' not found", err=True)
         raise typer.Exit(2) from exc
@@ -194,8 +194,8 @@ def compare_cmd(
 ) -> None:
     store = Store(db)
     try:
-        before, before_score = store.get_run(run_a)
-        after, after_score = store.get_run(run_b)
+        before, before_score = store.get_run(DEFAULT_ORG, run_a)
+        after, after_score = store.get_run(DEFAULT_ORG, run_b)
     except KeyError as exc:
         typer.echo(f"error: run {exc} not found", err=True)
         raise typer.Exit(2) from exc

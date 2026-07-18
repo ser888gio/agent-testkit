@@ -7,7 +7,7 @@ from agentkit.core.redaction import EvidencePolicy
 from agentkit.core.runner import run
 from agentkit.core.schema import Assertion, Category, TestCase
 from agentkit.core.scoring import score
-from agentkit.core.store import Store
+from agentkit.core.store import DEFAULT_ORG, Store
 
 MODULE = "tests.test_web"
 
@@ -46,7 +46,7 @@ def _seed_store(db_path: str):
     rr = run(cfg, tests)
     report = score(rr)
     store = Store(db_path)
-    store.save_run(cfg, rr, report)
+    store.save_run(DEFAULT_ORG, cfg, rr, report)
     return cfg, rr, report
 
 
@@ -69,7 +69,7 @@ def _seed_passing_store(db_path: str):
     rr = run(cfg, tests)
     report = score(rr)
     store = Store(db_path)
-    store.save_run(cfg, rr, report)
+    store.save_run(DEFAULT_ORG, cfg, rr, report)
     return cfg, rr, report
 
 
