@@ -3,7 +3,8 @@ import sqlite3
 from datetime import datetime, timezone
 
 import pytest
-from agentkit.core.config import CallableSpec, TargetConfig
+from agentkit.core.config import CallableSpec, TargetConfig, load_target_dict
+from agentkit.core.loader import LoaderError, load_tests_from_rows
 from agentkit.core.redaction import EvidencePolicy
 from agentkit.core.runner import run
 from agentkit.core.schema import Assertion, Category, TestCase
@@ -213,11 +214,77 @@ def test_no_public_method_defaults_org_id():
         "run_count",
         "get_run",
         "pass_fail_matrix",
+        "save_target",
+        "get_target",
+        "list_targets",
+        "save_pack",
+        "get_pack_tests",
+        "list_packs",
     ):
         parameters = list(inspect.signature(getattr(Store, name)).parameters.values())
         assert [parameter.name for parameter in parameters[:2]] == ["self", "org_id"], name
         param = parameters[1]
         assert param.default is inspect.Parameter.empty, name
+
+
+_TARGET_CONFIG = {
+    "id": "stored-agent",
+    "agent": {"type": "http", "endpoint": "https://example.test/agent"},
+}
+_PACK_TEST = {
+    "id": "pack.t1",
+    "input": "hello",
+    "category": "reliability",
+    "assertions": [{"name": "status_ok"}],
+}
+
+
+def test_target_row_round_trips_through_load_target_dict():
+    store = Store(":memory:")
+    store.save_target("org-a", "stored-agent", "Stored", _TARGET_CONFIG)
+
+    from_row = load_target_dict(store.get_target("org-a", "stored-agent"))
+    assert from_row == load_target_dict(_TARGET_CONFIG)
+    assert [t.id for t in store.list_targets("org-a")] == ["stored-agent"]
+
+
+def test_pack_rows_round_trip_through_load_tests_from_rows():
+    store = Store(":memory:")
+    store.save_pack("org-a", "p1", "Pack One", [_PACK_TEST])
+
+    cases = load_tests_from_rows(store.get_pack_tests("org-a", "p1"))
+    assert [c.id for c in cases] == ["pack.t1"]
+    assert [(p.id, p.test_count) for p in store.list_packs("org-a")] == [("p1", 1)]
+
+
+def test_save_pack_replaces_previous_tests():
+    store = Store(":memory:")
+    store.save_pack("org-a", "p1", "Pack One", [_PACK_TEST, dict(_PACK_TEST, id="pack.t2")])
+    store.save_pack("org-a", "p1", "Pack One", [_PACK_TEST])
+
+    assert [t["id"] for t in store.get_pack_tests("org-a", "p1")] == ["pack.t1"]
+
+
+def test_bad_assertion_in_a_row_raises_loadererror():
+    store = Store(":memory:")
+    bad = dict(_PACK_TEST, assertions=[{"name": "no_such_assertion", "value": "x"}])
+    store.save_pack("org-a", "p1", "Pack One", [bad])
+
+    with pytest.raises(LoaderError):
+        load_tests_from_rows(store.get_pack_tests("org-a", "p1"))
+
+
+def test_targets_and_packs_are_scoped_to_the_calling_org():
+    store = Store(":memory:")
+    store.save_target("org-a", "stored-agent", "Stored", _TARGET_CONFIG)
+    store.save_pack("org-a", "p1", "Pack One", [_PACK_TEST])
+
+    assert store.list_targets("org-b") == []
+    assert store.list_packs("org-b") == []
+    with pytest.raises(KeyError):
+        store.get_target("org-b", "stored-agent")
+    with pytest.raises(KeyError):
+        store.get_pack_tests("org-b", "p1")
 
 
 def test_reopening_existing_db_does_not_error_or_duplicate(tmp_path):

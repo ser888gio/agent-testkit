@@ -58,6 +58,33 @@ CREATE TABLE IF NOT EXISTS test_results (
     FOREIGN KEY (org_id) REFERENCES orgs(id),
     FOREIGN KEY (org_id, run_id) REFERENCES runs(org_id, id)
 );
+CREATE TABLE IF NOT EXISTS targets (
+    id TEXT NOT NULL,
+    org_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    config_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (org_id, id),
+    FOREIGN KEY (org_id) REFERENCES orgs(id)
+);
+CREATE TABLE IF NOT EXISTS packs (
+    id TEXT NOT NULL,
+    org_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (org_id, id),
+    FOREIGN KEY (org_id) REFERENCES orgs(id)
+);
+CREATE TABLE IF NOT EXISTS pack_tests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id TEXT NOT NULL,
+    pack_id TEXT NOT NULL,
+    test_json TEXT NOT NULL,
+    FOREIGN KEY (org_id, pack_id) REFERENCES packs(org_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_targets_org ON targets(org_id);
+CREATE INDEX IF NOT EXISTS idx_packs_org ON packs(org_id);
+CREATE INDEX IF NOT EXISTS idx_pack_tests_pack ON pack_tests(org_id, pack_id);
 CREATE INDEX IF NOT EXISTS idx_results_run ON test_results(run_id);
 CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs(agent_id);
 CREATE INDEX IF NOT EXISTS idx_runs_org_started ON runs(org_id, started_at);
@@ -73,6 +100,23 @@ class AgentRow:
     name: str
     target_type: str
     created_at: str
+
+
+@dataclass
+class TargetRow:
+    id: str
+    org_id: str
+    name: str
+    created_at: str
+
+
+@dataclass
+class PackRow:
+    id: str
+    org_id: str
+    name: str
+    created_at: str
+    test_count: int
 
 
 @dataclass
@@ -111,6 +155,94 @@ class Store:
     def close(self) -> None:
         self._conn.close()
 
+    def _ensure_org(self, org_id: str, now: str) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO orgs (id, name, created_at) VALUES (?, ?, ?)",
+            (org_id, org_id, now),
+        )
+
+    def save_target(self, org_id: str, target_id: str, name: str, config: dict) -> None:
+        """Store a target's raw (un-interpolated) config. `${ENV_VAR}` refs stay
+        literal here so no resolved credential is ever persisted -- see T15."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn:
+            self._ensure_org(org_id, now)
+            self._conn.execute(
+                """
+                INSERT INTO targets (id, org_id, name, config_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(org_id, id) DO UPDATE SET
+                    name = excluded.name,
+                    config_json = excluded.config_json
+                """,
+                (target_id, org_id, name, json.dumps(config), now),
+            )
+
+    def get_target(self, org_id: str, target_id: str) -> dict:
+        row = self._conn.execute(
+            "SELECT config_json FROM targets WHERE org_id = ? AND id = ?",
+            (org_id, target_id),
+        ).fetchone()
+        if row is None:
+            raise KeyError(target_id)
+        return json.loads(row["config_json"])
+
+    def list_targets(self, org_id: str) -> list[TargetRow]:
+        cur = self._conn.execute(
+            "SELECT id, org_id, name, created_at FROM targets "
+            "WHERE org_id = ? ORDER BY created_at DESC, id",
+            (org_id,),
+        )
+        return [TargetRow(**dict(row)) for row in cur.fetchall()]
+
+    def save_pack(self, org_id: str, pack_id: str, name: str, tests: list[dict]) -> None:
+        """Replace a pack and its tests wholesale. One serialized TestCase per row."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn:
+            self._ensure_org(org_id, now)
+            self._conn.execute(
+                """
+                INSERT INTO packs (id, org_id, name, created_at) VALUES (?, ?, ?, ?)
+                ON CONFLICT(org_id, id) DO UPDATE SET name = excluded.name
+                """,
+                (pack_id, org_id, name, now),
+            )
+            self._conn.execute(
+                "DELETE FROM pack_tests WHERE org_id = ? AND pack_id = ?",
+                (org_id, pack_id),
+            )
+            self._conn.executemany(
+                "INSERT INTO pack_tests (org_id, pack_id, test_json) VALUES (?, ?, ?)",
+                [(org_id, pack_id, json.dumps(t)) for t in tests],
+            )
+
+    def get_pack_tests(self, org_id: str, pack_id: str) -> list[dict]:
+        pack = self._conn.execute(
+            "SELECT id FROM packs WHERE org_id = ? AND id = ?", (org_id, pack_id)
+        ).fetchone()
+        if pack is None:
+            raise KeyError(pack_id)
+        cur = self._conn.execute(
+            "SELECT test_json FROM pack_tests WHERE org_id = ? AND pack_id = ? ORDER BY id",
+            (org_id, pack_id),
+        )
+        return [json.loads(row["test_json"]) for row in cur.fetchall()]
+
+    def list_packs(self, org_id: str) -> list[PackRow]:
+        cur = self._conn.execute(
+            """
+            SELECT p.id, p.org_id, p.name, p.created_at,
+                   COUNT(pt.id) AS test_count
+            FROM packs p
+            LEFT JOIN pack_tests pt ON pt.org_id = p.org_id AND pt.pack_id = p.id
+            WHERE p.org_id = ?
+            GROUP BY p.id, p.org_id, p.name, p.created_at
+            ORDER BY p.created_at DESC, p.id
+            """,
+            (org_id,),
+        )
+        return [PackRow(**dict(row)) for row in cur.fetchall()]
+
     def save_run(
         self, org_id: str, agent: TargetConfig, run: RunResult, score: ScoreReport
     ) -> None:
@@ -118,10 +250,7 @@ class Store:
         status = "passed" if score.gate_passed else "failed"
 
         with self._conn:
-            self._conn.execute(
-                "INSERT OR IGNORE INTO orgs (id, name, created_at) VALUES (?, ?, ?)",
-                (org_id, org_id, now),
-            )
+            self._ensure_org(org_id, now)
             self._conn.execute(
                 """
                 INSERT INTO agents (id, org_id, name, target_type, created_at)

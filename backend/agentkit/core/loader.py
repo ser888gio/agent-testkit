@@ -86,6 +86,11 @@ def _build_test_case(raw: dict[str, Any], path: Path) -> TestCase:
     return test_case
 
 
+def load_tests_from_rows(rows: list[dict[str, Any]]) -> list[TestCase]:
+    """Same validation as load_file, for tests stored as DB rows instead of files."""
+    return [_build_test_case(raw, Path(f"<row {i}>")) for i, raw in enumerate(rows)]
+
+
 def load_file(path: str | Path) -> list[TestCase]:
     path = Path(path)
     text = path.read_text(encoding="utf-8")

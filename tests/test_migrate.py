@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 # Bump when a new revision lands in infra/alembic/versions/.
-HEAD = "0002"
+HEAD = "0003"
 
 
 def _schema_signature(db: str, table: str) -> tuple:
@@ -97,6 +97,8 @@ def test_downgrade_rejects_duplicate_agent_ids_without_data_loss(tmp_path):
     db_path = tmp_path / "tenant.db"
     cfg = _alembic_config(db_path)
     alembic_command.upgrade(cfg, "head")
+    # 0002 is the revision under test; step down to it so nothing later is in the way.
+    alembic_command.downgrade(cfg, "0002")
     conn = sqlite3.connect(db_path)
     conn.execute(
         "INSERT INTO orgs (id, name, created_at) VALUES ('org-a', 'A', 'now'), "
@@ -115,7 +117,7 @@ def test_downgrade_rejects_duplicate_agent_ids_without_data_loss(tmp_path):
 
     conn = sqlite3.connect(db_path)
     assert conn.execute("SELECT COUNT(*) FROM agents WHERE id = 'shared'").fetchone()[0] == 2
-    assert _current_revision(str(db_path)) == HEAD
+    assert _current_revision(str(db_path)) == "0002"
     conn.close()
 
 
