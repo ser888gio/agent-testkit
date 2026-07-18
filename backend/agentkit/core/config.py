@@ -70,26 +70,14 @@ def _interpolate_env(value: Any, config_id: str) -> Any:
     return value
 
 
-def load_target(path: str | Path) -> TargetConfig:
-    path = Path(path)
-    text = path.read_text(encoding="utf-8")
-
-    try:
-        if path.suffix in (".yaml", ".yml"):
-            raw = yaml.safe_load(text)
-        elif path.suffix == ".json":
-            raw = json.loads(text)
-        else:
-            raw = yaml.safe_load(text)
-    except (yaml.YAMLError, json.JSONDecodeError) as exc:
-        raise ConfigError(f"malformed config at {path}: {exc}") from exc
-
+def load_target_dict(raw: Any, source: str = "<dict>") -> TargetConfig:
+    """Validate an already-parsed target mapping. `source` names it in errors."""
     if not isinstance(raw, dict):
         raise ConfigError(
-            f"config at {path} must be a mapping, got {type(raw).__name__}"
+            f"config at {source} must be a mapping, got {type(raw).__name__}"
         )
 
-    config_id = raw.get("id", str(path))
+    config_id = raw.get("id", source)
     raw = _interpolate_env(raw, config_id)
 
     sandbox = raw.get("sandbox")
@@ -100,6 +88,10 @@ def load_target(path: str | Path) -> TargetConfig:
         )
 
     agent = raw.get("agent") or {}
+    if not isinstance(agent, dict):
+        raise ConfigError(
+            f"agent for config '{config_id}' must be a mapping, got {type(agent).__name__}"
+        )
     if agent.get("type") == "http" and not agent.get("endpoint"):
         raise ConfigError(f"http target '{config_id}' requires endpoint")
 
@@ -107,3 +99,18 @@ def load_target(path: str | Path) -> TargetConfig:
         return TargetConfig.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(f"invalid config '{config_id}': {exc}") from exc
+
+
+def load_target(path: str | Path) -> TargetConfig:
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+
+    try:
+        if path.suffix == ".json":
+            raw = json.loads(text)
+        else:
+            raw = yaml.safe_load(text)
+    except (yaml.YAMLError, json.JSONDecodeError) as exc:
+        raise ConfigError(f"malformed config at {path}: {exc}") from exc
+
+    return load_target_dict(raw, source=str(path))

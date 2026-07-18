@@ -29,6 +29,7 @@ Thumbs.db
 
 # aislop runtime artifacts
 **/.aislop/session.jsonl
+.claude/worktrees/
 
 # Diagram plugin ephemeral state
 .diagram/

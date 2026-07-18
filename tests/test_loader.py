@@ -1,5 +1,5 @@
 import pytest
-
+import yaml
 from agentkit.core.loader import (
     LoaderError,
     PythonTestCase,
@@ -7,6 +7,7 @@ from agentkit.core.loader import (
     filter_tests,
     load_file,
     load_python_module,
+    load_tests_from_rows,
 )
 from agentkit.core.schema import Category
 
@@ -122,6 +123,44 @@ def test_duplicate_id_across_files_raises(tmp_path):
     (tmp_path / "b.yaml").write_text(SINGLE_YAML, encoding="utf-8")
     with pytest.raises(LoaderError, match="duplicate test id"):
         discover(tmp_path)
+
+
+def test_row_and_file_loaders_produce_equal_test_cases(tmp_path):
+    path = tmp_path / "test.yaml"
+    path.write_text(SINGLE_YAML, encoding="utf-8")
+    raw = yaml.safe_load(SINGLE_YAML)
+
+    assert load_tests_from_rows([raw]) == load_file(path)
+
+
+def test_row_loader_rejects_unknown_assertion_like_file_loader(tmp_path):
+    raw = {
+        "id": "a.b.c",
+        "category": "reliability",
+        "input": "hi",
+        "assertions": [{"name": "totally_not_real"}],
+    }
+    path = tmp_path / "test.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    with pytest.raises(LoaderError, match="unknown assertion") as file_error:
+        load_file(path)
+    with pytest.raises(LoaderError, match="unknown assertion") as row_error:
+        load_tests_from_rows([raw])
+
+    assert "unknown assertion 'totally_not_real'" in str(file_error.value)
+    assert "unknown assertion 'totally_not_real'" in str(row_error.value)
+
+
+def test_row_loader_rejects_non_mapping_rows():
+    with pytest.raises(LoaderError, match="expected a mapping"):
+        load_tests_from_rows([None])
+
+
+def test_row_loader_rejects_duplicate_test_ids():
+    raw = yaml.safe_load(SINGLE_YAML)
+    with pytest.raises(LoaderError, match="duplicate test id"):
+        load_tests_from_rows([raw, raw])
 
 
 def test_load_python_module(tmp_path):

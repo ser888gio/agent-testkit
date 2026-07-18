@@ -27,7 +27,7 @@ from agentkit.core.regressions import compare
 from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category, Risk, Status, TestCase
 from agentkit.core.scoring import score
-from agentkit.core.store import Store
+from agentkit.core.store import DEFAULT_ORG, Store
 
 BASE_DIR = Path(__file__).parent
 PACKAGE_DIR = Path(agentkit.__file__).resolve().parent
@@ -186,7 +186,7 @@ def _runs_page(request: Request) -> HTMLResponse:
     agent = request.query_params.get("agent", "all")
     sort = request.query_params.get("sort", "attention")
 
-    run_rows = [_run_view(r) for r in store.list_runs(limit=100)]
+    run_rows = [_run_view(r) for r in store.list_runs(DEFAULT_ORG, limit=100)]
     if agent != "all":
         run_rows = [r for r in run_rows if r["agent_id"] == agent]
     run_rows = _filter_run_rows(run_rows, q=q, status=status)
@@ -205,7 +205,7 @@ def _runs_page(request: Request) -> HTMLResponse:
             )
         )
 
-    all_runs = [_run_view(r) for r in store.list_runs(limit=100)]
+    all_runs = [_run_view(r) for r in store.list_runs(DEFAULT_ORG, limit=100)]
     total_runs = len(all_runs)
     failed_runs = sum(1 for r in all_runs if r["status"] in _BAD_STATUSES)
     critical_failures = sum(r["critical_failures"] for r in all_runs)
@@ -245,15 +245,15 @@ def runs_page(request: Request) -> HTMLResponse:
 @app.get("/agents", response_class=HTMLResponse)
 def agents_page() -> HTMLResponse:
     store = get_store()
-    agents = store.list_agents()
+    agents = store.list_agents(DEFAULT_ORG)
     rows = []
     for a in agents:
-        latest = store.list_runs(a.id, limit=1)
+        latest = store.list_runs(DEFAULT_ORG, a.id, limit=1)
         rows.append(
             {
                 "agent": a,
                 "latest": latest[0] if latest else None,
-                "run_count": store.run_count(a.id),
+                "run_count": store.run_count(DEFAULT_ORG, a.id),
             }
         )
     return _render("agents.html", agent_rows=rows, active="agents")
@@ -282,8 +282,8 @@ def connect_agent_page() -> HTMLResponse:
 @app.get("/agents/{agent_id:path}", response_class=HTMLResponse)
 def agent_detail(agent_id: str) -> HTMLResponse:
     store = get_store()
-    runs = store.list_runs(agent_id)
-    matrix = store.pass_fail_matrix(agent_id)
+    runs = store.list_runs(DEFAULT_ORG, agent_id)
+    matrix = store.pass_fail_matrix(DEFAULT_ORG, agent_id)
     latest_run_id = runs[0].id if runs else None
     run_views = [_run_view(r) for r in runs]
     failures = [r for r in run_views if r["needs_attention"]]
@@ -310,7 +310,7 @@ def tests_page(request: Request) -> HTMLResponse:
     status = request.query_params.get("status", "all")
     risk = request.query_params.get("risk", "all")
     category = request.query_params.get("category", "all")
-    tests = store.list_tests()
+    tests = store.list_tests(DEFAULT_ORG)
     rows = []
     for t in tests:
         row = dict(t)
@@ -431,7 +431,7 @@ def create_test(
 def _load_run_or_404(run_id: str):
     store = get_store()
     try:
-        return store.get_run(run_id)
+        return store.get_run(DEFAULT_ORG, run_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"run '{run_id}' not found") from exc
 
@@ -512,7 +512,7 @@ def _harness_view(run, report) -> dict:
 
 @app.get("/harness", response_class=HTMLResponse)
 def latest_harness() -> Response:
-    latest_runs = get_store().list_runs(limit=1)
+    latest_runs = get_store().list_runs(DEFAULT_ORG, limit=1)
     if not latest_runs:
         return _render("harness_empty.html", active="harness")
     return RedirectResponse(
@@ -659,7 +659,7 @@ def run_again(target: str, packs: str, request: Request) -> RedirectResponse:
     rr = run_tests(cfg, tests)
     report = score(rr)
     store = get_store()
-    store.save_run(cfg, rr, report)
+    store.save_run(DEFAULT_ORG, cfg, rr, report)
     return RedirectResponse(url=f"/runs/{rr.run_id}", status_code=303)
 
 
