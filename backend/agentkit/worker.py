@@ -22,8 +22,10 @@ import uuid
 # as cli.py and web/app.py. Not dead imports.
 import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
-from agentkit.core.config import ConfigError, load_target_dict
+from agentkit.core.config import ConfigError, HTTPSpec, load_target_dict
+from agentkit.core.egress import EgressError, EgressPolicy, validate_endpoint
 from agentkit.core.loader import LoaderError, load_tests_from_rows
+from agentkit.core.redaction import Redactor
 from agentkit.core.runner import run as run_tests
 from agentkit.core.scoring import score
 from agentkit.core.store import JobRow, Store
@@ -57,22 +59,69 @@ def _heartbeat(store: Store, job_id: str, owner: str, stop: threading.Event, lea
             return
 
 
+def resolve_secret(secret_ref: str | None) -> dict[str, str]:
+    """Resolve a target's `secret_ref` into an interpolation mapping.
+
+    Only `env://VAR` today, read from the *worker's* environment, which is
+    deployment-owned. The mapping is scoped to one run and passed explicitly to
+    the loader; `os.environ` is never mutated, so a concurrent run in another
+    thread cannot read another tenant's credential.
+    """
+    if not secret_ref:
+        return {}
+    scheme, _, remainder = secret_ref.partition("://")
+    if scheme.lower() != "env":
+        raise PermanentJobError(f"unsupported secret_ref scheme '{scheme}://'")
+    name = remainder.strip()
+    if not name or name not in os.environ:
+        raise PermanentJobError(f"secret_ref '{secret_ref}' is not provisioned on this worker")
+    return {name: os.environ[name]}
+
+
 def execute_job(store: Store, job: JobRow) -> str:
     """Resolve, run, score, and persist one claimed job. Returns the run id."""
     try:
         raw_config = store.get_target(job.org_id, job.target_id)
+        secret_ref = store.get_target_secret_ref(job.org_id, job.target_id)
+        allowed_hosts = store.get_target_allowed_hosts(job.org_id, job.target_id)
         tests = load_tests_from_rows(store.get_pack_tests(job.org_id, job.pack_id))
     except KeyError as exc:
         raise PermanentJobError(f"unknown target or pack: {exc}") from exc
     except (ConfigError, LoaderError, ValueError) as exc:
         raise PermanentJobError(str(exc)) from exc
 
+    secrets = resolve_secret(secret_ref)
     try:
-        target = load_target_dict(raw_config, source=f"target '{job.target_id}'")
+        target = load_target_dict(
+            raw_config, source=f"target '{job.target_id}'", secrets=secrets
+        )
     except (ConfigError, ValueError) as exc:
         raise PermanentJobError(str(exc)) from exc
 
-    result = run_tests(target, tests)
+    # Egress is decided once, here, before any request leaves the process.
+    endpoint = None
+    if isinstance(target.agent, HTTPSpec):
+        try:
+            endpoint = validate_endpoint(
+                target.agent.endpoint,
+                EgressPolicy.from_iterable(allowed_hosts),
+                # Deployment-owned, from the worker's own environment. Never
+                # from the target: a tenant-settable bypass is not a bypass fix.
+                allow_private=os.environ.get("AGENTKIT_EGRESS_ALLOW_LOCAL") == "1",
+            )
+        except EgressError as exc:
+            raise PermanentJobError(f"endpoint rejected by egress policy: {exc}") from exc
+
+    # A resolved credential is a literal the redactor must mask even though it
+    # never appears in the stored config. The Redactor stays the last line of
+    # defense, not the first.
+    redactor = Redactor(
+        target.evidence.redact.model_copy(
+            update={"literals": [*target.evidence.redact.literals, *secrets.values()]}
+        )
+    )
+
+    result = run_tests(target, tests, redactor=redactor, endpoint=endpoint)
     report = score(result)
     store.save_run(job.org_id, target, result, report, job.created_by)
     return result.run_id

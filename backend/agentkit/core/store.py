@@ -16,6 +16,7 @@ from pathlib import Path
 
 from agentkit.core.artifacts import artifact_key
 from agentkit.core.config import TargetConfig, load_target_dict
+from agentkit.core.egress import EgressPolicy
 from agentkit.core.loader import LoaderError, load_tests_from_rows
 from agentkit.core.redaction import Redactor
 from agentkit.core.schema import RunResult, TestResult
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS targets (
     config_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
     secret_ref TEXT,
+    allowed_hosts TEXT,
     PRIMARY KEY (org_id, id),
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
@@ -476,6 +478,7 @@ class Store:
         config: dict,
         *,
         secret_ref: str | None = None,
+        allowed_hosts: list[str] | None = None,
     ) -> None:
         """Store a target's raw (un-interpolated) config. `${ENV_VAR}` refs stay
         literal here so no resolved credential is ever persisted -- see T15."""
@@ -484,19 +487,27 @@ class Store:
             raise ValueError("secret_ref is required when config_json contains secret references")
         if secret_ref is not None and not _SECRET_REF_RE.fullmatch(secret_ref.strip()):
             raise ValueError("secret_ref must be an opaque scheme:// reference")
+        hosts_json = None
+        if allowed_hosts is not None:
+            # Normalize once here so the stored value is what the egress check
+            # compares against; a host that only matches after normalization at
+            # read time is a mismatch waiting to be exploited.
+            hosts_json = json.dumps(sorted(EgressPolicy.from_iterable(allowed_hosts).allowed_hosts))
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as conn, conn:
             self._ensure_org(conn, org_id, now)
             conn.execute(
                 """
-                INSERT INTO targets (id, org_id, name, config_json, secret_ref, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO targets (id, org_id, name, config_json, secret_ref,
+                                     allowed_hosts, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(org_id, id) DO UPDATE SET
                     name = excluded.name,
                     config_json = excluded.config_json,
-                    secret_ref = excluded.secret_ref
+                    secret_ref = excluded.secret_ref,
+                    allowed_hosts = excluded.allowed_hosts
                 """,
-                (target_id, org_id, name, json.dumps(config), secret_ref, now),
+                (target_id, org_id, name, json.dumps(config), secret_ref, hosts_json, now),
             )
 
     def get_target(self, org_id: str, target_id: str) -> dict:
@@ -518,6 +529,17 @@ class Store:
         if row is None:
             raise KeyError(target_id)
         return row["secret_ref"]
+
+    def get_target_allowed_hosts(self, org_id: str, target_id: str) -> list[str]:
+        """Hosts this target may be dialled at. Empty means no egress is permitted."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT allowed_hosts FROM targets WHERE org_id = ? AND id = ?",
+                (org_id, target_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(target_id)
+        return json.loads(row["allowed_hosts"]) if row["allowed_hosts"] else []
 
     def list_targets(self, org_id: str) -> list[TargetRow]:
         with self._connection() as conn:

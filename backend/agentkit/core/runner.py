@@ -11,6 +11,7 @@ from typing import Any
 from agentkit.core.agent import Agent, AgentResponse, build_agent
 from agentkit.core.assertions import AssertionContext, evaluate
 from agentkit.core.config import TargetConfig
+from agentkit.core.egress import ValidatedEndpoint
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.redaction import EvidencePolicy, Redactor
 from agentkit.core.sandbox import Sandbox, build_sandbox
@@ -234,10 +235,16 @@ def run(
     tests: list[TestCase | PythonTestCase],
     *,
     redactor: Redactor | None = None,
+    endpoint: ValidatedEndpoint | None = None,
 ) -> RunResult:
+    """`endpoint` carries the egress decision made at run start.
+
+    It is passed in rather than computed here because validation needs the
+    target's allowlist, which is a Store concern the runner must not reach into.
+    """
     redactor = redactor or Redactor(target.evidence.redact)
     sandbox = build_sandbox(target.sandbox) if target.sandbox else None
-    agent = build_agent(target, sandbox=sandbox)
+    agent = build_agent(target, sandbox=sandbox, endpoint=endpoint)
 
     started = _now()
     results: list[TestResult] = []

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 # Eagerly import built-in domains so their sandboxes are registered before
 # `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
@@ -14,7 +16,6 @@ import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
 import yaml
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
-from agentkit.core.config import load_target
 from agentkit.core.loader import LoaderError, discover
 from agentkit.core.regressions import compare
 from agentkit.core.schema import Category, Risk, Status, TestCase
@@ -50,6 +51,8 @@ _ALLOWED_ROOTS = (PACKAGE_DIR / "config", PACKAGE_DIR / "packs")
 
 # Pack that tenant-authored tests land in, one per org.
 USER_PACK_ID = "user"
+
+_ENV_REFS_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def _resolve_within_allowed(value: str) -> Path:
@@ -835,8 +838,14 @@ def _import_first_party(store: Store, org_id: str, target: str, packs: str) -> t
     The worker resolves jobs from the database only, so a run launched against
     a first-party target has to exist as rows before it can be queued. Both
     writes are idempotent upserts, so re-running the same pack is free.
+
+    The config is stored **unexpanded**. Calling `load_target` here would
+    interpolate `${VAR}` against the web process's environment, which fails on
+    an unset var before T5's persistence guard ever runs, and would resolve a
+    credential in the wrong process if the var *were* set. Only the worker
+    resolves secrets, and only for the run it is executing.
     """
-    cfg = load_target(str(_resolve_within_allowed(target)))
+    target_path = _resolve_within_allowed(target)
     pack_dir = _resolve_within_allowed(packs)
     tests = discover(str(pack_dir))
     rows = []
@@ -849,12 +858,60 @@ def _import_first_party(store: Store, org_id: str, target: str, packs: str) -> t
         rows.append(test.model_dump(mode="json", exclude_defaults=True))
 
     try:
-        raw = yaml.safe_load(_resolve_within_allowed(target).read_text())
-        store.save_target(org_id, cfg.id, cfg.id, raw)
+        raw = yaml.safe_load(target_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=400, detail=f"malformed target: {exc}") from exc
+    if not isinstance(raw, dict) or not raw.get("id"):
+        raise HTTPException(status_code=400, detail="target config needs an 'id'")
+    target_id = str(raw["id"])
+
+    try:
+        # save_target validates the config with env references masked, so this
+        # is the guard that runs -- unset vars are irrelevant to it.
+        store.save_target(
+            org_id,
+            target_id,
+            target_id,
+            raw,
+            secret_ref=_first_party_secret_ref(raw),
+            allowed_hosts=_first_party_hosts(raw),
+        )
         store.save_pack(org_id, pack_dir.name, pack_dir.name, rows)
     except (LoaderError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return cfg.id, pack_dir.name
+    return target_id, pack_dir.name
+
+
+def _first_party_secret_ref(raw: dict) -> str | None:
+    """Map a shipped config's single `${VAR}` reference to an `env://VAR` ref.
+
+    First-party configs are trusted by provenance and carry at most one
+    credential. A tenant-authored target supplies its own `secret_ref`; this
+    only covers the shipped samples.
+    """
+    names = sorted(set(_ENV_REFS_RE.findall(json.dumps(raw))))
+    if not names:
+        return None
+    if len(names) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail=f"target references several secrets ({', '.join(names)}); "
+            "register it as a target with an explicit secret_ref instead",
+        )
+    return f"env://{names[0]}"
+
+
+def _first_party_hosts(raw: dict) -> list[str] | None:
+    """Seed the egress allowlist from the endpoint the shipped config declares.
+
+    This is provenance, not tenant input: the config ships in our image. A
+    tenant-registered target must state its allowlist explicitly.
+    """
+    agent = raw.get("agent") or {}
+    if not isinstance(agent, dict) or agent.get("type") != "http":
+        return None
+    host = urlsplit(str(agent.get("endpoint", ""))).hostname
+    return [host] if host else []
 
 
 @app.post("/runs")

@@ -1,3 +1,12 @@
+# LOCAL DEVELOPMENT SAMPLE ONLY.
+#
+# This targets plaintext http:// on localhost, which the egress policy rejects
+# by design (core/egress.py): https is required and loopback is not publicly
+# routable. Running it needs AGENTKIT_EGRESS_ALLOW_LOCAL=1 in the *worker's*
+# environment -- a deployment-owned switch, never settable from a target config.
+#
+# Do not relax the production policy to make this sample run. It is a stub
+# harness for `examples/stub_endpoint.py`, not a partner deployment shape.
 id: treasury-http
 agent:
   type: http

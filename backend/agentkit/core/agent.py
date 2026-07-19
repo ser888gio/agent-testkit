@@ -12,6 +12,7 @@ from typing import Any, Protocol
 import httpx
 
 from agentkit.core.config import CallableSpec, HTTPSpec, TargetConfig
+from agentkit.core.egress import ValidatedEndpoint
 
 _HTTPX_REQUEST_KWARGS = {"json", "params", "data", "content"}
 
@@ -99,21 +100,40 @@ def _extract_path(body: Any, path: str) -> tuple[bool, Any]:
 
 
 class HTTPAgent:
-    def __init__(self, spec: HTTPSpec):
+    def __init__(self, spec: HTTPSpec, endpoint: ValidatedEndpoint | None = None):
         self.spec = spec
+        # None means egress policy was not applied -- only the local test stub
+        # transport path, which never leaves the process. A hosted run always
+        # carries a ValidatedEndpoint; see build_agent.
+        self.endpoint = endpoint
 
     def run(self, input: str | dict) -> AgentResponse:
         spec = self.spec
         rendered = _render_template(spec.request, input)
         kwargs = {k: v for k, v in rendered.items() if k in _HTTPX_REQUEST_KWARGS}
 
+        url = spec.endpoint
+        headers = dict(spec.headers)
+        extensions: dict[str, str] = {}
+        if self.endpoint is not None:
+            # Dial the address validated at run start, not the name. Resolving
+            # again here is the rebinding window this exists to close.
+            url = self.endpoint.pinned_url
+            headers["Host"] = self.endpoint.host_header
+            extensions["sni_hostname"] = self.endpoint.host
+
         start = time.perf_counter()
         try:
             response = httpx.request(
                 spec.method,
-                spec.endpoint,
-                headers=spec.headers,
+                url,
+                headers=headers,
                 timeout=spec.timeout_s,
+                # Redirects are off: a 302 to 169.254.169.254 would bypass every
+                # check above. Supporting them means re-running the whole policy
+                # on each hop, which is not worth it until a partner needs it.
+                follow_redirects=False,
+                extensions=extensions,
                 **kwargs,
             )
         except httpx.TimeoutException:
@@ -157,7 +177,11 @@ class HTTPAgent:
         )
 
 
-def build_agent(config: TargetConfig, sandbox: Any = None) -> Agent:
+def build_agent(
+    config: TargetConfig,
+    sandbox: Any = None,
+    endpoint: ValidatedEndpoint | None = None,
+) -> Agent:
     agent_spec = config.agent
     if isinstance(agent_spec, CallableSpec):
         module_path, _, attr = agent_spec.callable.partition(":")
@@ -166,5 +190,5 @@ def build_agent(config: TargetConfig, sandbox: Any = None) -> Agent:
         fn = factory()
         return CallableAgent(fn, sandbox=sandbox)
     if isinstance(agent_spec, HTTPSpec):
-        return HTTPAgent(agent_spec)
+        return HTTPAgent(agent_spec, endpoint=endpoint)
     raise ValueError(f"unknown agent spec type: {type(agent_spec)!r}")

@@ -31,5 +31,22 @@ a second way to touch the database.
 - Migrations are forward-only in production — applied at deploy time by explicit command,
   never implicitly on app startup, so two replicas booting together can't race.
 
+## Egress policy (T15)
+
+Worker-side environment, deployment-owned. Never derived from target config.
+
+- `AGENTKIT_EGRESS_ALLOW_LOCAL=1` relaxes the https requirement and the
+  public-address check so a worker can reach a loopback stub. It exists for
+  local development against `agentkit/config/treasury-http.yaml` and must not be
+  set on any partner-facing deployment. The per-target host allowlist still
+  applies in this mode.
+- Secrets reach a run as an explicit interpolation mapping resolved from the
+  worker's own environment via the target's `secret_ref` (`env://VAR` today).
+  Nothing mutates `os.environ`, so concurrent runs cannot read each other's
+  credentials. Provision each `env://VAR` on the worker, not on the web service.
+- Workers belong in a network segment with no route to the control-plane
+  database or the cloud metadata endpoint. The allowlist is defense in depth,
+  not a substitute for that.
+
 Originally planned as a hand-rolled raw-SQL runner (no Alembic) — the user overrode that
 decision during implementation. See the amendment at the end of `docs/plan.md` for why.
