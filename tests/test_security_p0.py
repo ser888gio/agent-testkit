@@ -67,7 +67,7 @@ def test_post_runs_rejects_path_outside_allowlist():
     # Python callable.
     resp = client.post(
         "/runs",
-        params={"target": "/etc/passwd", "packs": "../../evil"},
+        data={"target": "/etc/passwd", "packs": "../../evil"},
     )
     assert resp.status_code == 400
 

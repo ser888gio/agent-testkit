@@ -18,6 +18,7 @@ import agentkit.domains.treasury.sandbox  # noqa: F401
 import yaml
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentkit.core.loader import LoaderError, discover
+from agentkit.core.redaction import builtin_pattern_names
 from agentkit.core.regressions import compare
 from agentkit.core.schema import Category, Risk, Status, TestCase
 from agentkit.core.store import Store
@@ -355,21 +356,51 @@ def agents_page(principal: Principal = Depends(current_principal)) -> HTMLRespon
     return _render("agents.html", agent_rows=rows, active="agents")
 
 
+def _is_pack_dir(p: Path) -> bool:
+    """Tooling and cache directories live beside the packs; they are not packs."""
+    return p.is_dir() and not p.name.startswith((".", "__"))
+
+
 @app.get("/agents/connect", response_class=HTMLResponse)
 def connect_agent_page(principal: Principal = Depends(current_principal)) -> HTMLResponse:
+    # Relative to the package's parent (the project root the server runs from):
+    # _resolve_within_allowed resolves these against CWD, so "agentkit/config/x"
+    # is the form that round-trips; "config/x" would 400 on submit.
+    root = PACKAGE_DIR.parent
     targets = sorted(
-        p.relative_to(PACKAGE_DIR).as_posix()
+        p.relative_to(root).as_posix()
         for p in (PACKAGE_DIR / "config").glob("*.yaml")
     )
     pack_roots = sorted(
-        p.relative_to(PACKAGE_DIR).as_posix()
+        p.relative_to(root).as_posix()
         for p in (PACKAGE_DIR / "packs").iterdir()
-        if p.is_dir()
+        if _is_pack_dir(p)
     )
+    # Default to whatever this org last launched -- derived, not a stored
+    # preference. Jobs record the target's yaml `id` and the pack directory
+    # name (_import_first_party), so map the path options back the same way.
+    last_jobs = get_store().list_jobs(principal.org_id, limit=1)
+    default_target = default_pack = None
+    if last_jobs:
+        for rel in targets:
+            try:
+                raw = yaml.safe_load((root / rel).read_text(encoding="utf-8"))
+            except (OSError, yaml.YAMLError):
+                continue
+            if isinstance(raw, dict) and str(raw.get("id")) == last_jobs[0].target_id:
+                default_target = rel
+                break
+        default_pack = next(
+            (rel for rel in pack_roots if Path(rel).name == last_jobs[0].pack_id),
+            None,
+        )
     return _render(
         "agent_connect.html",
         targets=targets,
         pack_roots=pack_roots,
+        default_target=default_target,
+        default_pack=default_pack,
+        csrf_token=principal.csrf_token,
         active="agents",
     )
 
@@ -406,8 +437,38 @@ def _test_rows(store: Store, org_id: str) -> list[dict]:
     supplies its latest status when a test id identifies exactly one authored
     test. Test ids are only unique within a pack, so duplicate ids must remain
     separate instead of silently overwriting one another.
+
+    Shipped packs come first so an authored test or run history for the same id
+    overwrites them, not the other way round.
     """
     rows: dict[tuple[str | None, str], dict] = {}
+    # AGENTKIT_PACKS may point somewhere that does not exist yet; an absent
+    # packs directory means no shipped tests, not a 500.
+    packs_root = get_packs_dir()
+    shipped = (
+        sorted(p for p in packs_root.iterdir() if _is_pack_dir(p))
+        if packs_root.is_dir()
+        else []
+    )
+    for pack_dir in shipped:
+        for test in discover(str(pack_dir)):
+            # discover() also loads Python test modules, which carry no metadata
+            # to render; only YAML-backed TestCases belong in the library table.
+            if not isinstance(test, TestCase):
+                continue
+            rows[(pack_dir.name, test.id)] = {
+                "pack_id": pack_dir.name,
+                "test_id": test.id,
+                "id": test.id,
+                "category": test.category.value,
+                "risk": test.risk.value,
+                "status": "never run",
+                "latest_status": "never run",
+                "latest_run_id": None,
+                "latest_agent_id": None,
+                "run_count": 0,
+                "authored": False,
+            }
     for t in store.list_authored_tests(org_id):
         rows[(t["pack_id"], t["test_id"])] = {
             **t,
@@ -501,7 +562,10 @@ def settings_page(principal: Principal = Depends(current_principal)) -> HTMLResp
             "config_dir": str(PACKAGE_DIR / "config"),
             "packs_dir": str(get_packs_dir()),
             "auth_state": auth_state,
+            "redaction_patterns": builtin_pattern_names(),
+            "egress_allow_local": os.environ.get("AGENTKIT_EGRESS_ALLOW_LOCAL") == "1",
         },
+        principal=principal,
         active="settings",
     )
 
@@ -932,8 +996,10 @@ def _first_party_hosts(raw: dict) -> list[str] | None:
 
 @app.post("/runs")
 def run_again(
-    target: str,
-    packs: str,
+    target: str = Form(...),
+    packs: str = Form(...),
+    # Read by require_admin off the form body; unused here.
+    csrf_token: str = Form(""),  # noqa: ARG001
     principal: Principal = Depends(require_admin),
 ) -> RedirectResponse:
     """Queue a run. The worker executes it; this handler never blocks on an agent."""

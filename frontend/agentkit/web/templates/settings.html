@@ -49,6 +49,50 @@
     </dl>
   </article>
 
+  <article class="panel" data-testid="settings-redaction">
+    <div class="panel-header">
+      <div>
+        <h2>Evidence &amp; Redaction</h2>
+        <p>What the harness masks before anything is persisted or displayed.</p>
+      </div>
+    </div>
+    <dl class="harness-meta">
+      <div><dt>Built-in Masks</dt><dd>{{ settings.redaction_patterns | join(", ") }}</dd></div>
+      <div><dt>Mask Format</dt><dd><span class="mono">&laquo;redacted:name&raquo;</span></dd></div>
+      <div><dt>Scope</dt><dd>Per-target policies add patterns and literals on top of the built-ins; they cannot remove them.</dd></div>
+      <div><dt>Defense in Depth</dt><dd>Redaction runs in the runner and is re-applied on save.</dd></div>
+    </dl>
+  </article>
+
+  <article class="panel" data-testid="settings-egress">
+    <div class="panel-header">
+      <div>
+        <h2>Egress</h2>
+        <p>Where run traffic may go. Enforced worker-side, per target.</p>
+      </div>
+    </div>
+    <dl class="harness-meta">
+      <div><dt>Allow Local Endpoints</dt><dd>{% if settings.egress_allow_local %}Enabled (development only){% else %}Disabled{% endif %}</dd></div>
+      <div><dt>Host Allowlist</dt><dd>Configured per target; workers refuse hosts outside it.</dd></div>
+    </dl>
+  </article>
+
+  <article class="panel" data-testid="settings-access">
+    <div class="panel-header">
+      <div>
+        <h2>Access</h2>
+        <p>The principal this session acts as.</p>
+      </div>
+    </div>
+    <dl class="harness-meta">
+      <div><dt>Organization</dt><dd class="mono">{{ principal.org_id }}</dd></div>
+      <div><dt>Subject</dt><dd class="mono">{{ principal.subject }}</dd></div>
+      <div><dt>Email</dt><dd>{{ principal.email }}</dd></div>
+      <div><dt>Roles</dt><dd>{{ principal.roles | sort | join(", ") }}</dd></div>
+      <div><dt>Method</dt><dd>{{ principal.auth_method }}</dd></div>
+    </dl>
+  </article>
+
   <article class="panel">
     <div class="panel-header">
       <div>

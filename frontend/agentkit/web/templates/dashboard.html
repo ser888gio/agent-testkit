@@ -11,12 +11,12 @@
 </header>
 
 <section class="home-actions" aria-label="Primary actions">
-  <a class="home-action" href="/agents/connect">
+  <a class="home-action" data-testid="action-connect-agent" href="/agents/connect">
     <span class="home-action-kicker">Connect agent</span>
     <strong>Connect an agent</strong>
     <span>Open the setup page for target configs, pack selection, and the run command.</span>
   </a>
-  <a class="home-action" href="/tests/new">
+  <a class="home-action" data-testid="action-create-test" href="/tests/new">
     <span class="home-action-kicker">Create test</span>
     <strong>Create a test</strong>
     <span>Open the test creation page and add a YAML-backed coverage case.</span>
@@ -27,10 +27,10 @@
 {{ empty_state("No runs yet", "Run your first pack with agentkit run <packs_dir> --target <config.yaml>.", "View tests", "/tests") }}
 {% else %}
 <section class="stat-grid" aria-label="Run summary">
-  {{ stat_card("Runs", stats.total_runs, "latest 100 recorded") }}
-  {{ stat_card("Needs attention", stats.failed_runs, "failed or blocked gates", "danger" if stats.failed_runs else "") }}
-  {{ stat_card("Critical failures", stats.critical_failures, "across stored runs", "danger" if stats.critical_failures else "") }}
-  {{ stat_card("Average score", stats.avg_score ~ "%", "weighted by risk") }}
+  {{ stat_card("Runs", stats.total_runs, "latest 100 recorded", testid="stat-runs") }}
+  {{ stat_card("Needs attention", stats.failed_runs, "failed or blocked gates", "danger" if stats.failed_runs else "", testid="stat-attention") }}
+  {{ stat_card("Critical failures", stats.critical_failures, "across stored runs", "danger" if stats.critical_failures else "", testid="stat-critical") }}
+  {{ stat_card("Average score", stats.avg_score ~ "%", "weighted by risk", testid="stat-avg-score") }}
 </section>
 
 <section class="panel">
@@ -45,7 +45,7 @@
   {% else %}
   <div class="attention-list">
   {% for r in attention %}
-    <a class="attention-item" href="/runs/{{ r.id }}">
+    <a class="attention-item" data-testid="attention-row" href="/runs/{{ r.id }}">
       <span class="mono">{{ r.short_id }}</span>
       <span>{{ r.agent_id }}</span>
       {{ status_badge(r.status) }}
@@ -102,7 +102,7 @@
 </thead>
 <tbody>
 {% for r in runs %}
-<tr>
+<tr data-testid="run-row">
   <td data-label="Run"><a class="mono" href="/runs/{{ r.id }}">{{ r.short_id }}</a></td>
   <td data-label="Agent"><a href="/agents/{{ r.agent_id | urlencode }}">{{ r.agent_id }}</a></td>
   <td class="mono" data-label="Started">{{ r.started }}</td>

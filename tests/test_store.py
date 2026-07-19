@@ -615,3 +615,30 @@ def test_invalid_job_state_is_rejected_by_the_schema():
             "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_at) "
             "VALUES ('j', 'org-a', 't', 'p', 'bogus', '2026-01-01')"
         )
+
+
+def test_purge_runs_by_age_and_count():
+    store = Store(":memory:")
+    cfg, rr_old, rep = _run_and_score(started_at=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    store.save_run(DEFAULT_ORG, cfg, rr_old, rep)
+    cfg, rr_mid, rep = _run_and_score(started_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    store.save_run(DEFAULT_ORG, cfg, rr_mid, rep)
+    cfg, rr_new, rep = _run_and_score(started_at=datetime(2026, 1, 2, tzinfo=timezone.utc))
+    store.save_run(DEFAULT_ORG, cfg, rr_new, rep)
+    blob = store.save_artifact(DEFAULT_ORG, rr_old.run_id, "report.txt", "text/plain", 3)
+
+    deleted, blobs = store.purge_runs(keep_days=365)
+    assert deleted == 1
+    assert blobs == [blob]
+    with pytest.raises(KeyError):
+        store.get_run(DEFAULT_ORG, rr_old.run_id)
+    with pytest.raises(KeyError):
+        store.get_artifact(DEFAULT_ORG, "report.txt")
+
+    deleted, blobs = store.purge_runs(keep_last=1)
+    assert deleted == 1
+    assert blobs == []
+    assert [r.id for r in store.list_runs(DEFAULT_ORG, cfg.id)] == [rr_new.run_id]
+
+    with pytest.raises(ValueError):
+        store.purge_runs()

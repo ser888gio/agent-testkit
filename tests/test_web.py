@@ -152,7 +152,10 @@ def test_run_harness_shows_findings_skills_context_summary(tmp_path, monkeypatch
     assert "not_contains" in resp.text
     assert f'data-poll-url="/runs/{rr.run_id}/status"' in resp.text
     assert rr.run_id in resp.text
-    assert 'href="/harness" class="active" aria-current="page"' in resp.text
+    assert (
+        'href="/harness" data-testid="nav-harness" '
+        'class="active" aria-current="page"' in resp.text
+    )
 
 
 def test_harness_nav_redirects_to_latest_run(tmp_path, monkeypatch):
@@ -175,7 +178,10 @@ def test_harness_nav_has_empty_state_without_runs(tmp_path, monkeypatch):
 
     assert resp.status_code == 200
     assert "No harness data yet" in resp.text
-    assert 'href="/harness" class="active" aria-current="page"' in resp.text
+    assert (
+        'href="/harness" data-testid="nav-harness" '
+        'class="active" aria-current="page"' in resp.text
+    )
 
 
 def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkeypatch):
@@ -217,7 +223,7 @@ def test_runs_route_shows_dashboard_table(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert "Recent runs" in resp.text
     assert rr.run_id[:8] in resp.text
-    assert 'href="/" class="active" aria-current="page"' in resp.text
+    assert 'href="/" data-testid="nav-runs" class="active" aria-current="page"' in resp.text
 
 
 def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
@@ -234,7 +240,10 @@ def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
     assert "Security" in resp.text
     assert db in resp.text
     assert "AGENTKIT_OIDC" not in resp.text
-    assert 'href="/settings" class="active" aria-current="page"' in resp.text
+    assert (
+        'href="/settings" data-testid="nav-settings" '
+        'class="active" aria-current="page"' in resp.text
+    )
 
 
 def test_tests_page_lists_distinct_tests(tmp_path, monkeypatch):
@@ -271,6 +280,10 @@ def test_tests_page_empty_state(tmp_path, monkeypatch):
     from agentkit.core.store import Store as _Store
 
     _Store(db)
+    # The library lists shipped packs too, so "empty" means no packs either.
+    empty_packs = tmp_path / "packs"
+    empty_packs.mkdir()
+    monkeypatch.setenv("AGENTKIT_PACKS", str(empty_packs))
     client = _client(db, monkeypatch)
 
     resp = client.get("/tests")
@@ -367,6 +380,60 @@ def test_create_test_rejects_duplicate(tmp_path, monkeypatch):
     second = client.post("/tests", data=payload)
     assert second.status_code == 200
     assert "duplicate test id" in second.text
+
+
+def _create_test_payload(**overrides):
+    return {
+        "test_id": "user.reliability.case",
+        "category": "reliability",
+        "risk": "low",
+        "input": "hi",
+        "assertion_name": "response_nonempty",
+        "assertion_args": "",
+        **overrides,
+    }
+
+
+def test_create_test_rejects_malformed_yaml_args(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_PACKS", str(tmp_path / "packs"))
+    client = _client(db, monkeypatch)
+
+    resp = client.post(
+        "/tests",
+        data=_create_test_payload(assertion_args="{values: [unclosed"),
+    )
+    assert resp.status_code == 200
+    assert "not valid YAML" in resp.text
+
+
+def test_create_test_rejects_non_mapping_args(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_PACKS", str(tmp_path / "packs"))
+    client = _client(db, monkeypatch)
+
+    resp = client.post(
+        "/tests",
+        data=_create_test_payload(assertion_args="- just\n- a list"),
+    )
+    assert resp.status_code == 200
+    assert "must be a YAML mapping" in resp.text
+
+
+def test_create_test_rejects_unknown_assertion(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_PACKS", str(tmp_path / "packs"))
+    client = _client(db, monkeypatch)
+
+    resp = client.post(
+        "/tests",
+        data=_create_test_payload(assertion_name="does_not_exist"),
+    )
+    assert resp.status_code == 200
+    assert "Unknown assertion" in resp.text
 
 
 def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
@@ -494,6 +561,51 @@ def test_compare_route_shows_diff(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert "Newly failing" in resp.text
     assert "Score delta" in resp.text
+
+
+def test_compare_with_unknown_run_404(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/compare?a={rr.run_id}&b=does-not-exist")
+    assert resp.status_code == 404
+
+
+def test_data_testid_hooks_present(tmp_path, monkeypatch):
+    """UI automation anchors on data-testid, not display copy. Keep them stable."""
+    db = str(tmp_path / "web.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    home = client.get("/").text
+    for hook in (
+        "nav-harness",
+        "nav-runs",
+        "nav-agents",
+        "nav-tests",
+        "nav-settings",
+        "action-connect-agent",
+        "action-create-test",
+        "stat-runs",
+        "run-row",
+    ):
+        assert f'data-testid="{hook}"' in home, hook
+
+    connect = client.get("/agents/connect").text
+    assert 'data-testid="connect-form"' in connect
+    assert 'data-testid="connect-submit"' in connect
+
+    new_test = client.get("/tests/new").text
+    assert 'data-testid="test-form"' in new_test
+    assert 'data-testid="test-submit"' in new_test
+
+    detail = client.get(f"/runs/{rr.run_id}").text
+    assert 'data-testid="open-harness"' in detail
+
+    harness = client.get(f"/runs/{rr.run_id}/harness").text
+    assert 'data-testid="stat-pass-rate"' in harness
+    assert 'data-testid="stat-critical-findings"' in harness
 
 
 def test_unknown_run_id_404(tmp_path, monkeypatch):
@@ -890,7 +1002,11 @@ def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
     assert "never run" in body
 
 
-def test_authored_duplicate_ids_from_different_packs_remain_distinct():
+def test_authored_duplicate_ids_from_different_packs_remain_distinct(tmp_path, monkeypatch):
+    # Isolate the merge logic from the shipped packs the library also lists.
+    empty_packs = tmp_path / "packs"
+    empty_packs.mkdir()
+    monkeypatch.setenv("AGENTKIT_PACKS", str(empty_packs))
     from agentkit.web.app import _test_rows
 
     class FakeStore:
@@ -996,12 +1112,66 @@ _TREASURY = {
 }
 
 
+def test_connect_page_form_posts_to_runs(tmp_path, monkeypatch):
+    """The connect page must actually submit a run, not just print a command."""
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+
+    body = client.get("/agents/connect").text
+
+    assert 'action="/runs"' in body
+    assert 'method="post"' in body
+    assert 'name="target"' in body
+    assert 'name="packs"' in body
+    # Tooling directories sit beside the packs and are not runnable packs.
+    assert ".aislop" not in body
+    assert "__pycache__" not in body
+
+
+def test_tests_page_lists_shipped_tests_that_never_ran(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+
+    body = client.get("/tests").text
+
+    assert "email.unauthorized_forward.blocked" in body
+    assert "never run" in body
+
+
+def test_post_runs_rejects_browser_session_without_csrf(tmp_path, monkeypatch):
+    """The form carries a csrf_token; a session POST without one must not run."""
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
+        DEFAULT_ORG,
+        "sub-a",
+        "a@test",
+        frozenset({"admin"}),
+        auth_method="session",
+        csrf_token="the-real-token",
+    )
+    try:
+        assert client.post("/runs", data=_TREASURY).status_code == 403
+        assert client.post(
+            "/runs",
+            data={**_TREASURY, "csrf_token": "wrong"},
+        ).status_code == 403
+        assert client.post(
+            "/runs",
+            data={**_TREASURY, "csrf_token": "the-real-token"},
+            follow_redirects=False,
+        ).status_code == 303
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+
 def test_post_runs_queues_a_job_without_executing_it(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
 
     resp = client.post(
         "/runs",
-        params=_TREASURY,
+        data=_TREASURY,
         follow_redirects=False,
     )
 
@@ -1022,7 +1192,7 @@ def test_job_status_reports_queued_running_and_done(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
     resp = client.post(
         "/runs",
-        params=_TREASURY,
+        data=_TREASURY,
         follow_redirects=False,
     )
     job_id = resp.headers["location"].rsplit("/", 1)[-1]
@@ -1054,7 +1224,7 @@ def test_job_of_another_org_is_404(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
     resp = client.post(
         "/runs",
-        params=_TREASURY,
+        data=_TREASURY,
         follow_redirects=False,
     )
     job_id = resp.headers["location"].rsplit("/", 1)[-1]
@@ -1149,3 +1319,43 @@ def test_artifacts_are_not_exposed_by_a_static_mount(tmp_path, monkeypatch):
     assert [m.path for m in mounts] == ["/static"]
     served = {Path(m.app.directory).resolve() for m in mounts}
     assert (tmp_path / "artifacts").resolve() not in served
+
+
+def test_settings_page_shows_redaction_egress_and_access(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    monkeypatch.delenv("AGENTKIT_EGRESS_ALLOW_LOCAL", raising=False)
+    client = _client(db, monkeypatch)
+
+    body = client.get("/settings").text
+
+    # built-in masks are compliance evidence: list them, name the mask format
+    assert "api_key" in body
+    assert "redacted:name" in body
+    assert "Allow Local Endpoints" in body
+    assert "Disabled" in body
+    # the acting principal (dev principal outside OIDC)
+    assert "dev@localhost" in body
+    assert "admin, viewer" in body
+
+
+def test_connect_form_preselects_last_used_target_and_pack(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
+    assert resp.status_code == 303
+
+    body = client.get("/agents/connect").text
+
+    assert f'value="{_TREASURY["target"]}" selected' in body
+    assert f'value="{_TREASURY["packs"]}" selected' in body
+
+
+def test_connect_form_option_values_are_accepted_by_the_run_route(tmp_path, monkeypatch):
+    """The dropdown values must round-trip: whatever the form offers, POST /runs
+    must accept. Paths relative to the package dir (config/x.yaml) resolve
+    against CWD and 400."""
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+
+    body = client.get("/agents/connect").text
+    assert f'value="{_TREASURY["target"]}"' in body
+    assert f'value="{_TREASURY["packs"]}"' in body

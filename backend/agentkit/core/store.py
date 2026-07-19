@@ -1067,6 +1067,69 @@ class Store:
             for row in rows
         ]
 
+    def purge_runs(
+        self, *, keep_days: int | None = None, keep_last: int | None = None
+    ) -> tuple[int, list[str]]:
+        """Delete old runs plus their results and artifact rows, across all orgs.
+
+        `keep_days` drops runs started before the cutoff; `keep_last` drops runs
+        beyond the newest N per (org, agent). Both given means both apply.
+        Returns (deleted run count, orphaned artifact blob paths) -- the caller
+        owns the blob directory and removes the files.
+        """
+        if keep_days is None and keep_last is None:
+            raise ValueError("purge_runs needs keep_days and/or keep_last")
+        victims: set[tuple[str, str]] = set()
+        with self._connection() as conn, conn:
+            if keep_days is not None:
+                # Same aware-UTC isoformat save_run writes, so the string
+                # comparison is chronological.
+                cutoff = (
+                    datetime.now(timezone.utc) - timedelta(days=keep_days)
+                ).isoformat()
+                victims.update(
+                    (r["org_id"], r["id"])
+                    for r in conn.execute(
+                        "SELECT org_id, id FROM runs WHERE started_at < ?", (cutoff,)
+                    )
+                )
+            if keep_last is not None:
+                victims.update(
+                    (r["org_id"], r["id"])
+                    for r in conn.execute(
+                        """
+                        SELECT org_id, id FROM (
+                            SELECT org_id, id, ROW_NUMBER() OVER (
+                                PARTITION BY org_id, agent_id
+                                ORDER BY started_at DESC, id
+                            ) AS rn FROM runs
+                        ) WHERE rn > ?
+                        """,
+                        (keep_last,),
+                    )
+                )
+            blob_paths: list[str] = []
+            for org_id, run_id in sorted(victims):
+                blob_paths.extend(
+                    row["path"]
+                    for row in conn.execute(
+                        "SELECT path FROM artifacts WHERE org_id = ? AND run_id = ?",
+                        (org_id, run_id),
+                    )
+                )
+                conn.execute(
+                    "DELETE FROM artifacts WHERE org_id = ? AND run_id = ?",
+                    (org_id, run_id),
+                )
+                conn.execute(
+                    "DELETE FROM test_results WHERE org_id = ? AND run_id = ?",
+                    (org_id, run_id),
+                )
+                conn.execute(
+                    "DELETE FROM runs WHERE org_id = ? AND id = ?", (org_id, run_id)
+                )
+        return len(victims), blob_paths
+
     def get_run(self, org_id: str, run_id: str) -> tuple[RunResult, ScoreReport]:
         # Another org's run is KeyError, same as missing -- do not leak existence.
         with self._connection() as conn:

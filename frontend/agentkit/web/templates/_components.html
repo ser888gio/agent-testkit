@@ -8,8 +8,8 @@
 </span>
 {%- endmacro %}
 
-{% macro stat_card(label, value, note="", tone="") -%}
-<article class="stat-card{% if tone %} stat-card-{{ tone }}{% endif %}">
+{% macro stat_card(label, value, note="", tone="", testid="") -%}
+<article class="stat-card{% if tone %} stat-card-{{ tone }}{% endif %}"{% if testid %} data-testid="{{ testid }}"{% endif %}>
   <span class="stat-label">{{ label }}</span>
   <strong>{{ value }}</strong>
   {% if note %}<span class="stat-note">{{ note }}</span>{% endif %}
