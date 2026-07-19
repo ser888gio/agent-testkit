@@ -985,3 +985,97 @@ def test_store_serves_concurrent_threads(tmp_path):
     assert all(r > 0 for r in results)
     assert len(store.list_runs(DEFAULT_ORG)) == 9  # 1 seeded + 8 written
     assert store._pool._created <= 4  # noqa: SLF001 - verify the pool bound
+
+
+# ---- T13: async submission -----------------------------------------------
+
+_TREASURY = {
+    "target": "agentkit/config/treasury-agent.yaml",
+    "packs": "agentkit/packs/treasury",
+}
+
+
+def test_post_runs_queues_a_job_without_executing_it(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+
+    resp = client.post(
+        "/runs",
+        params=_TREASURY,
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    store = Store(str(tmp_path / "web.db"))
+    job = store.get_job(DEFAULT_ORG, job_id)
+    assert job.state == "queued"
+    assert job.run_id is None
+    # No run executed inside the handler.
+    assert store.list_runs(DEFAULT_ORG) == []
+    # The first-party target and pack were imported as rows for the worker.
+    assert store.get_target(DEFAULT_ORG, job.target_id)["id"] == "treasury-demo"
+    assert len(store.get_pack_tests(DEFAULT_ORG, job.pack_id)) == 6
+
+
+def test_job_status_reports_queued_running_and_done(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post(
+        "/runs",
+        params=_TREASURY,
+        follow_redirects=False,
+    )
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    store = Store(str(tmp_path / "web.db"))
+
+    body = client.get(f"/jobs/{job_id}/status").json()
+    assert (body["state"], body["running"], body["run_id"]) == ("queued", True, "")
+
+    store.claim_job("w1", lease_seconds=-1)
+    assert client.get(f"/jobs/{job_id}/status").json()["state"] == "running"
+
+    from agentkit.worker import work_once
+
+    # w1 "died"; its lease has already expired, so the job comes back.
+    assert store.reclaim_jobs(max_attempts=99) == 1
+    work_once(store, "w2")
+    body = client.get(f"/jobs/{job_id}/status").json()
+    assert body["state"] == "done"
+    assert body["running"] is False
+    assert body["run_id"]
+    assert client.get(f"/runs/{body['run_id']}").status_code == 200
+
+
+def test_job_of_another_org_is_404(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post(
+        "/runs",
+        params=_TREASURY,
+        follow_redirects=False,
+    )
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
+    )
+    try:
+        assert client.get(f"/jobs/{job_id}").status_code == 404
+        assert client.get(f"/jobs/{job_id}/status").status_code == 404
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+
+def test_run_status_is_always_terminal(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_store(db)
+    monkeypatch.setenv("AGENTKIT_DB", db)
+    from agentkit.web import app as web_app
+
+    body = TestClient(web_app.app).get(
+        f"/runs/{rr.run_id}/status", headers={"Accept": "application/json"}
+    ).json()
+
+    assert body["running"] is False
+    assert body["run_id"] == rr.run_id

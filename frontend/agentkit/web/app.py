@@ -17,9 +17,7 @@ from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentkit.core.config import load_target
 from agentkit.core.loader import LoaderError, discover
 from agentkit.core.regressions import compare
-from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category, Risk, Status, TestCase
-from agentkit.core.scoring import score
 from agentkit.core.store import Store
 from agentkit.web.auth import (
     LOGIN_STATE_COOKIE,
@@ -778,22 +776,18 @@ def run_status(
     request: Request,
     principal: Principal = Depends(current_principal),
 ) -> Response:
+    # A run row only exists once the worker has finished and persisted it, so
+    # this is always terminal. In-flight state lives on the job (/jobs/{id}/status).
     rr, report = _load_run_or_404(principal.org_id, run_id)
     if "application/json" in request.headers.get("accept", "").lower():
-        if rr.finished_at:
-            message = (
-                f"Finished at {rr.finished_at} - "
-                f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}"
-            )
-            running = False
-        else:
-            message = "Running..."
-            running = True
         return JSONResponse(
             {
                 "run_id": rr.run_id,
-                "message": message,
-                "running": running,
+                "message": (
+                    f"Finished at {rr.finished_at} - "
+                    f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}"
+                ),
+                "running": False,
             }
         )
     return _render("_status_fragment.html", run=rr, report=report)
@@ -806,26 +800,85 @@ def _safe_path(p: str) -> Path:
     return resolved
 
 
+def _import_first_party(store: Store, org_id: str, target: str, packs: str) -> tuple[str, str]:
+    """Copy a shipped target and pack into the caller's org as rows.
+
+    The worker resolves jobs from the database only, so a run launched against
+    a first-party target has to exist as rows before it can be queued. Both
+    writes are idempotent upserts, so re-running the same pack is free.
+    """
+    cfg = load_target(str(_resolve_within_allowed(target)))
+    pack_dir = _resolve_within_allowed(packs)
+    tests = discover(str(pack_dir))
+    rows = []
+    for test in tests:
+        if not isinstance(test, TestCase):
+            raise HTTPException(
+                status_code=400,
+                detail="Python test cases cannot be queued; use a YAML pack.",
+            )
+        rows.append(test.model_dump(mode="json", exclude_defaults=True))
+
+    try:
+        raw = yaml.safe_load(_resolve_within_allowed(target).read_text())
+        store.save_target(org_id, cfg.id, cfg.id, raw)
+        store.save_pack(org_id, pack_dir.name, pack_dir.name, rows)
+    except (LoaderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return cfg.id, pack_dir.name
+
+
 @app.post("/runs")
 def run_again(
     target: str,
     packs: str,
     principal: Principal = Depends(require_admin),
 ) -> RedirectResponse:
-    cfg = load_target(str(_resolve_within_allowed(target)))
-    tests = discover(str(_resolve_within_allowed(packs)))
-    rr = run_tests(cfg, tests)
-    report = score(rr)
+    """Queue a run. The worker executes it; this handler never blocks on an agent."""
     store = get_store()
-    store.save_run(
-        principal.org_id,
-        cfg,
-        rr,
-        report,
-        created_by=principal.subject,
-        created_by_email=principal.email,
+    target_id, pack_id = _import_first_party(store, principal.org_id, target, packs)
+    job_id = store.enqueue_job(
+        principal.org_id, target_id, pack_id, created_by=principal.subject
     )
-    return RedirectResponse(url=f"/runs/{rr.run_id}", status_code=303)
+    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
+
+
+_JOB_MESSAGES = {
+    "queued": "Queued...",
+    "running": "Running...",
+    "done": "Finished",
+    "failed": "Failed",
+}
+
+
+def _load_job_or_404(org_id: str, job_id: str):
+    try:
+        return get_store().get_job(org_id, job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="job not found") from None
+
+
+@app.get("/jobs/{job_id}", response_class=HTMLResponse)
+def job_detail(job_id: str, principal: Principal = Depends(current_principal)) -> HTMLResponse:
+    return _render("job.html", job=_load_job_or_404(principal.org_id, job_id))
+
+
+@app.get("/jobs/{job_id}/status")
+def job_status(job_id: str, principal: Principal = Depends(current_principal)) -> JSONResponse:
+    """Real queued/running/done state, unlike run status which is always finished."""
+    job = _load_job_or_404(principal.org_id, job_id)
+    message = _JOB_MESSAGES.get(job.state, job.state)
+    if job.state == "failed" and job.error:
+        message = f"Failed: {job.error}"
+    return JSONResponse(
+        {
+            "job_id": job.id,
+            "run_id": job.run_id or "",
+            "state": job.state,
+            "message": message,
+            "running": job.state in ("queued", "running"),
+        }
+    )
 
 
 @app.get("/compare", response_class=HTMLResponse)
