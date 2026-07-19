@@ -8,7 +8,7 @@
     <h1>Tests</h1>
     <p class="page-subtitle">Search and triage distinct tests across recorded runs.</p>
   </div>
-  <a class="button-link" href="/tests/new">Define Test</a>
+  <a class="button-link" data-testid="define-test" href="/tests/new">Define Test</a>
 </header>
 {% if not tests %}
 {{ empty_state("No tests yet", "Define one or run a pack to record results.", "Define a test", "/tests/new") }}
@@ -50,7 +50,7 @@
 </thead>
 <tbody>
 {% for t in tests %}
-<tr>
+<tr data-testid="test-row">
   <td data-label="Test">
     {% if t.latest_run_id %}<a href="/runs/{{ t.latest_run_id }}/tests/{{ t.test_id }}">{{ t.test_id }}</a>{% else %}{{ t.test_id }}{% endif %}
   </td>

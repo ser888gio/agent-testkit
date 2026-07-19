@@ -195,3 +195,14 @@ def test_ui_rejects_incomplete_oidc_configuration(monkeypatch):
     result = runner.invoke(app, ["ui"])
     assert result.exit_code == 1
     assert "OIDC is incompletely configured" in result.output
+
+
+def test_purge_requires_a_retention_flag(tmp_path):
+    db = str(tmp_path / "cli.db")
+
+    result = runner.invoke(app, ["purge", "--db", db])
+    assert result.exit_code == 2
+
+    result = runner.invoke(app, ["purge", "--db", db, "--keep-last", "5"])
+    assert result.exit_code == 0
+    assert "purged 0 runs" in result.output

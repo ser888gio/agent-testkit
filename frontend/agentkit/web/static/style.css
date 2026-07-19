@@ -225,6 +225,14 @@ h3 {
   text-transform: uppercase;
 }
 
+.page-context a {
+  color: var(--text);
+}
+
+.page-context a:hover {
+  color: var(--muted);
+}
+
 .page-header {
   position: relative;
   display: flex;

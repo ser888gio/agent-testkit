@@ -128,7 +128,7 @@ All commands below were executed successfully in this repository.
 | --- | --- |
 | Install deps | `uv sync --extra dev` |
 | Editable install | `pip install -e .` |
-| Unit tests (full suite, 179 tests, ~2.5s) | `python -m pytest` |
+| Unit tests (full suite, 373 tests, ~175s) | `python -m pytest` |
 | Single test file | `python -m pytest tests/test_runner.py` |
 | Single test | `python -m pytest tests/test_runner.py -k name` |
 | Lint | `python -m ruff check .` |
@@ -187,8 +187,11 @@ Work up this ladder; stop when the change is covered. Do not jump straight to th
    `tests/test_web.py` plus a manual `agentkit ui` check
 6. **Full validation before completion** — `bash tools/validate.sh`
 
-The full suite is ~4 seconds, so step 6 is cheap. Prefer it over guessing whenever the
-affected scope is unclear.
+The full suite is ~175 seconds. Most of that is process spawn: since T16 every `runner.run`
+call starts a sandbox supervisor plus a nested agent worker (`core/isolation.py`), costing
+~2.5s per run on Windows. Production pays that once per run (and respawns only after a
+timeout), but the suite calls `run` dozens of times. Prefer step 2 while iterating and step 6
+before declaring done.
 
 ## Architecture rules
 

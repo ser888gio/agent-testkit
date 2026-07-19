@@ -478,12 +478,25 @@ python -m pytest tests/test_security_p0.py tests/test_redaction.py
 
 ## Phase 4: Killable Run Isolation
 
-### T16: Subprocess Execution
+### T16: Subprocess Execution - Done
 
 **Human review required.**
 
+**Shipped:** `backend/agentkit/core/isolation.py`. One spawned supervisor per `run()` owns
+the real sandbox and evaluates tests. Agent code runs in a nested spawned worker against an
+RPC sandbox proxy. On timeout the worker process tree is killed before the supervisor takes
+the after-snapshot, so no live agent can race or alter the recorded diff. The worker is
+restarted for the next test while the supervisor and sandbox remain scoped to the run.
+
+Both YAML and `PythonTestCase` tests use this path; Python functions cross the boundary with
+`cloudpickle`. The parent keeps the `turns * timeout_s + grace` hard deadline and converts
+startup, serialization, child-death, and deadline failures into `Status.ERROR`. POSIX uses
+process groups plus hard CPU/address-space rlimits. Windows uses nested kill-on-close Job
+Objects with per-process CPU and memory limits, so descendants are reaped on timeout too.
+
 **Dependencies:** none. This is ungated and worth shipping single-tenant.
-**Files:** `backend/agentkit/core/runner.py`, `tests/test_runner.py`
+**Files:** `backend/agentkit/core/isolation.py`, `backend/agentkit/core/runner.py`,
+`backend/agentkit/core/schema.py`, `tests/test_isolation.py`, `tests/test_runner.py`
 
 `runner.py:30` documents the defect: `_run_with_timeout` submits to a `ThreadPoolExecutor` and abandons the thread on timeout, because CPython has no thread-kill primitive. A hung agent leaks a thread and socket per timeout. `runner.py:118` must discard the sandbox diff since the orphan may still be mutating it, so a timed-out test yields no usable evidence.
 

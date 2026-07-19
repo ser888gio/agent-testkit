@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 # Eagerly import built-in domains so their sandboxes are registered before
 # `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
@@ -14,12 +17,10 @@ import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
 import yaml
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
-from agentkit.core.config import load_target
 from agentkit.core.loader import LoaderError, discover
+from agentkit.core.redaction import builtin_pattern_names
 from agentkit.core.regressions import compare
-from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category, Risk, Status, TestCase
-from agentkit.core.scoring import score
 from agentkit.core.store import Store
 from agentkit.web.auth import (
     LOGIN_STATE_COOKIE,
@@ -35,7 +36,7 @@ from agentkit.web.auth import (
     reset_auth_state,
 )
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
@@ -52,6 +53,8 @@ _ALLOWED_ROOTS = (PACKAGE_DIR / "config", PACKAGE_DIR / "packs")
 
 # Pack that tenant-authored tests land in, one per org.
 USER_PACK_ID = "user"
+
+_ENV_REFS_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def _resolve_within_allowed(value: str) -> Path:
@@ -353,21 +356,51 @@ def agents_page(principal: Principal = Depends(current_principal)) -> HTMLRespon
     return _render("agents.html", agent_rows=rows, active="agents")
 
 
+def _is_pack_dir(p: Path) -> bool:
+    """Tooling and cache directories live beside the packs; they are not packs."""
+    return p.is_dir() and not p.name.startswith((".", "__"))
+
+
 @app.get("/agents/connect", response_class=HTMLResponse)
 def connect_agent_page(principal: Principal = Depends(current_principal)) -> HTMLResponse:
+    # Relative to the package's parent (the project root the server runs from):
+    # _resolve_within_allowed resolves these against CWD, so "agentkit/config/x"
+    # is the form that round-trips; "config/x" would 400 on submit.
+    root = PACKAGE_DIR.parent
     targets = sorted(
-        p.relative_to(PACKAGE_DIR).as_posix()
+        p.relative_to(root).as_posix()
         for p in (PACKAGE_DIR / "config").glob("*.yaml")
     )
     pack_roots = sorted(
-        p.relative_to(PACKAGE_DIR).as_posix()
+        p.relative_to(root).as_posix()
         for p in (PACKAGE_DIR / "packs").iterdir()
-        if p.is_dir()
+        if _is_pack_dir(p)
     )
+    # Default to whatever this org last launched -- derived, not a stored
+    # preference. Jobs record the target's yaml `id` and the pack directory
+    # name (_import_first_party), so map the path options back the same way.
+    last_jobs = get_store().list_jobs(principal.org_id, limit=1)
+    default_target = default_pack = None
+    if last_jobs:
+        for rel in targets:
+            try:
+                raw = yaml.safe_load((root / rel).read_text(encoding="utf-8"))
+            except (OSError, yaml.YAMLError):
+                continue
+            if isinstance(raw, dict) and str(raw.get("id")) == last_jobs[0].target_id:
+                default_target = rel
+                break
+        default_pack = next(
+            (rel for rel in pack_roots if Path(rel).name == last_jobs[0].pack_id),
+            None,
+        )
     return _render(
         "agent_connect.html",
         targets=targets,
         pack_roots=pack_roots,
+        default_target=default_target,
+        default_pack=default_pack,
+        csrf_token=principal.csrf_token,
         active="agents",
     )
 
@@ -404,8 +437,38 @@ def _test_rows(store: Store, org_id: str) -> list[dict]:
     supplies its latest status when a test id identifies exactly one authored
     test. Test ids are only unique within a pack, so duplicate ids must remain
     separate instead of silently overwriting one another.
+
+    Shipped packs come first so an authored test or run history for the same id
+    overwrites them, not the other way round.
     """
     rows: dict[tuple[str | None, str], dict] = {}
+    # AGENTKIT_PACKS may point somewhere that does not exist yet; an absent
+    # packs directory means no shipped tests, not a 500.
+    packs_root = get_packs_dir()
+    shipped = (
+        sorted(p for p in packs_root.iterdir() if _is_pack_dir(p))
+        if packs_root.is_dir()
+        else []
+    )
+    for pack_dir in shipped:
+        for test in discover(str(pack_dir)):
+            # discover() also loads Python test modules, which carry no metadata
+            # to render; only YAML-backed TestCases belong in the library table.
+            if not isinstance(test, TestCase):
+                continue
+            rows[(pack_dir.name, test.id)] = {
+                "pack_id": pack_dir.name,
+                "test_id": test.id,
+                "id": test.id,
+                "category": test.category.value,
+                "risk": test.risk.value,
+                "status": "never run",
+                "latest_status": "never run",
+                "latest_run_id": None,
+                "latest_agent_id": None,
+                "run_count": 0,
+                "authored": False,
+            }
     for t in store.list_authored_tests(org_id):
         rows[(t["pack_id"], t["test_id"])] = {
             **t,
@@ -499,7 +562,10 @@ def settings_page(principal: Principal = Depends(current_principal)) -> HTMLResp
             "config_dir": str(PACKAGE_DIR / "config"),
             "packs_dir": str(get_packs_dir()),
             "auth_state": auth_state,
+            "redaction_patterns": builtin_pattern_names(),
+            "egress_allow_local": os.environ.get("AGENTKIT_EGRESS_ALLOW_LOCAL") == "1",
         },
+        principal=principal,
         active="settings",
     )
 
@@ -569,6 +635,35 @@ def create_test(
     except LoaderError as exc:
         return _fail(str(exc))
     return RedirectResponse(url="/tests", status_code=303)
+
+
+def get_artifacts_dir() -> Path:
+    return Path(os.environ.get("AGENTKIT_ARTIFACTS_DIR", "database/artifacts"))
+
+
+@app.get("/artifacts/{artifact_id}")
+def download_artifact(
+    artifact_id: str, principal: Principal = Depends(current_principal)
+) -> Response:
+    """The only permitted way to serve a blob.
+
+    Artifacts are deliberately not behind a StaticFiles mount: a mount serves by
+    path alone and cannot check the row's `org_id` against the token claim, so
+    knowing (or guessing) a key would be enough to read another partner's
+    evidence. Every read goes through this row lookup instead.
+    """
+    store = get_store()
+    try:
+        artifact = store.get_artifact(principal.org_id, artifact_id)
+    except KeyError:
+        # Another org's artifact is indistinguishable from a missing one.
+        raise HTTPException(status_code=404, detail="artifact not found") from None
+
+    root = get_artifacts_dir().resolve()
+    blob = (root / artifact.path).resolve()
+    if not blob.is_relative_to(root) or not blob.is_file():
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return FileResponse(blob, media_type=artifact.kind, filename=artifact.id)
 
 
 def _load_run_or_404(org_id: str, run_id: str):
@@ -778,22 +873,33 @@ def run_status(
     request: Request,
     principal: Principal = Depends(current_principal),
 ) -> Response:
+    # During submission the identifier may still be a job id. Keep this legacy
+    # endpoint useful for queued/running work while retaining the finished-run
+    # response for callers that already have a run id.
+    try:
+        job = get_store().get_job(principal.org_id, run_id)
+    except KeyError:
+        job = None
+    if job is not None:
+        payload = _job_status_payload(job)
+        if "application/json" in request.headers.get("accept", "").lower():
+            return JSONResponse(payload)
+        message = escape(payload["message"])
+        return HTMLResponse(
+            f'<div id="run-status" data-poll-url="/runs/{escape(run_id)}/status" '
+            f'aria-live="polite">{message}</div>'
+        )
+
     rr, report = _load_run_or_404(principal.org_id, run_id)
     if "application/json" in request.headers.get("accept", "").lower():
-        if rr.finished_at:
-            message = (
-                f"Finished at {rr.finished_at} - "
-                f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}"
-            )
-            running = False
-        else:
-            message = "Running..."
-            running = True
         return JSONResponse(
             {
                 "run_id": rr.run_id,
-                "message": message,
-                "running": running,
+                "message": (
+                    f"Finished at {rr.finished_at} - "
+                    f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}"
+                ),
+                "running": False,
             }
         )
     return _render("_status_fragment.html", run=rr, report=report)
@@ -806,26 +912,143 @@ def _safe_path(p: str) -> Path:
     return resolved
 
 
+def _import_first_party(store: Store, org_id: str, target: str, packs: str) -> tuple[str, str]:
+    """Copy a shipped target and pack into the caller's org as rows.
+
+    The worker resolves jobs from the database only, so a run launched against
+    a first-party target has to exist as rows before it can be queued. Both
+    writes are idempotent upserts, so re-running the same pack is free.
+
+    The config is stored **unexpanded**. Calling `load_target` here would
+    interpolate `${VAR}` against the web process's environment, which fails on
+    an unset var before T5's persistence guard ever runs, and would resolve a
+    credential in the wrong process if the var *were* set. Only the worker
+    resolves secrets, and only for the run it is executing.
+    """
+    target_path = _resolve_within_allowed(target)
+    pack_dir = _resolve_within_allowed(packs)
+    tests = discover(str(pack_dir))
+    rows = []
+    for test in tests:
+        if not isinstance(test, TestCase):
+            raise HTTPException(
+                status_code=400,
+                detail="Python test cases cannot be queued; use a YAML pack.",
+            )
+        rows.append(test.model_dump(mode="json", exclude_defaults=True))
+
+    try:
+        raw = yaml.safe_load(target_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=400, detail=f"malformed target: {exc}") from exc
+    if not isinstance(raw, dict) or not raw.get("id"):
+        raise HTTPException(status_code=400, detail="target config needs an 'id'")
+    target_id = str(raw["id"])
+
+    try:
+        # save_target validates the config with env references masked, so this
+        # is the guard that runs -- unset vars are irrelevant to it.
+        store.save_target(
+            org_id,
+            target_id,
+            target_id,
+            raw,
+            secret_ref=_first_party_secret_ref(raw),
+            allowed_hosts=_first_party_hosts(raw),
+        )
+        store.save_pack(org_id, pack_dir.name, pack_dir.name, rows)
+    except (LoaderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return target_id, pack_dir.name
+
+
+def _first_party_secret_ref(raw: dict) -> str | None:
+    """Map a shipped config's single `${VAR}` reference to an `env://VAR` ref.
+
+    First-party configs are trusted by provenance and carry at most one
+    credential. A tenant-authored target supplies its own `secret_ref`; this
+    only covers the shipped samples.
+    """
+    names = sorted(set(_ENV_REFS_RE.findall(json.dumps(raw))))
+    if not names:
+        return None
+    if len(names) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail=f"target references several secrets ({', '.join(names)}); "
+            "register it as a target with an explicit secret_ref instead",
+        )
+    return f"env://{names[0]}"
+
+
+def _first_party_hosts(raw: dict) -> list[str] | None:
+    """Seed the egress allowlist from the endpoint the shipped config declares.
+
+    This is provenance, not tenant input: the config ships in our image. A
+    tenant-registered target must state its allowlist explicitly.
+    """
+    agent = raw.get("agent") or {}
+    if not isinstance(agent, dict) or agent.get("type") != "http":
+        return None
+    host = urlsplit(str(agent.get("endpoint", ""))).hostname
+    return [host] if host else []
+
+
 @app.post("/runs")
 def run_again(
-    target: str,
-    packs: str,
+    target: str = Form(...),
+    packs: str = Form(...),
+    # Read by require_admin off the form body; unused here.
+    csrf_token: str = Form(""),  # noqa: ARG001
     principal: Principal = Depends(require_admin),
 ) -> RedirectResponse:
-    cfg = load_target(str(_resolve_within_allowed(target)))
-    tests = discover(str(_resolve_within_allowed(packs)))
-    rr = run_tests(cfg, tests)
-    report = score(rr)
+    """Queue a run. The worker executes it; this handler never blocks on an agent."""
     store = get_store()
-    store.save_run(
-        principal.org_id,
-        cfg,
-        rr,
-        report,
-        created_by=principal.subject,
-        created_by_email=principal.email,
+    target_id, pack_id = _import_first_party(store, principal.org_id, target, packs)
+    job_id = store.enqueue_job(
+        principal.org_id, target_id, pack_id, created_by=principal.subject
     )
-    return RedirectResponse(url=f"/runs/{rr.run_id}", status_code=303)
+    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
+
+
+_JOB_MESSAGES = {
+    "queued": "Queued...",
+    "running": "Running...",
+    "done": "Finished",
+    "failed": "Failed",
+}
+
+
+def _job_status_payload(job) -> dict[str, object]:
+    message = _JOB_MESSAGES.get(job.state, job.state)
+    if job.state == "failed" and job.error:
+        message = f"Failed: {job.error}"
+    return {
+        "job_id": job.id,
+        "run_id": job.run_id or "",
+        "state": job.state,
+        "message": message,
+        "running": job.state in ("queued", "running"),
+    }
+
+
+def _load_job_or_404(org_id: str, job_id: str):
+    try:
+        return get_store().get_job(org_id, job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="job not found") from None
+
+
+@app.get("/jobs/{job_id}", response_class=HTMLResponse)
+def job_detail(job_id: str, principal: Principal = Depends(current_principal)) -> HTMLResponse:
+    return _render("job.html", job=_load_job_or_404(principal.org_id, job_id))
+
+
+@app.get("/jobs/{job_id}/status")
+def job_status(job_id: str, principal: Principal = Depends(current_principal)) -> JSONResponse:
+    """Return the real queued/running/done state for a job."""
+    job = _load_job_or_404(principal.org_id, job_id)
+    return JSONResponse(_job_status_payload(job))
 
 
 @app.get("/compare", response_class=HTMLResponse)

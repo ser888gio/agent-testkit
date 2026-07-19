@@ -34,6 +34,12 @@ document.addEventListener("DOMContentLoaded", () => {
           failures = 0;
           if (typeof status.run_id === "string" && status.run_id.length > 0) {
             el.setAttribute("data-run-id", status.run_id);
+            // A queued job has no run until the worker finishes one; follow it.
+            const redirect = el.getAttribute("data-poll-redirect");
+            if (redirect) {
+              window.location.assign(redirect + encodeURIComponent(status.run_id));
+              return;
+            }
           }
           el.setAttribute("aria-live", "polite");
           el.textContent = typeof status.message === "string" ? status.message : "";

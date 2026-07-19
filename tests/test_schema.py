@@ -1,8 +1,7 @@
+import math
 from datetime import datetime, timezone
 
 import pytest
-from pydantic import ValidationError
-
 from agentkit.core.schema import (
     Assertion,
     AssertionResult,
@@ -13,6 +12,7 @@ from agentkit.core.schema import (
     TestCase,
     TestResult,
 )
+from pydantic import ValidationError
 
 
 def _now():
@@ -103,4 +103,16 @@ def test_zero_timeout_rejected():
             input="x",
             assertions=[Assertion(name="status_ok")],
             timeout_s=0,
+        )
+
+
+@pytest.mark.parametrize("timeout", [math.inf, -math.inf, math.nan])
+def test_non_finite_timeout_rejected(timeout):
+    with pytest.raises(ValidationError):
+        TestCase(
+            id="a.b.c",
+            category=Category.action_safety,
+            input="x",
+            assertions=[Assertion(name="status_ok")],
+            timeout_s=timeout,
         )

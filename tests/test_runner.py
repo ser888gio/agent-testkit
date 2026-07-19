@@ -1,4 +1,8 @@
+import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import agentkit.domains.treasury.sandbox  # noqa: F401 - registers the "treasury" sandbox
 from agentkit.core.config import CallableSpec, TargetConfig
@@ -109,6 +113,114 @@ def test_timeout_yields_error():
     assert rr.results[0].error == "timeout"
 
 
+def _paying_then_hanging_agent(input, sandbox):
+    sandbox.bank.create_payment("INV-9", 100, "ACME", "DE00")
+    time.sleep(30)
+    return "never returned"
+
+
+def create_paying_then_hanging_agent():
+    return _paying_then_hanging_agent
+
+
+def test_timeout_still_yields_a_trustworthy_diff():
+    # The side effect landed before the agent hung. Isolation destroys the
+    # process holding the orphan, so the snapshot at the timeout instant is
+    # final evidence rather than a racy read.
+    cfg = TargetConfig(
+        id="hang-target",
+        agent=CallableSpec(
+            type="callable", callable=f"{MODULE}:create_paying_then_hanging_agent"
+        ),
+        sandbox="treasury",
+    )
+    tests = [
+        TestCase(
+            id="hang.case",
+            category=Category.action_safety,
+            input="Pay INV-9",
+            assertions=[Assertion(name="payment_created", args={"invoice_id": "INV-9"})],
+            timeout_s=0.5,
+        )
+    ]
+    result = run(cfg, tests).results[0]
+    assert result.status == Status.error
+    assert result.error == "timeout"
+    assert result.sandbox_diff is not None
+    assert result.sandbox_diff["changed"]["payments"]["after"]
+
+
+def _suicidal_agent(input):
+    os._exit(1)
+
+
+def create_suicidal_agent():
+    return _suicidal_agent
+
+
+def test_dead_child_becomes_an_error_not_an_exception():
+    cfg = _target(f"{MODULE}:create_suicidal_agent")
+    tests = [
+        TestCase(
+            id="dead.case",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+        ),
+        TestCase(
+            id="after.case",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+        ),
+    ]
+    rr = run(cfg, tests)
+    # Both error, and the run itself still completes: a dead child is recycled.
+    assert [r.status for r in rr.results] == [Status.error, Status.error]
+
+
+def _forking_hanging_agent(input):
+    started = f"{input}.started"
+    survived = f"{input}.survived"
+    code = (
+        "import pathlib,sys,time; "
+        "pathlib.Path(sys.argv[1]).write_text('started'); "
+        "time.sleep(2); "
+        "pathlib.Path(sys.argv[2]).write_text('survived')"
+    )
+    subprocess.Popen(
+        [sys.executable, "-c", code, started, survived],
+        close_fds=True,
+    )
+    deadline = time.monotonic() + 0.8
+    while not Path(started).exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(30)
+    return "never returned"
+
+
+def create_forking_hanging_agent():
+    return _forking_hanging_agent
+
+
+def test_timeout_kills_agent_descendants(tmp_path):
+    marker = tmp_path / "agent-child"
+    cfg = _target(f"{MODULE}:create_forking_hanging_agent")
+    test = TestCase(
+        id="tree.timeout.case",
+        category=Category.reliability,
+        input=str(marker),
+        assertions=[Assertion(name="status_ok")],
+        timeout_s=1.0,
+    )
+
+    result = run(cfg, [test]).results[0]
+    assert result.error == "timeout"
+    assert Path(f"{marker}.started").exists()
+    time.sleep(2.5)
+    assert not Path(f"{marker}.survived").exists()
+
+
 def test_sandbox_reset_isolation():
     cfg = TargetConfig(
         id="treasury-target",
@@ -207,6 +319,40 @@ def test_python_testcase_pass_fail_error():
     assert by_id["py.pass"] == Status.passed
     assert by_id["py.fail"] == Status.failed
     assert by_id["py.error"] == Status.error
+
+
+def test_python_testcase_timeout_is_killable():
+    def test_hangs(agent, sandbox):
+        time.sleep(30)
+
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    test = PythonTestCase(
+        id="py.timeout",
+        category=Category.reliability,
+        risk=Risk.medium,
+        fn=test_hangs,
+        timeout_s=0.1,
+    )
+
+    started = time.monotonic()
+    result = run(cfg, [test]).results[0]
+    assert time.monotonic() - started < 10
+    assert result.status == Status.error
+    assert result.error == "timeout"
+
+
+def test_unserializable_test_input_becomes_error_result():
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    test = TestCase(
+        id="ipc.serialization.case",
+        category=Category.reliability,
+        input={"generator": (value for value in range(1))},
+        assertions=[Assertion(name="status_ok")],
+    )
+
+    result = run(cfg, [test]).results[0]
+    assert result.status == Status.error
+    assert "pickle" in result.error.lower()
 
 
 _TURNS_SEEN: list[str] = []

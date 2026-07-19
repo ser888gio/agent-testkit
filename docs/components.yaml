@@ -32,6 +32,7 @@ components:
       - TestCase/TestResult/RunResult schema (the shared contract)
       - Test discovery and loading from YAML/JSON/Python packs
       - Test execution (single- and multi-turn), which never raises
+      - Killable process isolation and sandbox RPC supervision
       - Assertion registry and evaluation
       - Redaction and evidence policy
       - Risk-weighted scoring
@@ -40,6 +41,7 @@ components:
       - SQLite persistence (the only SQL in the repository)
     entry_points:
       - backend/agentkit/core/runner.py       # run()
+      - backend/agentkit/core/isolation.py    # IsolatedRunner
       - backend/agentkit/core/loader.py       # discover()
       - backend/agentkit/core/agent.py        # build_agent()
       - backend/agentkit/core/sandbox.py      # build_sandbox(), register_sandbox()

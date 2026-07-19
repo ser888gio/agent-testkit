@@ -7,13 +7,16 @@ import queue
 import re
 import sqlite3
 import threading
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agentkit.core.artifacts import artifact_key
 from agentkit.core.config import TargetConfig, load_target_dict
+from agentkit.core.egress import EgressPolicy
 from agentkit.core.loader import LoaderError, load_tests_from_rows
 from agentkit.core.redaction import Redactor
 from agentkit.core.schema import RunResult, TestResult
@@ -74,6 +77,7 @@ CREATE TABLE IF NOT EXISTS targets (
     config_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
     secret_ref TEXT,
+    allowed_hosts TEXT,
     PRIMARY KEY (org_id, id),
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
@@ -96,6 +100,45 @@ CREATE TABLE IF NOT EXISTS pack_tests (
     UNIQUE (org_id, pack_id, test_id),
     FOREIGN KEY (org_id, pack_id) REFERENCES packs(org_id, id) ON DELETE CASCADE
 );
+-- target_id/pack_id are deliberately not foreign keys: the web run route still
+-- names targets and packs by filesystem path (web/app.py:run_again), so a key
+-- into targets/packs would reject every job T13 enqueues. Tighten once the
+-- route is on DB rows.
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    pack_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
+    run_id TEXT,
+    created_by TEXT,
+    error TEXT,
+    priority INTEGER NOT NULL DEFAULT 0,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    lease_owner TEXT,
+    lease_expires_at TEXT,
+    heartbeat_at TEXT,
+    FOREIGN KEY (org_id) REFERENCES orgs(id)
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+    id TEXT NOT NULL,
+    org_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (org_id, id),
+    UNIQUE (path),
+    FOREIGN KEY (org_id) REFERENCES orgs(id),
+    FOREIGN KEY (org_id, run_id) REFERENCES runs(org_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(org_id, run_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(state, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_org ON jobs(org_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_targets_org ON targets(org_id);
 CREATE INDEX IF NOT EXISTS idx_packs_org ON packs(org_id);
 CREATE INDEX IF NOT EXISTS idx_pack_tests_pack ON pack_tests(org_id, pack_id);
@@ -145,6 +188,40 @@ class RunRow:
     created_by: str | None = None
     created_by_email: str | None = None
 
+
+@dataclass
+class ArtifactRow:
+    id: str
+    org_id: str
+    run_id: str
+    kind: str
+    size: int
+    path: str
+    created_at: str
+
+
+@dataclass
+class JobRow:
+    id: str
+    org_id: str
+    target_id: str
+    pack_id: str
+    state: str
+    run_id: str | None
+    created_by: str | None
+    error: str | None
+    priority: int
+    attempt_count: int
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    lease_owner: str | None
+    lease_expires_at: str | None
+    heartbeat_at: str | None
+
+
+JOB_STATES = ("queued", "running", "done", "failed")
+_TERMINAL_JOB_STATES = ("done", "failed")
 
 Matrix = dict[str, dict[str, str]]
 
@@ -403,6 +480,7 @@ class Store:
         config: dict,
         *,
         secret_ref: str | None = None,
+        allowed_hosts: list[str] | None = None,
     ) -> None:
         """Store a target's raw (un-interpolated) config. `${ENV_VAR}` refs stay
         literal here so no resolved credential is ever persisted -- see T15."""
@@ -411,19 +489,27 @@ class Store:
             raise ValueError("secret_ref is required when config_json contains secret references")
         if secret_ref is not None and not _SECRET_REF_RE.fullmatch(secret_ref.strip()):
             raise ValueError("secret_ref must be an opaque scheme:// reference")
+        hosts_json = None
+        if allowed_hosts is not None:
+            # Normalize once here so the stored value is what the egress check
+            # compares against; a host that only matches after normalization at
+            # read time is a mismatch waiting to be exploited.
+            hosts_json = json.dumps(sorted(EgressPolicy.from_iterable(allowed_hosts).allowed_hosts))
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as conn, conn:
             self._ensure_org(conn, org_id, now)
             conn.execute(
                 """
-                INSERT INTO targets (id, org_id, name, config_json, secret_ref, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO targets (id, org_id, name, config_json, secret_ref,
+                                     allowed_hosts, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(org_id, id) DO UPDATE SET
                     name = excluded.name,
                     config_json = excluded.config_json,
-                    secret_ref = excluded.secret_ref
+                    secret_ref = excluded.secret_ref,
+                    allowed_hosts = excluded.allowed_hosts
                 """,
-                (target_id, org_id, name, json.dumps(config), secret_ref, now),
+                (target_id, org_id, name, json.dumps(config), secret_ref, hosts_json, now),
             )
 
     def get_target(self, org_id: str, target_id: str) -> dict:
@@ -445,6 +531,17 @@ class Store:
         if row is None:
             raise KeyError(target_id)
         return row["secret_ref"]
+
+    def get_target_allowed_hosts(self, org_id: str, target_id: str) -> list[str]:
+        """Hosts this target may be dialled at. Empty means no egress is permitted."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT allowed_hosts FROM targets WHERE org_id = ? AND id = ?",
+                (org_id, target_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(target_id)
+        return json.loads(row["allowed_hosts"]) if row["allowed_hosts"] else []
 
     def list_targets(self, org_id: str) -> list[TargetRow]:
         with self._connection() as conn:
@@ -612,6 +709,215 @@ class Store:
             )
         return cursor.rowcount == 1
 
+    # ---- artifacts --------------------------------------------------------
+
+    def save_artifact(
+        self, org_id: str, run_id: str, artifact_id: str, kind: str, size: int
+    ) -> str:
+        """Record blob metadata. The path is derived, never caller-supplied.
+
+        The run must belong to `org_id`; the foreign key would catch a mismatch
+        anyway, but failing here keeps the error legible.
+        """
+        path = artifact_key(org_id, run_id, artifact_id)
+        if size < 0:
+            raise ValueError("artifact size must not be negative")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            run = conn.execute(
+                "SELECT id FROM runs WHERE org_id = ? AND id = ?", (org_id, run_id)
+            ).fetchone()
+            if run is None:
+                raise KeyError(run_id)
+            conn.execute(
+                "INSERT INTO artifacts (id, org_id, run_id, kind, size, path, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (artifact_id, org_id, run_id, kind, size, path, now),
+            )
+        return path
+
+    def get_artifact(self, org_id: str, artifact_id: str) -> ArtifactRow:
+        # Another org's artifact is KeyError, same as missing -- see get_run.
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM artifacts WHERE org_id = ? AND id = ?", (org_id, artifact_id)
+            ).fetchone()
+        if row is None:
+            raise KeyError(artifact_id)
+        return ArtifactRow(**dict(row))
+
+    def list_artifacts(self, org_id: str, run_id: str) -> list[ArtifactRow]:
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM artifacts WHERE org_id = ? AND run_id = ? "
+                "ORDER BY created_at, id",
+                (org_id, run_id),
+            ).fetchall()
+        return [ArtifactRow(**dict(row)) for row in rows]
+
+    # ---- jobs -------------------------------------------------------------
+    #
+    # Reads are org-scoped like everything else. `claim_job`, `heartbeat_job`,
+    # `release_job`, and `reclaim_jobs` are deliberately *not*: a worker serves
+    # every org, and its authority comes from `lease_owner`, not from a tenant
+    # claim. They never return another org's evidence -- only job control rows.
+
+    def enqueue_job(
+        self,
+        org_id: str,
+        target_id: str,
+        pack_id: str,
+        *,
+        created_by: str | None = None,
+        priority: int = 0,
+    ) -> str:
+        job_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            self._ensure_org(conn, org_id, now)
+            conn.execute(
+                "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
+                "priority, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)",
+                (job_id, org_id, target_id, pack_id, created_by, priority, now),
+            )
+        return job_id
+
+    def claim_job(
+        self, owner: str, *, lease_seconds: int = 60, max_per_org: int | None = None
+    ) -> JobRow | None:
+        """Lease the highest-priority queued job, or return None if there is none.
+
+        Two workers racing is resolved by the `AND state = 'queued'` guard on the
+        update: the loser sees `rowcount == 0` and gets None, then polls again.
+        This is portable to Postgres as-is; `FOR UPDATE SKIP LOCKED` is an
+        optimization to add there if claim contention ever shows up in practice,
+        not a correctness requirement.
+
+        `max_per_org` skips orgs already at their running-job cap, so one partner
+        cannot starve the others.
+        """
+        now = datetime.now(timezone.utc)
+        now_text = now.isoformat()
+        expires = (now + timedelta(seconds=lease_seconds)).isoformat()
+        select = "SELECT id FROM jobs WHERE state = 'queued'"
+        params: tuple = ()
+        if max_per_org is not None:
+            # ponytail: two workers can each admit the last slot for one org and
+            # overshoot the cap by one, because the count is read before either
+            # commits. This is anti-starvation, not a safety limit, so ±1 is
+            # fine; make it exact with SELECT ... FOR UPDATE on Postgres if not.
+            select += (
+                " AND org_id NOT IN (SELECT org_id FROM jobs WHERE state = 'running'"
+                " GROUP BY org_id HAVING COUNT(*) >= ?)"
+            )
+            params = (max_per_org,)
+        with self._connection() as conn, conn:
+            # SQLite has no FOR UPDATE SKIP LOCKED.  BEGIN IMMEDIATE acquires
+            # the write lock before selecting a candidate, making the cap and
+            # the claim one atomic operation even across worker processes.
+            conn.execute("BEGIN IMMEDIATE")
+            candidate = conn.execute(
+                f"{select} ORDER BY priority DESC, created_at, id LIMIT 1", params
+            ).fetchone()
+            if candidate is None:
+                return None
+            cursor = conn.execute(
+                "UPDATE jobs SET state = 'running', lease_owner = ?, lease_expires_at = ?, "
+                "heartbeat_at = ?, started_at = COALESCE(started_at, ?), "
+                "attempt_count = attempt_count + 1 "
+                "WHERE id = ? AND state = 'queued'",
+                (owner, expires, now_text, now_text, candidate["id"]),
+            )
+            if cursor.rowcount != 1:
+                return None
+            return self._job_by_id(conn, candidate["id"])
+
+    def heartbeat_job(self, job_id: str, owner: str, *, lease_seconds: int = 60) -> bool:
+        """Extend the lease. False means the lease was lost -- stop working."""
+        now = datetime.now(timezone.utc).isoformat()
+        expires = (
+            datetime.fromisoformat(now) + timedelta(seconds=lease_seconds)
+        ).isoformat()
+        with self._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET lease_expires_at = ?, heartbeat_at = ? "
+                "WHERE id = ? AND lease_owner = ? AND state = 'running'",
+                (expires, now, job_id, owner),
+            )
+        return cursor.rowcount == 1
+
+    def release_job(
+        self,
+        job_id: str,
+        owner: str,
+        *,
+        state: str,
+        run_id: str | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Finish a job the caller holds the lease on. False means it was reclaimed."""
+        if state not in _TERMINAL_JOB_STATES:
+            raise ValueError(f"release state must be one of {_TERMINAL_JOB_STATES}")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET state = ?, run_id = ?, error = ?, finished_at = ?, "
+                "lease_owner = NULL, lease_expires_at = NULL "
+                "WHERE id = ? AND lease_owner = ? AND state = 'running'",
+                (state, run_id, error, now, job_id, owner),
+            )
+        return cursor.rowcount == 1
+
+    def reclaim_jobs(self, *, max_attempts: int = 3) -> int:
+        """Requeue jobs whose lease expired; fail those past `max_attempts`.
+
+        A live worker keeps its lease alive with `heartbeat_job`, so an expired
+        lease means the worker is gone -- not that the job is slow.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            expired = (
+                "state = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?"
+            )
+            failed = conn.execute(
+                f"UPDATE jobs SET state = 'failed', error = 'lease expired', finished_at = ?, "
+                f"lease_owner = NULL, lease_expires_at = NULL "
+                f"WHERE {expired} AND attempt_count >= ?",
+                (now, now, max_attempts),
+            ).rowcount
+            requeued = conn.execute(
+                f"UPDATE jobs SET state = 'queued', lease_owner = NULL, lease_expires_at = NULL "
+                f"WHERE {expired}",
+                (now,),
+            ).rowcount
+        return failed + requeued
+
+    def get_job(self, org_id: str, job_id: str) -> JobRow:
+        # Another org's job is KeyError, same as missing -- see get_run.
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE org_id = ? AND id = ?", (org_id, job_id)
+            ).fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        return JobRow(**dict(row))
+
+    def list_jobs(self, org_id: str, *, state: str | None = None, limit: int = 50) -> list[JobRow]:
+        query = "SELECT * FROM jobs WHERE org_id = ?"
+        params: tuple = (org_id,)
+        if state is not None:
+            query += " AND state = ?"
+            params += (state,)
+        query += " ORDER BY created_at DESC, id LIMIT ?"
+        with self._connection() as conn:
+            rows = conn.execute(query, (*params, limit)).fetchall()
+        return [JobRow(**dict(row)) for row in rows]
+
+    @staticmethod
+    def _job_by_id(conn: sqlite3.Connection, job_id: str) -> JobRow:
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return JobRow(**dict(row))
+
     def save_run(
         self,
         org_id: str,
@@ -760,6 +1066,69 @@ class Store:
             )
             for row in rows
         ]
+
+    def purge_runs(
+        self, *, keep_days: int | None = None, keep_last: int | None = None
+    ) -> tuple[int, list[str]]:
+        """Delete old runs plus their results and artifact rows, across all orgs.
+
+        `keep_days` drops runs started before the cutoff; `keep_last` drops runs
+        beyond the newest N per (org, agent). Both given means both apply.
+        Returns (deleted run count, orphaned artifact blob paths) -- the caller
+        owns the blob directory and removes the files.
+        """
+        if keep_days is None and keep_last is None:
+            raise ValueError("purge_runs needs keep_days and/or keep_last")
+        victims: set[tuple[str, str]] = set()
+        with self._connection() as conn, conn:
+            if keep_days is not None:
+                # Same aware-UTC isoformat save_run writes, so the string
+                # comparison is chronological.
+                cutoff = (
+                    datetime.now(timezone.utc) - timedelta(days=keep_days)
+                ).isoformat()
+                victims.update(
+                    (r["org_id"], r["id"])
+                    for r in conn.execute(
+                        "SELECT org_id, id FROM runs WHERE started_at < ?", (cutoff,)
+                    )
+                )
+            if keep_last is not None:
+                victims.update(
+                    (r["org_id"], r["id"])
+                    for r in conn.execute(
+                        """
+                        SELECT org_id, id FROM (
+                            SELECT org_id, id, ROW_NUMBER() OVER (
+                                PARTITION BY org_id, agent_id
+                                ORDER BY started_at DESC, id
+                            ) AS rn FROM runs
+                        ) WHERE rn > ?
+                        """,
+                        (keep_last,),
+                    )
+                )
+            blob_paths: list[str] = []
+            for org_id, run_id in sorted(victims):
+                blob_paths.extend(
+                    row["path"]
+                    for row in conn.execute(
+                        "SELECT path FROM artifacts WHERE org_id = ? AND run_id = ?",
+                        (org_id, run_id),
+                    )
+                )
+                conn.execute(
+                    "DELETE FROM artifacts WHERE org_id = ? AND run_id = ?",
+                    (org_id, run_id),
+                )
+                conn.execute(
+                    "DELETE FROM test_results WHERE org_id = ? AND run_id = ?",
+                    (org_id, run_id),
+                )
+                conn.execute(
+                    "DELETE FROM runs WHERE org_id = ? AND id = ?", (org_id, run_id)
+                )
+        return len(victims), blob_paths
 
     def get_run(self, org_id: str, run_id: str) -> tuple[RunResult, ScoreReport]:
         # Another org's run is KeyError, same as missing -- do not leak existence.

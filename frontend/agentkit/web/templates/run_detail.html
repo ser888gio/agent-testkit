@@ -9,7 +9,7 @@
     <h1>Run <span class="mono">{{ run.run_id[:8] }}</span></h1>
     <p class="mono page-subtitle">{{ run.run_id }}</p>
   </div>
-  <a class="button-link" href="/runs/{{ run.run_id }}/harness">Open Harness</a>
+  <a class="button-link" data-testid="open-harness" href="/runs/{{ run.run_id }}/harness">Open Harness</a>
 </header>
 
 <section class="stat-grid">

@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 import concurrent.futures
+import math
+import sys
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-from agentkit.core.agent import Agent, AgentResponse, build_agent
+from agentkit.core import isolation
+from agentkit.core.agent import Agent, AgentResponse
 from agentkit.core.assertions import AssertionContext, evaluate
 from agentkit.core.config import TargetConfig
+from agentkit.core.egress import ValidatedEndpoint
+from agentkit.core.isolation import IsolatedRunner, IsolationFailure
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.redaction import EvidencePolicy, Redactor
-from agentkit.core.sandbox import Sandbox, build_sandbox
+from agentkit.core.sandbox import SANDBOXES, Sandbox
 from agentkit.core.schema import (
     AssertionResult,
     RunResult,
@@ -30,12 +36,9 @@ def _now() -> datetime:
 def _run_with_timeout(
     agent: Agent, input: str | dict, timeout_s: float
 ) -> AgentResponse:
-    # ponytail: Python has no thread-kill primitive, so a timed-out agent.run
-    # keeps running in the background until it returns on its own (harmless for
-    # process exit - the worker thread doesn't block shutdown - but it does mean
-    # a hung agent leaks one thread/socket per timeout in a long-lived process
-    # like `agentkit ui`). Revisit with cooperative cancellation (e.g. requiring
-    # agents to accept a cancellation token) if that leak becomes real.
+    # Legacy/direct run_one path. Production run() supplies the nested
+    # process-backed turn runner instead; this fallback cannot kill its thread,
+    # so run_one deliberately discards its timeout diff.
     executor = concurrent.futures.ThreadPoolExecutor(
         max_workers=1, thread_name_prefix="agentkit-agent"
     )
@@ -89,11 +92,13 @@ def _redact_assertions(
 
 
 def run_one(
-    agent: Agent,
+    agent: Agent | None,
     sandbox: Sandbox | None,
     test: TestCase,
     redactor: Redactor,
     evidence: EvidencePolicy | None = None,
+    *,
+    run_turn: Callable[[Any, float], AgentResponse] | None = None,
 ) -> TestResult:
     evidence = evidence or EvidencePolicy()
     started = _now()
@@ -111,18 +116,24 @@ def run_one(
         # The final turn's response is what assertions run against.
         turns = test.turns if test.turns else [test.input]
         for turn in turns:
-            response = _run_with_timeout(agent, turn, test.timeout_s)
+            if run_turn is None:
+                if agent is None:  # pragma: no cover - internal invariant
+                    raise ValueError("agent is required without an isolated turn runner")
+                response = _run_with_timeout(agent, turn, test.timeout_s)
+            else:
+                response = run_turn(turn, test.timeout_s)
             if response.error == "timeout":
                 break
 
-        if sandbox is not None and response.error != "timeout":
+        # An isolated turn runner kills the agent worker before returning a
+        # timeout, so the supervisor-owned sandbox is stable.  Direct calls to
+        # run_one retain the conservative legacy behavior because their thread
+        # cannot be killed.
+        stable_timeout = response.error != "timeout" or run_turn is not None
+        if sandbox is not None and stable_timeout:
             after = sandbox.snapshot()
             diff = sandbox.diff(before, after)
         else:
-            # On timeout the worker thread keeps running and may still be
-            # mutating the sandbox, so the diff is not trustworthy evidence.
-            # See docs/archive/plans/MERGED-PLAN.md §0a; killable isolation is Phase 2.
-            # ponytail: thread-cancel is best-effort on CPython.
             diff = None
 
         ctx = AssertionContext(
@@ -229,25 +240,87 @@ def _run_python_test(
         )
 
 
+def _error_result(
+    test: TestCase | PythonTestCase,
+    started: datetime,
+    error: str,
+    redactor: Redactor,
+) -> TestResult:
+    return TestResult(
+        test_id=test.id,
+        category=test.category,
+        risk=test.risk,
+        status=Status.error,
+        latency_ms=None,
+        assertion_results=[],
+        request=None,
+        response=None,
+        sandbox_diff=None,
+        error=redactor.redact_text(error),
+        started_at=started,
+        finished_at=_now(),
+    )
+
+
+def _sandbox_modules() -> tuple[str, ...]:
+    # Pass registered sandbox module names to the spawned interpreter. Named,
+    # not imported, so core keeps no dependency edge to domain packages while
+    # third-party Sandbox registrations work too.
+    modules = {sandbox_type.__module__ for sandbox_type in SANDBOXES.values()}
+    modules.update(
+        name for name in list(sys.modules) if name.startswith("agentkit.domains.")
+    )
+    return tuple(sorted(modules))
+
+
 def run(
     target: TargetConfig,
     tests: list[TestCase | PythonTestCase],
     *,
     redactor: Redactor | None = None,
+    endpoint: ValidatedEndpoint | None = None,
 ) -> RunResult:
+    """`endpoint` carries the egress decision made at run start.
+
+    It is passed in rather than computed here because validation needs the
+    target's allowlist, which is a Store concern the runner must not reach into.
+
+    YAML and Python tests execute in a killable child process
+    (`core/isolation.py`). Python functions are serialized into the child; the
+    tested agent itself runs in a nested worker so it can be killed before the
+    sandbox owner snapshots timeout evidence.
+    """
     redactor = redactor or Redactor(target.evidence.redact)
-    sandbox = build_sandbox(target.sandbox) if target.sandbox else None
-    agent = build_agent(target, sandbox=sandbox)
+    isolated = IsolatedRunner(target, redactor, endpoint, _sandbox_modules())
 
     started = _now()
     results: list[TestResult] = []
-    for test in tests:
-        if isinstance(test, PythonTestCase):
-            results.append(
-                _run_python_test(agent, sandbox, test, redactor, target.evidence)
+    try:
+        for test in tests:
+            test_started = _now()
+            if isinstance(test, PythonTestCase):
+                if not math.isfinite(test.timeout_s) or test.timeout_s <= 0:
+                    result: TestResult | IsolationFailure = IsolationFailure(
+                        "timeout_s must be finite and > 0"
+                    )
+                else:
+                    result = isolated.run_python_test(
+                        test, test.timeout_s + isolation.GRACE_SECONDS
+                    )
+                if isinstance(result, IsolationFailure):
+                    result = _error_result(test, test_started, result.error, redactor)
+                results.append(result)
+                continue
+
+            turns = len(test.turns) if test.turns else 1
+            result = isolated.run_test(
+                test, turns * test.timeout_s + isolation.GRACE_SECONDS
             )
-        else:
-            results.append(run_one(agent, sandbox, test, redactor, target.evidence))
+            if isinstance(result, IsolationFailure):
+                result = _error_result(test, test_started, result.error, redactor)
+            results.append(result)
+    finally:
+        isolated.close()
 
     return RunResult(
         run_id=uuid.uuid4().hex,

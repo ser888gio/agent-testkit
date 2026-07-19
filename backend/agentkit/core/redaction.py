@@ -26,6 +26,11 @@ _BUILTIN_PATTERNS: list[tuple[str, str]] = [
 ]
 
 
+def builtin_pattern_names() -> list[str]:
+    """Names of the always-on masks, for display (e.g. the settings page)."""
+    return [name for name, _ in _BUILTIN_PATTERNS]
+
+
 class RedactionPattern(BaseModel):
     name: str
     regex: str

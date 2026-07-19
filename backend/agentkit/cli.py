@@ -257,6 +257,48 @@ def migrate_cmd(
         alembic_command.upgrade(cfg, "head")
 
 
+@app.command("purge")
+def purge_cmd(
+    db: str | None = typer.Option(None, "--db"),
+    keep_days: int | None = typer.Option(None, "--keep-days", min=0),
+    keep_last: int | None = typer.Option(None, "--keep-last", min=0),
+) -> None:
+    """Delete runs older than --keep-days and/or beyond the newest --keep-last per agent."""
+    if keep_days is None and keep_last is None:
+        typer.echo("nothing to do: pass --keep-days and/or --keep-last", err=True)
+        raise typer.Exit(2)
+    store = Store(_resolve_db_path(db))
+    deleted, blob_paths = store.purge_runs(keep_days=keep_days, keep_last=keep_last)
+    artifacts_root = Path(os.environ.get("AGENTKIT_ARTIFACTS_DIR", "database/artifacts"))
+    removed_blobs = 0
+    for rel in blob_paths:
+        blob = (artifacts_root / rel).resolve()
+        # Rows are written by save_artifact with relative keys; anything that
+        # escapes the root is corrupt data, not a delete instruction.
+        if blob.is_relative_to(artifacts_root.resolve()) and blob.is_file():
+            blob.unlink()
+            removed_blobs += 1
+    typer.echo(f"purged {deleted} runs, {removed_blobs} artifact blobs")
+
+
+@app.command("worker")
+def worker_cmd(
+    db: str | None = typer.Option(None, "--db"),
+    poll_seconds: float = typer.Option(1.0, "--poll-seconds"),
+    lease_seconds: int = typer.Option(120, "--lease-seconds"),
+    max_per_org: int = typer.Option(2, "--max-per-org"),
+) -> None:
+    """Run the job worker until interrupted. Same image as `ui`, different command."""
+    from agentkit.worker import main as worker_main
+
+    worker_main(
+        _resolve_db_path(db),
+        poll_seconds=poll_seconds,
+        lease_seconds=lease_seconds,
+        max_per_org=max_per_org,
+    )
+
+
 @app.command("ui")
 def ui_cmd(
     host: str = typer.Option("127.0.0.1", "--host"),

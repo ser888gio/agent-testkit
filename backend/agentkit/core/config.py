@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -51,34 +52,44 @@ class TargetConfig(BaseModel):
     evidence: EvidencePolicy = Field(default_factory=EvidencePolicy)
 
 
-def _interpolate_env(value: Any, config_id: str) -> Any:
+def _interpolate_env(value: Any, config_id: str, secrets: Mapping[str, str]) -> Any:
     if isinstance(value, str):
 
         def _sub(match: re.Match[str]) -> str:
             var = match.group(1)
-            if var not in os.environ:
+            if var not in secrets:
                 raise ConfigError(
                     f"env var {var} referenced by config '{config_id}' is unset"
                 )
-            return os.environ[var]
+            return secrets[var]
 
         return _ENV_VAR_RE.sub(_sub, value)
     if isinstance(value, dict):
-        return {k: _interpolate_env(v, config_id) for k, v in value.items()}
+        return {k: _interpolate_env(v, config_id, secrets) for k, v in value.items()}
     if isinstance(value, list):
-        return [_interpolate_env(v, config_id) for v in value]
+        return [_interpolate_env(v, config_id, secrets) for v in value]
     return value
 
 
-def load_target_dict(raw: Any, source: str = "<dict>") -> TargetConfig:
-    """Validate an already-parsed target mapping. `source` names it in errors."""
+def load_target_dict(
+    raw: Any,
+    source: str = "<dict>",
+    secrets: Mapping[str, str] | None = None,
+) -> TargetConfig:
+    """Validate an already-parsed target mapping. `source` names it in errors.
+
+    `secrets` supplies the values for `${VAR}` references. Passing an explicit
+    mapping is how a worker scopes a resolved credential to one run: nothing
+    mutates `os.environ`, so a concurrent run in another thread cannot read it.
+    `None` keeps the process environment, which is the CLI's single-tenant path.
+    """
     if not isinstance(raw, dict):
         raise ConfigError(
             f"config at {source} must be a mapping, got {type(raw).__name__}"
         )
 
     config_id = raw.get("id", source)
-    raw = _interpolate_env(raw, config_id)
+    raw = _interpolate_env(raw, config_id, os.environ if secrets is None else secrets)
 
     sandbox = raw.get("sandbox")
     if sandbox is not None and sandbox not in KNOWN_SANDBOXES:
@@ -101,7 +112,7 @@ def load_target_dict(raw: Any, source: str = "<dict>") -> TargetConfig:
         raise ConfigError(f"invalid config '{config_id}': {exc}") from exc
 
 
-def load_target(path: str | Path) -> TargetConfig:
+def load_target(path: str | Path, secrets: Mapping[str, str] | None = None) -> TargetConfig:
     path = Path(path)
     text = path.read_text(encoding="utf-8")
 
@@ -113,4 +124,4 @@ def load_target(path: str | Path) -> TargetConfig:
     except (yaml.YAMLError, json.JSONDecodeError) as exc:
         raise ConfigError(f"malformed config at {path}: {exc}") from exc
 
-    return load_target_dict(raw, source=str(path))
+    return load_target_dict(raw, source=str(path), secrets=secrets)
