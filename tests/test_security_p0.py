@@ -72,7 +72,7 @@ def test_post_runs_rejects_path_outside_allowlist():
     assert resp.status_code == 400
 
 
-# --- timeout must not yield a trusted sandbox diff -------------------------
+# --- direct thread timeout must not yield a trusted sandbox diff -----------
 
 
 class _SlowAgent:
@@ -102,7 +102,7 @@ class _CountingSandbox(Sandbox):
         return {} if before == after else {"n": [before["n"], after["n"]]}
 
 
-def test_timeout_does_not_produce_trusted_diff():
+def test_direct_run_one_timeout_does_not_claim_a_trusted_diff():
     redactor = Redactor(RedactionConfig())
     test = SchemaTestCase(
         id="t.timeout.case",
@@ -114,7 +114,8 @@ def test_timeout_does_not_produce_trusted_diff():
     result = run_one(_SlowAgent(), _CountingSandbox(), test, redactor)
     assert result.status == Status.error
     assert result.error == "timeout"
-    # The worker thread may still be mutating; the diff is not trustworthy.
+    # Only runner.run supplies the nested killable agent worker. A direct call
+    # retains the thread fallback and must fail closed on timeout evidence.
     assert result.sandbox_diff is None
 
 

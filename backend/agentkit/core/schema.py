@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime
 from enum import Enum
@@ -55,7 +56,7 @@ class TestCase(BaseModel):
     timeout_s: float = 30.0
 
     @model_validator(mode="after")
-    def _require_input_xor_turns(self) -> "TestCase":
+    def _require_input_xor_turns(self) -> TestCase:
         if bool(self.input is not None) == bool(self.turns):
             raise ValueError("exactly one of 'input' or 'turns' must be set")
         return self
@@ -77,8 +78,8 @@ class TestCase(BaseModel):
     @field_validator("timeout_s")
     @classmethod
     def _validate_timeout(cls, v: float) -> float:
-        if v <= 0:
-            raise ValueError("timeout_s must be > 0")
+        if not math.isfinite(v) or v <= 0:
+            raise ValueError("timeout_s must be finite and > 0")
         return v
 
 

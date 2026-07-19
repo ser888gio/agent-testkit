@@ -8,6 +8,8 @@ the rest of the system consumes.
 
 - `runner.py:run` — the only execution path. Discovery → per-test sandbox reset → agent call
   (single- or multi-turn) → assertion evaluation → redaction → `RunResult`.
+- `isolation.py:IsolatedRunner` — spawned run supervisor, nested killable agent worker,
+  sandbox RPC boundary, process-tree cleanup, and CPU/memory ceilings.
 - `loader.py:discover` — turns a packs directory into `TestCase` / `PythonTestCase` objects.
 - `agent.py:build_agent` — `TargetConfig` → `CallableAgent` or `HTTPAgent`.
 - `sandbox.py:build_sandbox` — name → registered `Sandbox` instance.
