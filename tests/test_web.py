@@ -1030,6 +1030,10 @@ def test_job_status_reports_queued_running_and_done(tmp_path, monkeypatch):
 
     body = client.get(f"/jobs/{job_id}/status").json()
     assert (body["state"], body["running"], body["run_id"]) == ("queued", True, "")
+    legacy_body = client.get(
+        f"/runs/{job_id}/status", headers={"Accept": "application/json"}
+    ).json()
+    assert (legacy_body["state"], legacy_body["running"]) == ("queued", True)
 
     store.claim_job("w1", lease_seconds=-1)
     assert client.get(f"/jobs/{job_id}/status").json()["state"] == "running"

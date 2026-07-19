@@ -75,6 +75,29 @@ def test_unknown_target_fails_permanently_without_burning_retries(tmp_path):
     assert store.reclaim_jobs() == 0
 
 
+def test_resolved_secret_is_not_written_to_job_errors_or_logs(tmp_path, monkeypatch, caplog):
+    secret = "worker-secret-not-for-storage"
+    monkeypatch.setenv("WORKER_SECRET", secret)
+    store = Store(str(tmp_path / "secret-error.db"))
+    store.save_target(
+        "org-a",
+        "bad-endpoint",
+        "Bad endpoint",
+        {"id": "bad-endpoint", "agent": {"type": "http", "endpoint": "${WORKER_SECRET}"}},
+        secret_ref="env://WORKER_SECRET",
+        allowed_hosts=["agent.example.test"],
+    )
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST])
+    job_id = store.enqueue_job("org-a", "bad-endpoint", "pack-1")
+
+    with caplog.at_level("WARNING", logger="agentkit.worker"):
+        work_once(store, "w1")
+
+    job = store.get_job("org-a", job_id)
+    assert secret not in (job.error or "")
+    assert secret not in caplog.text
+
+
 def test_execute_job_raises_permanent_for_a_foreign_orgs_target(tmp_path):
     store, _ = _store_with_job(tmp_path, org="org-a")
     stolen = store.enqueue_job("org-b", "worker-target", "pack-1")

@@ -14,7 +14,7 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 # Bump when a new revision lands in infra/alembic/versions/.
-HEAD = "0008"
+HEAD = "0009"
 APPLICATION_TABLES = (
     "orgs",
     "agents",

@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at TEXT,
     lease_owner TEXT,
     lease_expires_at TEXT,
+    heartbeat_at TEXT,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -216,6 +217,7 @@ class JobRow:
     finished_at: str | None
     lease_owner: str | None
     lease_expires_at: str | None
+    heartbeat_at: str | None
 
 
 JOB_STATES = ("queued", "running", "done", "failed")
@@ -795,6 +797,7 @@ class Store:
         cannot starve the others.
         """
         now = datetime.now(timezone.utc)
+        now_text = now.isoformat()
         expires = (now + timedelta(seconds=lease_seconds)).isoformat()
         select = "SELECT id FROM jobs WHERE state = 'queued'"
         params: tuple = ()
@@ -809,6 +812,10 @@ class Store:
             )
             params = (max_per_org,)
         with self._connection() as conn, conn:
+            # SQLite has no FOR UPDATE SKIP LOCKED.  BEGIN IMMEDIATE acquires
+            # the write lock before selecting a candidate, making the cap and
+            # the claim one atomic operation even across worker processes.
+            conn.execute("BEGIN IMMEDIATE")
             candidate = conn.execute(
                 f"{select} ORDER BY priority DESC, created_at, id LIMIT 1", params
             ).fetchone()
@@ -816,9 +823,10 @@ class Store:
                 return None
             cursor = conn.execute(
                 "UPDATE jobs SET state = 'running', lease_owner = ?, lease_expires_at = ?, "
-                "started_at = COALESCE(started_at, ?), attempt_count = attempt_count + 1 "
+                "heartbeat_at = ?, started_at = COALESCE(started_at, ?), "
+                "attempt_count = attempt_count + 1 "
                 "WHERE id = ? AND state = 'queued'",
-                (owner, expires, now.isoformat(), candidate["id"]),
+                (owner, expires, now_text, now_text, candidate["id"]),
             )
             if cursor.rowcount != 1:
                 return None
@@ -826,12 +834,15 @@ class Store:
 
     def heartbeat_job(self, job_id: str, owner: str, *, lease_seconds: int = 60) -> bool:
         """Extend the lease. False means the lease was lost -- stop working."""
-        expires = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        expires = (
+            datetime.fromisoformat(now) + timedelta(seconds=lease_seconds)
+        ).isoformat()
         with self._connection() as conn, conn:
             cursor = conn.execute(
-                "UPDATE jobs SET lease_expires_at = ? "
+                "UPDATE jobs SET lease_expires_at = ?, heartbeat_at = ? "
                 "WHERE id = ? AND lease_owner = ? AND state = 'running'",
-                (expires, job_id, owner),
+                (expires, now, job_id, owner),
             )
         return cursor.rowcount == 1
 

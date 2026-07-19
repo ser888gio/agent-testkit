@@ -78,6 +78,24 @@ def resolve_secret(secret_ref: str | None) -> dict[str, str]:
     return {name: os.environ[name]}
 
 
+def _safe_job_error(store: Store, job: JobRow, message: str) -> str:
+    """Remove a run-scoped credential before logging or persisting an error.
+
+    Validation failures can contain interpolated target values (for example an
+    invalid endpoint).  Job errors and worker logs are outside the runner's
+    evidence redaction path, so scrub the credential at this boundary too.
+    """
+    try:
+        secret_ref = store.get_target_secret_ref(job.org_id, job.target_id)
+        secrets = resolve_secret(secret_ref)
+    except Exception:  # noqa: BLE001 - error handling must never mask the original error
+        secrets = {}
+    for value in secrets.values():
+        if value:
+            message = message.replace(value, "[REDACTED]")
+    return message
+
+
 def execute_job(store: Store, job: JobRow) -> str:
     """Resolve, run, score, and persist one claimed job. Returns the run id."""
     try:
@@ -147,13 +165,17 @@ def work_once(
     try:
         run_id = execute_job(store, job)
     except PermanentJobError as exc:
-        log.warning("job %s failed permanently: %s", job.id, exc)
-        store.release_job(job.id, owner, state="failed", error=str(exc))
+        error = _safe_job_error(store, job, str(exc))
+        log.warning("job %s failed permanently: %s", job.id, error)
+        store.release_job(job.id, owner, state="failed", error=error)
     except Exception:
         # Infrastructure fault. Deliberately not released: the lease expires and
         # `reclaim_jobs` retries it, up to the attempt ceiling. Releasing it as
         # failed here would turn a transient database blip into a dead job.
-        log.exception("job %s hit an infrastructure fault, leaving it to lease expiry", job.id)
+        # Do not emit the original exception: it can contain an interpolated
+        # credential. The lease/retry path retains the failure semantics without
+        # putting secrets in logs.
+        log.error("job %s hit an infrastructure fault; leaving it to lease expiry", job.id)
     else:
         store.release_job(job.id, owner, state="done", run_id=run_id)
     finally:

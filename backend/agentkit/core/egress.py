@@ -127,12 +127,12 @@ def validate_endpoint(
     parts = urlsplit(endpoint)
     if parts.scheme not in ("https", *(("http",) if allow_private else ())):
         raise EgressError(
-            f"endpoint must use https, got '{parts.scheme or 'no scheme'}': {endpoint}"
+            f"endpoint must use https, got '{parts.scheme or 'no scheme'}'"
         )
     if parts.username or parts.password:
         raise EgressError("endpoint must not carry credentials in the URL")
     if not parts.hostname:
-        raise EgressError(f"endpoint has no host: {endpoint}")
+        raise EgressError("endpoint has no host")
 
     host = normalize_host(parts.hostname)
     if host not in policy.allowed_hosts:
@@ -141,7 +141,7 @@ def validate_endpoint(
     try:
         port = parts.port or (443 if parts.scheme == "https" else 80)
     except ValueError as exc:
-        raise EgressError(f"endpoint has an invalid port: {endpoint}") from exc
+        raise EgressError("endpoint has an invalid port") from exc
 
     addresses = list(resolver(host, port))
     if not addresses:

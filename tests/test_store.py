@@ -486,6 +486,7 @@ def test_claim_takes_highest_priority_then_oldest():
     assert first.state == "running"
     assert first.lease_owner == "worker-1"
     assert first.attempt_count == 1
+    assert first.heartbeat_at is not None
 
 
 def test_claim_returns_none_when_queue_is_empty():
@@ -521,9 +522,11 @@ def test_heartbeat_extends_only_the_holders_lease():
     store = Store(":memory:")
     _queue(store)
     job = store.claim_job("worker-1")
+    before = job.heartbeat_at
 
     assert store.heartbeat_job(job.id, "worker-1") is True
     assert store.heartbeat_job(job.id, "worker-2") is False
+    assert store.get_job("org-a", job.id).heartbeat_at >= before
 
 
 def test_heartbeating_job_is_not_reclaimed():
@@ -572,6 +575,7 @@ def test_release_requires_the_lease_and_records_the_run():
 
     done = store.get_job("org-a", job.id)
     assert (done.state, done.run_id, done.lease_owner) == ("done", "run-9", None)
+    assert done.heartbeat_at is not None
     assert store.release_job(job.id, "worker-1", state="done") is False
 
 

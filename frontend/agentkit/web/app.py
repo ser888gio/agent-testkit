@@ -6,6 +6,7 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -808,8 +809,23 @@ def run_status(
     request: Request,
     principal: Principal = Depends(current_principal),
 ) -> Response:
-    # A run row only exists once the worker has finished and persisted it, so
-    # this is always terminal. In-flight state lives on the job (/jobs/{id}/status).
+    # During submission the identifier may still be a job id. Keep this legacy
+    # endpoint useful for queued/running work while retaining the finished-run
+    # response for callers that already have a run id.
+    try:
+        job = get_store().get_job(principal.org_id, run_id)
+    except KeyError:
+        job = None
+    if job is not None:
+        payload = _job_status_payload(job)
+        if "application/json" in request.headers.get("accept", "").lower():
+            return JSONResponse(payload)
+        message = escape(payload["message"])
+        return HTMLResponse(
+            f'<div id="run-status" data-poll-url="/runs/{escape(run_id)}/status" '
+            f'aria-live="polite">{message}</div>'
+        )
+
     rr, report = _load_run_or_404(principal.org_id, run_id)
     if "application/json" in request.headers.get("accept", "").lower():
         return JSONResponse(
@@ -937,6 +953,19 @@ _JOB_MESSAGES = {
 }
 
 
+def _job_status_payload(job) -> dict[str, object]:
+    message = _JOB_MESSAGES.get(job.state, job.state)
+    if job.state == "failed" and job.error:
+        message = f"Failed: {job.error}"
+    return {
+        "job_id": job.id,
+        "run_id": job.run_id or "",
+        "state": job.state,
+        "message": message,
+        "running": job.state in ("queued", "running"),
+    }
+
+
 def _load_job_or_404(org_id: str, job_id: str):
     try:
         return get_store().get_job(org_id, job_id)
@@ -951,20 +980,9 @@ def job_detail(job_id: str, principal: Principal = Depends(current_principal)) -
 
 @app.get("/jobs/{job_id}/status")
 def job_status(job_id: str, principal: Principal = Depends(current_principal)) -> JSONResponse:
-    """Real queued/running/done state, unlike run status which is always finished."""
+    """Return the real queued/running/done state for a job."""
     job = _load_job_or_404(principal.org_id, job_id)
-    message = _JOB_MESSAGES.get(job.state, job.state)
-    if job.state == "failed" and job.error:
-        message = f"Failed: {job.error}"
-    return JSONResponse(
-        {
-            "job_id": job.id,
-            "run_id": job.run_id or "",
-            "state": job.state,
-            "message": message,
-            "running": job.state in ("queued", "running"),
-        }
-    )
+    return JSONResponse(_job_status_payload(job))
 
 
 @app.get("/compare", response_class=HTMLResponse)
