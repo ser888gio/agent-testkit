@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agentkit.core.artifacts import artifact_key
 from agentkit.core.config import TargetConfig, load_target_dict
 from agentkit.core.loader import LoaderError, load_tests_from_rows
 from agentkit.core.redaction import Redactor
@@ -119,6 +120,20 @@ CREATE TABLE IF NOT EXISTS jobs (
     lease_expires_at TEXT,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
+CREATE TABLE IF NOT EXISTS artifacts (
+    id TEXT NOT NULL,
+    org_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (org_id, id),
+    UNIQUE (path),
+    FOREIGN KEY (org_id) REFERENCES orgs(id),
+    FOREIGN KEY (org_id, run_id) REFERENCES runs(org_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(org_id, run_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(state, priority DESC, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_org ON jobs(org_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_targets_org ON targets(org_id);
@@ -169,6 +184,17 @@ class RunRow:
     score: dict
     created_by: str | None = None
     created_by_email: str | None = None
+
+
+@dataclass
+class ArtifactRow:
+    id: str
+    org_id: str
+    run_id: str
+    kind: str
+    size: int
+    path: str
+    created_at: str
 
 
 @dataclass
@@ -658,6 +684,52 @@ class Store:
                 "DELETE FROM packs WHERE org_id = ? AND id = ?", (org_id, pack_id)
             )
         return cursor.rowcount == 1
+
+    # ---- artifacts --------------------------------------------------------
+
+    def save_artifact(
+        self, org_id: str, run_id: str, artifact_id: str, kind: str, size: int
+    ) -> str:
+        """Record blob metadata. The path is derived, never caller-supplied.
+
+        The run must belong to `org_id`; the foreign key would catch a mismatch
+        anyway, but failing here keeps the error legible.
+        """
+        path = artifact_key(org_id, run_id, artifact_id)
+        if size < 0:
+            raise ValueError("artifact size must not be negative")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            run = conn.execute(
+                "SELECT id FROM runs WHERE org_id = ? AND id = ?", (org_id, run_id)
+            ).fetchone()
+            if run is None:
+                raise KeyError(run_id)
+            conn.execute(
+                "INSERT INTO artifacts (id, org_id, run_id, kind, size, path, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (artifact_id, org_id, run_id, kind, size, path, now),
+            )
+        return path
+
+    def get_artifact(self, org_id: str, artifact_id: str) -> ArtifactRow:
+        # Another org's artifact is KeyError, same as missing -- see get_run.
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM artifacts WHERE org_id = ? AND id = ?", (org_id, artifact_id)
+            ).fetchone()
+        if row is None:
+            raise KeyError(artifact_id)
+        return ArtifactRow(**dict(row))
+
+    def list_artifacts(self, org_id: str, run_id: str) -> list[ArtifactRow]:
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM artifacts WHERE org_id = ? AND run_id = ? "
+                "ORDER BY created_at, id",
+                (org_id, run_id),
+            ).fetchall()
+        return [ArtifactRow(**dict(row)) for row in rows]
 
     # ---- jobs -------------------------------------------------------------
     #

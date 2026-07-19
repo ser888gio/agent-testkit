@@ -33,7 +33,7 @@ from agentkit.web.auth import (
     reset_auth_state,
 )
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
@@ -567,6 +567,35 @@ def create_test(
     except LoaderError as exc:
         return _fail(str(exc))
     return RedirectResponse(url="/tests", status_code=303)
+
+
+def get_artifacts_dir() -> Path:
+    return Path(os.environ.get("AGENTKIT_ARTIFACTS_DIR", "database/artifacts"))
+
+
+@app.get("/artifacts/{artifact_id}")
+def download_artifact(
+    artifact_id: str, principal: Principal = Depends(current_principal)
+) -> Response:
+    """The only permitted way to serve a blob.
+
+    Artifacts are deliberately not behind a StaticFiles mount: a mount serves by
+    path alone and cannot check the row's `org_id` against the token claim, so
+    knowing (or guessing) a key would be enough to read another partner's
+    evidence. Every read goes through this row lookup instead.
+    """
+    store = get_store()
+    try:
+        artifact = store.get_artifact(principal.org_id, artifact_id)
+    except KeyError:
+        # Another org's artifact is indistinguishable from a missing one.
+        raise HTTPException(status_code=404, detail="artifact not found") from None
+
+    root = get_artifacts_dir().resolve()
+    blob = (root / artifact.path).resolve()
+    if not blob.is_relative_to(root) or not blob.is_file():
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return FileResponse(blob, media_type=artifact.kind, filename=artifact.id)
 
 
 def _load_run_or_404(org_id: str, run_id: str):

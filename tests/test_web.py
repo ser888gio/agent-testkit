@@ -8,6 +8,7 @@ from agentkit.core.schema import Assertion, Category
 from agentkit.core.schema import TestCase as SchemaTestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import DEFAULT_ORG, Store
+from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
 MODULE = "tests.test_web"
@@ -1079,3 +1080,68 @@ def test_run_status_is_always_terminal(tmp_path, monkeypatch):
 
     assert body["running"] is False
     assert body["run_id"] == rr.run_id
+
+
+# ---- T14: artifact serving ------------------------------------------------
+
+
+def _seed_artifact(tmp_path, monkeypatch, org: str = DEFAULT_ORG, body: bytes = b'{"trace": 1}'):
+    """A run, an artifact row, and the blob on disk under its canonical key."""
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_store(db)
+    store = Store(db)
+    path = store.save_artifact(org, rr.run_id, "trace.json", "application/json", len(body))
+
+    root = tmp_path / "artifacts"
+    blob = root / path
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(body)
+    monkeypatch.setenv("AGENTKIT_ARTIFACTS_DIR", str(root))
+    return db, rr.run_id, body
+
+
+def test_artifact_is_served_to_its_own_org(tmp_path, monkeypatch):
+    db, _run_id, body = _seed_artifact(tmp_path, monkeypatch)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/artifacts/trace.json")
+
+    assert resp.status_code == 200
+    assert resp.content == body
+
+
+def test_artifact_of_another_org_is_404(tmp_path, monkeypatch):
+    db, _run_id, _body = _seed_artifact(tmp_path, monkeypatch)
+    client = _client(db, monkeypatch)
+    from agentkit.web import app as web_app
+    from agentkit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
+    )
+    try:
+        resp = client.get("/artifacts/trace.json")
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+    assert resp.status_code == 404
+    assert "trace" not in resp.text.lower() or "not found" in resp.text.lower()
+
+
+def test_missing_blob_is_404_not_a_server_error(tmp_path, monkeypatch):
+    db, _run_id, _body = _seed_artifact(tmp_path, monkeypatch)
+    (tmp_path / "artifacts" / DEFAULT_ORG / _run_id / "trace.json").unlink()
+    client = _client(db, monkeypatch)
+
+    assert client.get("/artifacts/trace.json").status_code == 404
+
+
+def test_artifacts_are_not_exposed_by_a_static_mount(tmp_path, monkeypatch):
+    _seed_artifact(tmp_path, monkeypatch)
+    from agentkit.web.app import app as web_app
+
+    mounts = [r for r in web_app.routes if isinstance(getattr(r, "app", None), StaticFiles)]
+
+    assert [m.path for m in mounts] == ["/static"]
+    served = {Path(m.app.directory).resolve() for m in mounts}
+    assert (tmp_path / "artifacts").resolve() not in served
