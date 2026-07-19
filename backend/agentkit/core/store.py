@@ -7,10 +7,11 @@ import queue
 import re
 import sqlite3
 import threading
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from agentkit.core.config import TargetConfig, load_target_dict
@@ -96,6 +97,30 @@ CREATE TABLE IF NOT EXISTS pack_tests (
     UNIQUE (org_id, pack_id, test_id),
     FOREIGN KEY (org_id, pack_id) REFERENCES packs(org_id, id) ON DELETE CASCADE
 );
+-- target_id/pack_id are deliberately not foreign keys: the web run route still
+-- names targets and packs by filesystem path (web/app.py:run_again), so a key
+-- into targets/packs would reject every job T13 enqueues. Tighten once the
+-- route is on DB rows.
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    pack_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
+    run_id TEXT,
+    created_by TEXT,
+    error TEXT,
+    priority INTEGER NOT NULL DEFAULT 0,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    lease_owner TEXT,
+    lease_expires_at TEXT,
+    FOREIGN KEY (org_id) REFERENCES orgs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(state, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_org ON jobs(org_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_targets_org ON targets(org_id);
 CREATE INDEX IF NOT EXISTS idx_packs_org ON packs(org_id);
 CREATE INDEX IF NOT EXISTS idx_pack_tests_pack ON pack_tests(org_id, pack_id);
@@ -145,6 +170,28 @@ class RunRow:
     created_by: str | None = None
     created_by_email: str | None = None
 
+
+@dataclass
+class JobRow:
+    id: str
+    org_id: str
+    target_id: str
+    pack_id: str
+    state: str
+    run_id: str | None
+    created_by: str | None
+    error: str | None
+    priority: int
+    attempt_count: int
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    lease_owner: str | None
+    lease_expires_at: str | None
+
+
+JOB_STATES = ("queued", "running", "done", "failed")
+_TERMINAL_JOB_STATES = ("done", "failed")
 
 Matrix = dict[str, dict[str, str]]
 
@@ -611,6 +658,144 @@ class Store:
                 "DELETE FROM packs WHERE org_id = ? AND id = ?", (org_id, pack_id)
             )
         return cursor.rowcount == 1
+
+    # ---- jobs -------------------------------------------------------------
+    #
+    # Reads are org-scoped like everything else. `claim_job`, `heartbeat_job`,
+    # `release_job`, and `reclaim_jobs` are deliberately *not*: a worker serves
+    # every org, and its authority comes from `lease_owner`, not from a tenant
+    # claim. They never return another org's evidence -- only job control rows.
+
+    def enqueue_job(
+        self,
+        org_id: str,
+        target_id: str,
+        pack_id: str,
+        *,
+        created_by: str | None = None,
+        priority: int = 0,
+    ) -> str:
+        job_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            self._ensure_org(conn, org_id, now)
+            conn.execute(
+                "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
+                "priority, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)",
+                (job_id, org_id, target_id, pack_id, created_by, priority, now),
+            )
+        return job_id
+
+    def claim_job(self, owner: str, *, lease_seconds: int = 60) -> JobRow | None:
+        """Lease the highest-priority queued job, or return None if there is none.
+
+        Two workers racing is resolved by the `AND state = 'queued'` guard on the
+        update: the loser sees `rowcount == 0` and gets None, then polls again.
+        This is portable to Postgres as-is; `FOR UPDATE SKIP LOCKED` is an
+        optimization to add there if claim contention ever shows up in practice,
+        not a correctness requirement.
+        """
+        now = datetime.now(timezone.utc)
+        expires = (now + timedelta(seconds=lease_seconds)).isoformat()
+        with self._connection() as conn, conn:
+            candidate = conn.execute(
+                "SELECT id FROM jobs WHERE state = 'queued' "
+                "ORDER BY priority DESC, created_at, id LIMIT 1"
+            ).fetchone()
+            if candidate is None:
+                return None
+            cursor = conn.execute(
+                "UPDATE jobs SET state = 'running', lease_owner = ?, lease_expires_at = ?, "
+                "started_at = COALESCE(started_at, ?), attempt_count = attempt_count + 1 "
+                "WHERE id = ? AND state = 'queued'",
+                (owner, expires, now.isoformat(), candidate["id"]),
+            )
+            if cursor.rowcount != 1:
+                return None
+            return self._job_by_id(conn, candidate["id"])
+
+    def heartbeat_job(self, job_id: str, owner: str, *, lease_seconds: int = 60) -> bool:
+        """Extend the lease. False means the lease was lost -- stop working."""
+        expires = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
+        with self._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET lease_expires_at = ? "
+                "WHERE id = ? AND lease_owner = ? AND state = 'running'",
+                (expires, job_id, owner),
+            )
+        return cursor.rowcount == 1
+
+    def release_job(
+        self,
+        job_id: str,
+        owner: str,
+        *,
+        state: str,
+        run_id: str | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Finish a job the caller holds the lease on. False means it was reclaimed."""
+        if state not in _TERMINAL_JOB_STATES:
+            raise ValueError(f"release state must be one of {_TERMINAL_JOB_STATES}")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET state = ?, run_id = ?, error = ?, finished_at = ?, "
+                "lease_owner = NULL, lease_expires_at = NULL "
+                "WHERE id = ? AND lease_owner = ? AND state = 'running'",
+                (state, run_id, error, now, job_id, owner),
+            )
+        return cursor.rowcount == 1
+
+    def reclaim_jobs(self, *, max_attempts: int = 3) -> int:
+        """Requeue jobs whose lease expired; fail those past `max_attempts`.
+
+        A live worker keeps its lease alive with `heartbeat_job`, so an expired
+        lease means the worker is gone -- not that the job is slow.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            expired = (
+                "state = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?"
+            )
+            failed = conn.execute(
+                f"UPDATE jobs SET state = 'failed', error = 'lease expired', finished_at = ?, "
+                f"lease_owner = NULL, lease_expires_at = NULL "
+                f"WHERE {expired} AND attempt_count >= ?",
+                (now, now, max_attempts),
+            ).rowcount
+            requeued = conn.execute(
+                f"UPDATE jobs SET state = 'queued', lease_owner = NULL, lease_expires_at = NULL "
+                f"WHERE {expired}",
+                (now,),
+            ).rowcount
+        return failed + requeued
+
+    def get_job(self, org_id: str, job_id: str) -> JobRow:
+        # Another org's job is KeyError, same as missing -- see get_run.
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE org_id = ? AND id = ?", (org_id, job_id)
+            ).fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        return JobRow(**dict(row))
+
+    def list_jobs(self, org_id: str, *, state: str | None = None, limit: int = 50) -> list[JobRow]:
+        query = "SELECT * FROM jobs WHERE org_id = ?"
+        params: tuple = (org_id,)
+        if state is not None:
+            query += " AND state = ?"
+            params += (state,)
+        query += " ORDER BY created_at DESC, id LIMIT ?"
+        with self._connection() as conn:
+            rows = conn.execute(query, (*params, limit)).fetchall()
+        return [JobRow(**dict(row)) for row in rows]
+
+    @staticmethod
+    def _job_by_id(conn: sqlite3.Connection, job_id: str) -> JobRow:
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return JobRow(**dict(row))
 
     def save_run(
         self,
