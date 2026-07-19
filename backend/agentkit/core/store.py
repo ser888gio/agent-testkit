@@ -686,7 +686,9 @@ class Store:
             )
         return job_id
 
-    def claim_job(self, owner: str, *, lease_seconds: int = 60) -> JobRow | None:
+    def claim_job(
+        self, owner: str, *, lease_seconds: int = 60, max_per_org: int | None = None
+    ) -> JobRow | None:
         """Lease the highest-priority queued job, or return None if there is none.
 
         Two workers racing is resolved by the `AND state = 'queued'` guard on the
@@ -694,13 +696,27 @@ class Store:
         This is portable to Postgres as-is; `FOR UPDATE SKIP LOCKED` is an
         optimization to add there if claim contention ever shows up in practice,
         not a correctness requirement.
+
+        `max_per_org` skips orgs already at their running-job cap, so one partner
+        cannot starve the others.
         """
         now = datetime.now(timezone.utc)
         expires = (now + timedelta(seconds=lease_seconds)).isoformat()
+        select = "SELECT id FROM jobs WHERE state = 'queued'"
+        params: tuple = ()
+        if max_per_org is not None:
+            # ponytail: two workers can each admit the last slot for one org and
+            # overshoot the cap by one, because the count is read before either
+            # commits. This is anti-starvation, not a safety limit, so ±1 is
+            # fine; make it exact with SELECT ... FOR UPDATE on Postgres if not.
+            select += (
+                " AND org_id NOT IN (SELECT org_id FROM jobs WHERE state = 'running'"
+                " GROUP BY org_id HAVING COUNT(*) >= ?)"
+            )
+            params = (max_per_org,)
         with self._connection() as conn, conn:
             candidate = conn.execute(
-                "SELECT id FROM jobs WHERE state = 'queued' "
-                "ORDER BY priority DESC, created_at, id LIMIT 1"
+                f"{select} ORDER BY priority DESC, created_at, id LIMIT 1", params
             ).fetchone()
             if candidate is None:
                 return None

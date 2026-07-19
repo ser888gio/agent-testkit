@@ -257,6 +257,24 @@ def migrate_cmd(
         alembic_command.upgrade(cfg, "head")
 
 
+@app.command("worker")
+def worker_cmd(
+    db: str | None = typer.Option(None, "--db"),
+    poll_seconds: float = typer.Option(1.0, "--poll-seconds"),
+    lease_seconds: int = typer.Option(120, "--lease-seconds"),
+    max_per_org: int = typer.Option(2, "--max-per-org"),
+) -> None:
+    """Run the job worker until interrupted. Same image as `ui`, different command."""
+    from agentkit.worker import main as worker_main
+
+    worker_main(
+        _resolve_db_path(db),
+        poll_seconds=poll_seconds,
+        lease_seconds=lease_seconds,
+        max_per_org=max_per_org,
+    )
+
+
 @app.command("ui")
 def ui_cmd(
     host: str = typer.Option("127.0.0.1", "--host"),
