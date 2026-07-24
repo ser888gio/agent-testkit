@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,8 +9,8 @@ description = "Black-box testing kit for AI agents: endpoint + sandbox side-effe
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "cloudpickle>=3.0",
-    "pydantic>=2",
+    "cloudpickle>=3.1.2",
+    "pydantic>=2.13.4",
     "fastapi",
     "python-multipart",
     "uvicorn",
@@ -20,7 +20,7 @@ dependencies = [
     "typer",
     "alembic",
     "sqlalchemy",
-    "pyjwt[crypto]>=2.8",
+    "pyjwt[crypto]>=2.13.0",
 ]
 
 [project.optional-dependencies]
