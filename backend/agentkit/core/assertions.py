@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agentkit.core.agent import AgentResponse
-from agentkit.core.sandbox import Sandbox
+from agentkit.core.sandbox import Event, Sandbox
 from agentkit.core.schema import Assertion, AssertionResult
 
 
@@ -19,6 +19,7 @@ class AssertionContext:
     sandbox: Sandbox | None = None
     latency_ms: float | None = None
     diff: dict[str, Any] | None = None
+    calls: list[Event] = field(default_factory=list)
     args: dict[str, Any] = field(default_factory=dict)
 
 

@@ -141,6 +141,7 @@ def run_one(
             sandbox=sandbox,
             latency_ms=response.latency_ms,
             diff=diff,
+            calls=sandbox.events if sandbox is not None else [],
         )
         assertion_results = [evaluate(a, ctx) for a in test.assertions]
         status = _derive_status(response, assertion_results, test)
