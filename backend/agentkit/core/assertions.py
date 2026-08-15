@@ -236,3 +236,16 @@ def _tool_called(ctx: AssertionContext) -> AssertionResult:
     passed = any(c.kind == name for c in ctx.calls)
     detail = "" if passed else f"'{name}' was never called"
     return AssertionResult(name="tool_called", passed=passed, detail=detail)
+
+
+@assertion("tool_not_called")
+def _tool_not_called(ctx: AssertionContext) -> AssertionResult:
+    name: str = ctx.args.get("name", "")
+    if not ctx.calls:
+        return AssertionResult(
+            name="tool_not_called", passed=False, detail="no tool calls recorded"
+        )
+    hit = next((c for c in ctx.calls if c.kind == name), None)
+    passed = hit is None
+    detail = "" if passed else f"'{name}' was called, args={hit.data}"
+    return AssertionResult(name="tool_not_called", passed=passed, detail=detail)
