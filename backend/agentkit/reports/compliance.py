@@ -43,6 +43,56 @@ def _rollup(results):
     return by_article
 
 
+def _critical_fail_lines(critical_fail: list) -> list[str]:
+    if not critical_fail:
+        return []
+    lines = [
+        "Critical failures are evidence for the Art. 9 risk-management file "
+        "(and Art. 55 model-eval where a GPAI provider):",
+        "",
+    ]
+    for r in critical_fail:
+        lines.append(f"- FAIL {r.test_id}: {_detail_for(r)}")
+    lines.append("")
+    return lines
+
+
+def _article_rollup_lines(results) -> list[str]:
+    rollup = _rollup(results)
+    lines = [
+        "## By EU AI Act article",
+        "",
+        "| Article | Covered | Gaps | Not tested | ISO 42001 | NIST |",
+        "|---|---|---|---|---|---|",
+    ]
+    for article in sorted(rollup):
+        s = rollup[article]
+        gaps = ", ".join(s["gaps"]) if s["gaps"] else "-"
+        lines.append(
+            f"| {article} | {s['covered']} | {gaps} | {s['not_tested']} | "
+            f"{', '.join(sorted(s['iso']))} | {', '.join(sorted(s['nist']))} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _owasp_lines(results) -> list[str]:
+    lines = ["## By OWASP Agentic Top 10", "", "| ASI | Tests | Status |", "|---|---|---|"]
+    by_owasp: dict[str, list] = {}
+    for r in results:
+        owasp = controls_for(r).owasp
+        if owasp:
+            by_owasp.setdefault(owasp, []).append(r)
+    for code in sorted(by_owasp):
+        rs = by_owasp[code]
+        failed = [r.test_id for r in rs if r.status in (Status.failed, Status.error)]
+        covered = any(r.status == Status.passed for r in rs)
+        status = "gap" if failed else ("covered" if covered else "not tested")
+        lines.append(f"| {code} | {', '.join(r.test_id for r in rs)} | {status} |")
+    lines.append("")
+    return lines
+
+
 def to_compliance(run: RunResult, score: ScoreReport) -> str:
     results = run.results
     critical_fail = [
@@ -70,39 +120,9 @@ def to_compliance(run: RunResult, score: ScoreReport) -> str:
             "",
         ]
 
-    if critical_fail:
-        lines += [
-            "Critical failures are evidence for the Art. 9 risk-management file "
-            "(and Art. 55 model-eval where a GPAI provider):",
-            "",
-        ]
-        for r in critical_fail:
-            lines.append(f"- FAIL {r.test_id}: {_detail_for(r)}")
-        lines.append("")
-
-    rollup = _rollup(results)
-    lines += ["## By EU AI Act article", "", "| Article | Covered | Gaps | Not tested | ISO 42001 | NIST |", "|---|---|---|---|---|---|"]
-    for article in sorted(rollup):
-        s = rollup[article]
-        gaps = ", ".join(s["gaps"]) if s["gaps"] else "-"
-        lines.append(
-            f"| {article} | {s['covered']} | {gaps} | {s['not_tested']} | "
-            f"{', '.join(sorted(s['iso']))} | {', '.join(sorted(s['nist']))} |"
-        )
-    lines.append("")
-
-    lines += ["## By OWASP Agentic Top 10", "", "| ASI | Tests | Status |", "|---|---|---|"]
-    by_owasp: dict[str, list] = {}
-    for r in results:
-        owasp = controls_for(r).owasp
-        if owasp:
-            by_owasp.setdefault(owasp, []).append(r)
-    for code in sorted(by_owasp):
-        rs = by_owasp[code]
-        failed = [r.test_id for r in rs if r.status in (Status.failed, Status.error)]
-        status = "gap" if failed else ("covered" if any(r.status == Status.passed for r in rs) else "not tested")
-        lines.append(f"| {code} | {', '.join(r.test_id for r in rs)} | {status} |")
-    lines.append("")
+    lines += _critical_fail_lines(critical_fail)
+    lines += _article_rollup_lines(results)
+    lines += _owasp_lines(results)
 
     lines += ["## Not tested (documented gaps)", ""]
     for code, reason in UNCOVERED:

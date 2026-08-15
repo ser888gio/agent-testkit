@@ -54,7 +54,10 @@ _ALLOWED_ROOTS = (PACKAGE_DIR / "config", PACKAGE_DIR / "packs")
 # Pack that tenant-authored tests land in, one per org.
 USER_PACK_ID = "user"
 
-_ENV_REFS_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_ENV_REFS_RE = re.compile(r"\$\{([A-Za-z_]\w*)\}")
+
+_NEVER_RUN = "never run"
+_ACCEPT_JSON = "application/json"
 
 
 def _resolve_within_allowed(value: str) -> Path:
@@ -86,6 +89,7 @@ _STATUS_LABELS = {
     "passed": "Passed",
     "skipped": "Skipped",
 }
+
 
 def get_db_path() -> str:
     return os.environ.get("AGENTKIT_DB", "database/agentkit.db")
@@ -238,8 +242,7 @@ def _run_view(row) -> dict:
         "failed": failed,
         "passed": by_status.get("passed", 0),
         "skipped": by_status.get("skipped", 0),
-        "needs_attention": row.status in _BAD_STATUSES
-        or score.get("critical_failures", 0) > 0,
+        "needs_attention": row.status in _BAD_STATUSES or score.get("critical_failures", 0) > 0,
     }
 
 
@@ -269,9 +272,9 @@ def _filter_run_rows(rows: list[dict], q: str = "", status: str = "all") -> list
         failed_count = by_status.get("failed", 0) + by_status.get("error", 0)
         if status == "passed" and row.get("status") == "passed" and failed_count == 0:
             filtered.append(row)
-        elif status in {"failed", "error", "skipped"} and by_status.get(status, 0) > 0:
-            filtered.append(row)
-        elif status == "failed" and row.get("status") == "failed":
+        elif status in {"failed", "error", "skipped"} and (
+            by_status.get(status, 0) > 0 or (status == "failed" and row.get("status") == "failed")
+        ):
             filtered.append(row)
     return filtered
 
@@ -306,9 +309,7 @@ def _runs_page(request: Request, org_id: str) -> HTMLResponse:
     total_runs = len(all_runs)
     failed_runs = sum(1 for r in all_runs if r["status"] in _BAD_STATUSES)
     critical_failures = sum(r["critical_failures"] for r in all_runs)
-    avg_score = int(
-        sum(r["score_percent"] for r in all_runs) / total_runs
-    ) if total_runs else 0
+    avg_score = int(sum(r["score_percent"] for r in all_runs) / total_runs) if total_runs else 0
     agents = sorted({r["agent_id"] for r in all_runs})
     attention = [r for r in run_rows if r["needs_attention"]][:5]
 
@@ -368,13 +369,10 @@ def connect_agent_page(principal: Principal = Depends(current_principal)) -> HTM
     # is the form that round-trips; "config/x" would 400 on submit.
     root = PACKAGE_DIR.parent
     targets = sorted(
-        p.relative_to(root).as_posix()
-        for p in (PACKAGE_DIR / "config").glob("*.yaml")
+        p.relative_to(root).as_posix() for p in (PACKAGE_DIR / "config").glob("*.yaml")
     )
     pack_roots = sorted(
-        p.relative_to(root).as_posix()
-        for p in (PACKAGE_DIR / "packs").iterdir()
-        if _is_pack_dir(p)
+        p.relative_to(root).as_posix() for p in (PACKAGE_DIR / "packs").iterdir() if _is_pack_dir(p)
     )
     # Default to whatever this org last launched -- derived, not a stored
     # preference. Jobs record the target's yaml `id` and the pack directory
@@ -446,9 +444,7 @@ def _test_rows(store: Store, org_id: str) -> list[dict]:
     # packs directory means no shipped tests, not a 500.
     packs_root = get_packs_dir()
     shipped = (
-        sorted(p for p in packs_root.iterdir() if _is_pack_dir(p))
-        if packs_root.is_dir()
-        else []
+        sorted(p for p in packs_root.iterdir() if _is_pack_dir(p)) if packs_root.is_dir() else []
     )
     for pack_dir in shipped:
         for test in discover(str(pack_dir)):
@@ -462,8 +458,8 @@ def _test_rows(store: Store, org_id: str) -> list[dict]:
                 "id": test.id,
                 "category": test.category.value,
                 "risk": test.risk.value,
-                "status": "never run",
-                "latest_status": "never run",
+                "status": _NEVER_RUN,
+                "latest_status": _NEVER_RUN,
                 "latest_run_id": None,
                 "latest_agent_id": None,
                 "run_count": 0,
@@ -473,8 +469,8 @@ def _test_rows(store: Store, org_id: str) -> list[dict]:
         rows[(t["pack_id"], t["test_id"])] = {
             **t,
             "id": t["test_id"],
-            "status": "never run",
-            "latest_status": "never run",
+            "status": _NEVER_RUN,
+            "latest_status": _NEVER_RUN,
             "latest_run_id": None,
             "latest_agent_id": None,
             "run_count": 0,
@@ -603,7 +599,7 @@ def create_test(
         except yaml.YAMLError as exc:
             return _fail(f"Assertion args are not valid YAML: {exc}")
         if not isinstance(args, dict):
-            return _fail("Assertion args must be a YAML mapping, e.g. {values: [\"sk-\"]}")
+            return _fail('Assertion args must be a YAML mapping, e.g. {values: ["sk-"]}')
 
     raw = {
         "id": test_id,
@@ -677,9 +673,7 @@ def _load_run_or_404(org_id: str, run_id: str):
 def _harness_view(run, report) -> dict:
     categories = sorted({r.category.value for r in run.results})
     assertions = sorted({a.name for r in run.results for a in r.assertion_results})
-    memory_results = [
-        r for r in run.results if r.category == Category.memory_context
-    ]
+    memory_results = [r for r in run.results if r.category == Category.memory_context]
     skills = []
     for category_score in report.category_scores:
         category = category_score.category.value
@@ -688,9 +682,7 @@ def _harness_view(run, report) -> dict:
             {
                 "name": category.replace("_", " "),
                 "category": category,
-                "assertions": sorted(
-                    {a.name for r in related for a in r.assertion_results}
-                ),
+                "assertions": sorted({a.name for r in related for a in r.assertion_results}),
                 "passed": category_score.passed,
                 "total": category_score.total,
                 "score": _pct(category_score.score),
@@ -713,9 +705,7 @@ def _harness_view(run, report) -> dict:
                 "latency_ms": result.latency_ms,
                 "started": str(result.started_at)[:19].replace("T", " "),
                 "assertions": result.assertion_results,
-                "summary": result.error
-                or "; ".join(details)
-                or "All assertions passed.",
+                "summary": result.error or "; ".join(details) or "All assertions passed.",
             }
         )
 
@@ -753,9 +743,7 @@ def latest_harness(principal: Principal = Depends(current_principal)) -> Respons
     latest_runs = get_store().list_runs(principal.org_id, limit=1)
     if not latest_runs:
         return _render("harness_empty.html", active="harness")
-    return RedirectResponse(
-        url=f"/runs/{latest_runs[0].id}/harness", status_code=302
-    )
+    return RedirectResponse(url=f"/runs/{latest_runs[0].id}/harness", status_code=302)
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
@@ -769,9 +757,7 @@ def run_detail(
     status = request.query_params.get("status", "all")
     category = request.query_params.get("category", "all")
 
-    results = sorted(
-        rr.results, key=lambda r: (_STATUS_RANK.get(r.status.value, 1), r.test_id)
-    )
+    results = sorted(rr.results, key=lambda r: (_STATUS_RANK.get(r.status.value, 1), r.test_id))
     result_rows = []
     for r in results:
         result_rows.append(
@@ -830,12 +816,8 @@ def test_detail(
     rr, _report = _load_run_or_404(principal.org_id, run_id)
     result = next((r for r in rr.results if r.test_id == test_id), None)
     if result is None:
-        raise HTTPException(
-            status_code=404, detail=f"test '{test_id}' not found in run '{run_id}'"
-        )
-    ordered = sorted(
-        rr.results, key=lambda r: (_STATUS_RANK.get(r.status.value, 1), r.test_id)
-    )
+        raise HTTPException(status_code=404, detail=f"test '{test_id}' not found in run '{run_id}'")
+    ordered = sorted(rr.results, key=lambda r: (_STATUS_RANK.get(r.status.value, 1), r.test_id))
     idx = next(i for i, r in enumerate(ordered) if r.test_id == test_id)
     passed_assertions = sum(1 for a in result.assertion_results if a.passed)
     artifact_states = [
@@ -882,7 +864,7 @@ def run_status(
         job = None
     if job is not None:
         payload = _job_status_payload(job)
-        if "application/json" in request.headers.get("accept", "").lower():
+        if _ACCEPT_JSON in request.headers.get("accept", "").lower():
             return JSONResponse(payload)
         message = escape(payload["message"])
         return HTMLResponse(
@@ -891,7 +873,7 @@ def run_status(
         )
 
     rr, report = _load_run_or_404(principal.org_id, run_id)
-    if "application/json" in request.headers.get("accept", "").lower():
+    if _ACCEPT_JSON in request.headers.get("accept", "").lower():
         return JSONResponse(
             {
                 "run_id": rr.run_id,
@@ -1005,9 +987,7 @@ def run_again(
     """Queue a run. The worker executes it; this handler never blocks on an agent."""
     store = get_store()
     target_id, pack_id = _import_first_party(store, principal.org_id, target, packs)
-    job_id = store.enqueue_job(
-        principal.org_id, target_id, pack_id, created_by=principal.subject
-    )
+    job_id = store.enqueue_job(principal.org_id, target_id, pack_id, created_by=principal.subject)
     return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 
@@ -1066,7 +1046,7 @@ def compare_runs(a: str, b: str, principal: Principal = Depends(current_principa
 
 @app.exception_handler(HTTPException)
 async def http_error(request: Request, exc: HTTPException) -> Response:
-    if "application/json" in request.headers.get("accept", "").lower():
+    if _ACCEPT_JSON in request.headers.get("accept", "").lower():
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
     browser_navigation = request.method in {"GET", "HEAD"} and (
         "text/html" in request.headers.get("accept", "").lower()

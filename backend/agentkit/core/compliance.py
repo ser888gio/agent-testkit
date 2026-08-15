@@ -12,6 +12,9 @@ from pydantic import BaseModel
 
 from agentkit.core.schema import Category, TestResult
 
+_ART_10 = "Art. 10"
+_ART_15 = "Art. 15"
+
 
 class Control(BaseModel):
     owasp: str | None = None
@@ -32,14 +35,14 @@ CONTROLS_BY_CATEGORY: dict[Category, Control] = {
         description="Transparency: agent exposes a well-formed, documented contract.",
     ),
     Category.prompt_injection: Control(
-        eu_ai_act=["Art. 15"],
+        eu_ai_act=[_ART_15],
         iso_42001="A.8",
         nist_ai_rmf="MEASURE",
         severity="high",
         description="Robustness against adversarial/injection inputs.",
     ),
     Category.data_leakage: Control(
-        eu_ai_act=["Art. 10", "Art. 15"],
+        eu_ai_act=[_ART_10, _ART_15],
         iso_42001="A.7",
         nist_ai_rmf="MAP/MEASURE",
         severity="critical",
@@ -60,28 +63,28 @@ CONTROLS_BY_CATEGORY: dict[Category, Control] = {
         description="Human oversight and safe bounds on high-stakes actions.",
     ),
     Category.tool_use: Control(
-        eu_ai_act=["Art. 15"],
+        eu_ai_act=[_ART_15],
         iso_42001="A.8",
         nist_ai_rmf="MEASURE",
         severity="high",
         description="Tools are invoked within authorized scope and limits.",
     ),
     Category.memory_context: Control(
-        eu_ai_act=["Art. 10", "Art. 15"],
+        eu_ai_act=[_ART_10, _ART_15],
         iso_42001="A.7",
         nist_ai_rmf="MAP/MEASURE",
         severity="high",
         description="Resistance to memory/context poisoning across turns.",
     ),
     Category.reliability: Control(
-        eu_ai_act=["Art. 15"],
+        eu_ai_act=[_ART_15],
         iso_42001="A.6",
         nist_ai_rmf="MEASURE",
         severity="medium",
         description="Accuracy and consistency of agent behaviour.",
     ),
     Category.performance: Control(
-        eu_ai_act=["Art. 15"],
+        eu_ai_act=[_ART_15],
         iso_42001="A.6",
         nist_ai_rmf="MEASURE",
         severity="low",
@@ -141,7 +144,7 @@ def _demo() -> None:
         )
 
     leak = controls_for(_res("core.leakage.pii", Category.data_leakage))
-    assert leak.eu_ai_act == ["Art. 10", "Art. 15"]
+    assert leak.eu_ai_act == [_ART_10, _ART_15]
     assert leak.owasp is None  # 'leakage' is not an agentic attack pack
 
     misuse = controls_for(_res("agentic.tool_misuse.mass_payout", Category.tool_use))

@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from pydantic import BaseModel, Field
 
-from agentkit.core.schema import Risk, RunResult, Status
+from agentkit.core.schema import Risk, RunResult, Status, TestResult
 from agentkit.core.scoring import ScoreReport
 
 _BAD = (Status.failed, Status.error)
+
+
+@dataclass
+class _Buckets:
+    newly_failing: list[str] = field(default_factory=list)
+    newly_passing: list[str] = field(default_factory=list)
+    still_failing: list[str] = field(default_factory=list)
+    critical_regressions: list[str] = field(default_factory=list)
 
 
 class TestDelta(BaseModel):
@@ -29,6 +39,28 @@ class RunDiff(BaseModel):
     critical_regressions: list[str] = Field(default_factory=list)
 
 
+def _classify(
+    test_id: str,
+    after_result: TestResult,
+    before_status: Status | None,
+    buckets: _Buckets,
+) -> None:
+    after_status = after_result.status
+    was_ok = before_status is None or before_status == Status.passed
+    is_bad = after_status in _BAD
+    was_bad = before_status in _BAD
+    is_ok = after_status == Status.passed
+
+    if was_ok and is_bad:
+        buckets.newly_failing.append(test_id)
+        if after_result.risk == Risk.critical:
+            buckets.critical_regressions.append(test_id)
+    elif was_bad and is_ok:
+        buckets.newly_passing.append(test_id)
+    elif was_bad and is_bad:
+        buckets.still_failing.append(test_id)
+
+
 def compare(
     before: RunResult,
     after: RunResult,
@@ -41,29 +73,12 @@ def compare(
     added = sorted(after_by_id.keys() - before_by_id.keys())
     removed = sorted(before_by_id.keys() - after_by_id.keys())
 
-    newly_failing: list[str] = []
-    newly_passing: list[str] = []
-    still_failing: list[str] = []
-    critical_regressions: list[str] = []
+    buckets = _Buckets()
 
     for test_id, after_result in after_by_id.items():
         before_result = before_by_id.get(test_id)
         before_status = before_result.status if before_result else None
-        after_status = after_result.status
-
-        was_ok = before_status is None or before_status == Status.passed
-        is_bad = after_status in _BAD
-        was_bad = before_status in _BAD
-        is_ok = after_status == Status.passed
-
-        if was_ok and is_bad:
-            newly_failing.append(test_id)
-            if after_result.risk == Risk.critical:
-                critical_regressions.append(test_id)
-        elif was_bad and is_ok:
-            newly_passing.append(test_id)
-        elif was_bad and is_bad:
-            still_failing.append(test_id)
+        _classify(test_id, after_result, before_status, buckets)
 
     latency_deltas = [
         TestDelta(
@@ -93,12 +108,12 @@ def compare(
         )
 
     return RunDiff(
-        newly_failing=sorted(newly_failing),
-        newly_passing=sorted(newly_passing),
-        still_failing=sorted(still_failing),
+        newly_failing=sorted(buckets.newly_failing),
+        newly_passing=sorted(buckets.newly_passing),
+        still_failing=sorted(buckets.still_failing),
         added=added,
         removed=removed,
         latency_deltas=latency_deltas,
         score_delta=score_delta,
-        critical_regressions=sorted(critical_regressions),
+        critical_regressions=sorted(buckets.critical_regressions),
     )
