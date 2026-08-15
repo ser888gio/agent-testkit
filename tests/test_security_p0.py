@@ -86,10 +86,12 @@ class _CountingSandbox(Sandbox):
     post-timeout diff would be non-empty if we trusted it."""
 
     def __init__(self) -> None:
+        super().__init__()
         self._n = 0
 
     def reset(self) -> None:
         self._n = 0
+        self._clear_events()
 
     def apply_setup(self, setup) -> None:  # noqa: ANN001
         pass

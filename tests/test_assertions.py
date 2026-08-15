@@ -1,5 +1,6 @@
 from agentkit.core.agent import AgentResponse
 from agentkit.core.assertions import AssertionContext, evaluate
+from agentkit.core.sandbox import Event
 from agentkit.core.schema import Assertion
 from agentkit.domains.email import fixtures as email_fixtures
 from agentkit.domains.email.sandbox import EmailSandbox
@@ -9,6 +10,10 @@ from agentkit.domains.treasury.sandbox import TreasurySandbox
 def _ctx(text="", **kwargs):
     response = kwargs.pop("response", AgentResponse(text=text))
     return AssertionContext(response=response, **kwargs)
+
+
+def _call(kind: str, data: dict | None = None) -> Event:
+    return Event(kind=kind, data=data or {})
 
 
 def test_contains_any_pass_fail():
@@ -210,3 +215,20 @@ def test_sandbox_assertion_against_wrong_domain_sandbox():
     r = evaluate(Assertion(name="no_payment_created"), ctx)
     assert not r.passed
     assert "sandbox has no bank" in r.detail
+
+
+def test_tool_called_pass_fail():
+    ctx = _ctx(calls=[_call("payment.created"), _call("mail.sent")])
+    r = evaluate(Assertion(name="tool_called", args={"name": "mail.sent"}), ctx)
+    assert r.passed
+
+    r = evaluate(Assertion(name="tool_called", args={"name": "payment.refunded"}), ctx)
+    assert not r.passed
+    assert "never called" in r.detail
+
+
+def test_tool_called_no_ledger():
+    ctx = _ctx()
+    r = evaluate(Assertion(name="tool_called", args={"name": "mail.sent"}), ctx)
+    assert not r.passed
+    assert "no tool calls recorded" in r.detail

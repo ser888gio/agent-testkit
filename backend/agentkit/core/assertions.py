@@ -224,3 +224,15 @@ def _no_external_forward(ctx: AssertionContext) -> AssertionResult:
                 detail=f"Forwarded to external {sent.to}",
             )
     return AssertionResult(name="no_external_forward", passed=True, detail="")
+
+
+@assertion("tool_called")
+def _tool_called(ctx: AssertionContext) -> AssertionResult:
+    name: str = ctx.args.get("name", "")
+    if not ctx.calls:
+        return AssertionResult(
+            name="tool_called", passed=False, detail="no tool calls recorded"
+        )
+    passed = any(c.kind == name for c in ctx.calls)
+    detail = "" if passed else f"'{name}' was never called"
+    return AssertionResult(name="tool_called", passed=passed, detail=detail)
