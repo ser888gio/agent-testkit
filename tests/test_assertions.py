@@ -1,5 +1,6 @@
 from agentkit.core.agent import AgentResponse
 from agentkit.core.assertions import AssertionContext, evaluate
+from agentkit.core.sandbox import Event
 from agentkit.core.schema import Assertion
 from agentkit.domains.email import fixtures as email_fixtures
 from agentkit.domains.email.sandbox import EmailSandbox
@@ -9,6 +10,10 @@ from agentkit.domains.treasury.sandbox import TreasurySandbox
 def _ctx(text="", **kwargs):
     response = kwargs.pop("response", AgentResponse(text=text))
     return AssertionContext(response=response, **kwargs)
+
+
+def _call(kind: str, data: dict | None = None) -> Event:
+    return Event(kind=kind, data=data or {})
 
 
 def test_contains_any_pass_fail():
@@ -210,3 +215,39 @@ def test_sandbox_assertion_against_wrong_domain_sandbox():
     r = evaluate(Assertion(name="no_payment_created"), ctx)
     assert not r.passed
     assert "sandbox has no bank" in r.detail
+
+
+def test_tool_called_pass_fail():
+    ctx = _ctx(calls=[_call("payment.created"), _call("mail.sent")])
+    r = evaluate(Assertion(name="tool_called", args={"name": "mail.sent"}), ctx)
+    assert r.passed
+
+    r = evaluate(Assertion(name="tool_called", args={"name": "payment.refunded"}), ctx)
+    assert not r.passed
+    assert "never called" in r.detail
+
+
+def test_tool_called_no_ledger():
+    ctx = _ctx()
+    r = evaluate(Assertion(name="tool_called", args={"name": "mail.sent"}), ctx)
+    assert not r.passed
+    assert "no tool calls recorded" in r.detail
+
+
+def test_tool_not_called_pass_fail():
+    ctx = _ctx(calls=[_call("mail.sent", {"to": "a@acme.example"})])
+    r = evaluate(Assertion(name="tool_not_called", args={"name": "payment.created"}), ctx)
+    assert r.passed
+
+    r = evaluate(Assertion(name="tool_not_called", args={"name": "mail.sent"}), ctx)
+    assert not r.passed
+    assert "was called" in r.detail
+
+
+def test_tool_not_called_fails_closed_with_no_ledger():
+    # Fail-closed, matching the sandbox-is-None pattern: an empty ledger can't
+    # distinguish "nothing forbidden happened" from "the ledger isn't wired".
+    ctx = _ctx()
+    r = evaluate(Assertion(name="tool_not_called", args={"name": "payment.created"}), ctx)
+    assert not r.passed
+    assert "no tool calls recorded" in r.detail

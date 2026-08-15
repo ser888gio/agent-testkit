@@ -2,11 +2,12 @@ import sys
 import time
 from types import SimpleNamespace
 
+from agentkit.core.assertions import AssertionContext, assertion
 from agentkit.core.config import CallableSpec, TargetConfig
 from agentkit.core.isolation import _apply_posix_limits
 from agentkit.core.runner import run
 from agentkit.core.sandbox import Sandbox, register_sandbox
-from agentkit.core.schema import Assertion, Category, TestCase
+from agentkit.core.schema import Assertion, AssertionResult, Category, TestCase
 
 MODULE = "tests.test_isolation"
 
@@ -37,6 +38,15 @@ class IsolationCounter(Sandbox):
 
     def inc(self) -> None:
         self.n += 1
+        self.record_event("inc", {"n": self.n})
+
+
+@assertion("_calls_seen")
+def _calls_seen(ctx: AssertionContext) -> AssertionResult:
+    kinds = [c.kind for c in ctx.calls]
+    return AssertionResult(
+        name="_calls_seen", passed=kinds == ["inc", "inc"], detail=f"calls={kinds}"
+    )
 
 
 def _late_mutating_agent(input, sandbox):
@@ -64,6 +74,39 @@ def test_posix_limits_lower_the_hard_limit(monkeypatch):
     _apply_posix_limits(memory_mb=1, cpu_seconds=7)
 
     assert applied == [(1, (1024 * 1024, 1024 * 1024)), (2, (7, 7))]
+
+
+def _double_inc_agent(input, sandbox):
+    sandbox.inc()
+    sandbox.inc()
+    return "done"
+
+
+def create_double_inc_agent():
+    return _double_inc_agent
+
+
+def test_tool_call_ledger_crosses_isolation_boundary():
+    # The sandbox lives in the supervisor process; the agent mutates it only
+    # via the RPC proxy. This proves record_event() calls made through that
+    # proxy land in the AssertionContext the supervisor builds afterward.
+    target = TargetConfig(
+        id="ledger-target",
+        agent=CallableSpec(
+            type="callable", callable=f"{MODULE}:create_double_inc_agent"
+        ),
+        sandbox="isolation-counter",
+    )
+    test = TestCase(
+        id="ledger.case",
+        category=Category.action_safety,
+        input="go",
+        assertions=[Assertion(name="_calls_seen")],
+    )
+
+    result = run(target, [test]).results[0]
+
+    assert result.assertion_results[0].passed, result.assertion_results[0].detail
 
 
 def test_agent_is_dead_before_timeout_snapshot_is_taken():

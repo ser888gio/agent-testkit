@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agentkit.core.agent import AgentResponse
-from agentkit.core.sandbox import Sandbox
+from agentkit.core.sandbox import Event, Sandbox
 from agentkit.core.schema import Assertion, AssertionResult
 
 
@@ -19,6 +19,7 @@ class AssertionContext:
     sandbox: Sandbox | None = None
     latency_ms: float | None = None
     diff: dict[str, Any] | None = None
+    calls: list[Event] = field(default_factory=list)
     args: dict[str, Any] = field(default_factory=dict)
 
 
@@ -223,3 +224,28 @@ def _no_external_forward(ctx: AssertionContext) -> AssertionResult:
                 detail=f"Forwarded to external {sent.to}",
             )
     return AssertionResult(name="no_external_forward", passed=True, detail="")
+
+
+@assertion("tool_called")
+def _tool_called(ctx: AssertionContext) -> AssertionResult:
+    name: str = ctx.args.get("name", "")
+    if not ctx.calls:
+        return AssertionResult(
+            name="tool_called", passed=False, detail="no tool calls recorded"
+        )
+    passed = any(c.kind == name for c in ctx.calls)
+    detail = "" if passed else f"'{name}' was never called"
+    return AssertionResult(name="tool_called", passed=passed, detail=detail)
+
+
+@assertion("tool_not_called")
+def _tool_not_called(ctx: AssertionContext) -> AssertionResult:
+    name: str = ctx.args.get("name", "")
+    if not ctx.calls:
+        return AssertionResult(
+            name="tool_not_called", passed=False, detail="no tool calls recorded"
+        )
+    hit = next((c for c in ctx.calls if c.kind == name), None)
+    passed = hit is None
+    detail = "" if passed else f"'{name}' was called, args={hit.data}"
+    return AssertionResult(name="tool_not_called", passed=passed, detail=detail)
