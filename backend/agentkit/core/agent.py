@@ -15,6 +15,7 @@ from agentkit.core.config import CallableSpec, HTTPSpec, TargetConfig
 from agentkit.core.egress import ValidatedEndpoint
 
 _HTTPX_REQUEST_KWARGS = {"json", "params", "data", "content"}
+_INPUT_PLACEHOLDER = "{{ input }}"
 
 
 @dataclass
@@ -74,10 +75,10 @@ class CallableAgent:
 
 def _render_template(template: Any, input: str | dict) -> Any:
     if isinstance(template, str):
-        if template == "{{ input }}":
+        if template == _INPUT_PLACEHOLDER:
             return input
-        if "{{ input }}" in template:
-            return template.replace("{{ input }}", str(input))
+        if _INPUT_PLACEHOLDER in template:
+            return template.replace(_INPUT_PLACEHOLDER, str(input))
         return template
     if isinstance(template, dict):
         return {k: _render_template(v, input) for k, v in template.items()}

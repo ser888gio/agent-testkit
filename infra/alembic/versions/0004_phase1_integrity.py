@@ -65,17 +65,21 @@ def _is_env_reference(value: object, *, authorization: bool = False) -> bool:
     return bool(re.fullmatch(r"\s*\$\{[A-Za-z_][A-Za-z0-9_]*\}\s*", value))
 
 
+def _check_sensitive_key(key_text: str, item: object, path: tuple[str, ...]) -> None:
+    if key_text == "secret_ref":
+        raise RuntimeError("secret_ref must be stored in targets.secret_ref")
+    if _is_sensitive_key(key_text) and not _is_env_reference(
+        item, authorization="authorization" in key_text.lower()
+    ):
+        location = ".".join((*path, key_text))
+        raise RuntimeError(f"literal credential in existing target config at {location}")
+
+
 def _assert_secret_safe_config(value: object, path: tuple[str, ...] = ()) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             key_text = str(key)
-            if key_text == "secret_ref":
-                raise RuntimeError("secret_ref must be stored in targets.secret_ref")
-            if _is_sensitive_key(key_text) and not _is_env_reference(
-                item, authorization="authorization" in key_text.lower()
-            ):
-                location = ".".join((*path, key_text))
-                raise RuntimeError(f"literal credential in existing target config at {location}")
+            _check_sensitive_key(key_text, item, path)
             _assert_secret_safe_config(item, (*path, key_text))
         return
     if isinstance(value, list):

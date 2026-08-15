@@ -12,10 +12,6 @@
 # The full suite runs in a few seconds, so --affected is for tight iteration loops;
 # prefer the default before declaring work complete.
 #
-# NOTE ON LINT SCOPE: lint defaults to changed files because the repository currently has
-# pre-existing ruff violations (mostly import sorting) that are not run in CI. Use
-# --lint-all to see the whole picture; expect it to fail until those are cleaned up.
-#
 # Exit codes: the first failing step's exit code is preserved; 2 on usage error.
 set -euo pipefail
 

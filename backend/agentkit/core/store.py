@@ -25,6 +25,8 @@ from agentkit.core.scoring import ScoreReport
 DEFAULT_ORG = "default"
 """Org used by the local CLI, which has no authenticated user context."""
 
+_STORE_CLOSED = "Store is closed"
+
 # Keep in sync with infra/alembic/versions/*.py -- Store initializes a DB directly
 # as well as reading one Alembic built, so both must produce the same schema.
 _SCHEMA = """
@@ -271,17 +273,21 @@ def _is_secret_reference(value: object, *, authorization: bool = False) -> bool:
     return bool(re.fullmatch(r"\s*\$\{[A-Za-z_][A-Za-z0-9_]*\}\s*", value))
 
 
+def _check_sensitive_key(key_text: str, item: object, path: tuple[str, ...]) -> None:
+    if key_text == "secret_ref":
+        raise ValueError("secret_ref must be stored separately from config_json")
+    if _is_sensitive_key(key_text) and not _is_secret_reference(
+        item, authorization="authorization" in key_text.lower()
+    ):
+        location = ".".join((*path, key_text))
+        raise ValueError(f"literal credential is not allowed in config_json at {location}")
+
+
 def _validate_secret_safe_config(value: object, path: tuple[str, ...] = ()) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             key_text = str(key)
-            if key_text == "secret_ref":
-                raise ValueError("secret_ref must be stored separately from config_json")
-            if _is_sensitive_key(key_text) and not _is_secret_reference(
-                item, authorization="authorization" in key_text.lower()
-            ):
-                location = ".".join((*path, key_text))
-                raise ValueError(f"literal credential is not allowed in config_json at {location}")
+            _check_sensitive_key(key_text, item, path)
             _validate_secret_safe_config(item, (*path, key_text))
         return
     if isinstance(value, list):
@@ -297,9 +303,10 @@ def _validate_secret_safe_config(value: object, path: tuple[str, ...] = ()) -> N
 def _contains_secret_reference(value: object) -> bool:
     if isinstance(value, dict):
         return any(
-            (_is_sensitive_key(str(key)) and _is_secret_reference(
-                item, authorization="authorization" in str(key).lower()
-            ))
+            (
+                _is_sensitive_key(str(key))
+                and _is_secret_reference(item, authorization="authorization" in str(key).lower())
+            )
             or _contains_secret_reference(item)
             for key, item in value.items()
         )
@@ -324,9 +331,7 @@ def _validated_target_config(target_id: str, config: dict) -> None:
         _replace_env_references(config), source=f"stored target '{target_id}'"
     )
     if validated.id != target_id:
-        raise ValueError(
-            f"target id {target_id!r} does not match config id {validated.id!r}"
-        )
+        raise ValueError(f"target id {target_id!r} does not match config id {validated.id!r}")
 
 
 def _sanitized_result_payload(result: TestResult, agent: TargetConfig) -> dict:
@@ -374,10 +379,26 @@ class _SQLitePool:
         conn.commit()
         return conn
 
+    def _wait_for_idle(self) -> sqlite3.Connection:
+        while True:
+            try:
+                conn = self._idle.get(timeout=0.1)
+            except queue.Empty:
+                with self._lock:
+                    if self._closed:
+                        raise RuntimeError(_STORE_CLOSED) from None
+                continue
+            with self._lock:
+                if self._closed:
+                    conn.close()
+                    self._created -= 1
+                    raise RuntimeError(_STORE_CLOSED)
+            return conn
+
     def _acquire(self) -> sqlite3.Connection:
         with self._lock:
             if self._closed:
-                raise RuntimeError("Store is closed")
+                raise RuntimeError(_STORE_CLOSED)
             try:
                 return self._idle.get_nowait()
             except queue.Empty:
@@ -387,20 +408,7 @@ class _SQLitePool:
                 else:
                     create = False
         if not create:
-            while True:
-                try:
-                    conn = self._idle.get(timeout=0.1)
-                except queue.Empty:
-                    with self._lock:
-                        if self._closed:
-                            raise RuntimeError("Store is closed") from None
-                    continue
-                with self._lock:
-                    if self._closed:
-                        conn.close()
-                        self._created -= 1
-                        raise RuntimeError("Store is closed")
-                return conn
+            return self._wait_for_idle()
         try:
             conn = self._open()
         except BaseException:
@@ -411,7 +419,7 @@ class _SQLitePool:
             if self._closed:
                 self._created -= 1
                 conn.close()
-                raise RuntimeError("Store is closed")
+                raise RuntimeError(_STORE_CLOSED)
         return conn
 
     def _release(self, conn: sqlite3.Connection) -> None:
@@ -577,8 +585,7 @@ class Store:
                 (org_id, pack_id),
             )
             conn.executemany(
-                "INSERT INTO pack_tests (org_id, pack_id, test_id, test_json) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO pack_tests (org_id, pack_id, test_id, test_json) VALUES (?, ?, ?, ?)",
                 [
                     (
                         org_id,
@@ -669,8 +676,7 @@ class Store:
             if pack is None:
                 raise KeyError(pack_id)
             rows = conn.execute(
-                "SELECT test_json FROM pack_tests "
-                "WHERE org_id = ? AND pack_id = ? ORDER BY id",
+                "SELECT test_json FROM pack_tests WHERE org_id = ? AND pack_id = ? ORDER BY id",
                 (org_id, pack_id),
             ).fetchall()
         return [json.loads(row["test_json"]) for row in rows]
@@ -749,8 +755,7 @@ class Store:
     def list_artifacts(self, org_id: str, run_id: str) -> list[ArtifactRow]:
         with self._connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM artifacts WHERE org_id = ? AND run_id = ? "
-                "ORDER BY created_at, id",
+                "SELECT * FROM artifacts WHERE org_id = ? AND run_id = ? ORDER BY created_at, id",
                 (org_id, run_id),
             ).fetchall()
         return [ArtifactRow(**dict(row)) for row in rows]
@@ -835,9 +840,7 @@ class Store:
     def heartbeat_job(self, job_id: str, owner: str, *, lease_seconds: int = 60) -> bool:
         """Extend the lease. False means the lease was lost -- stop working."""
         now = datetime.now(timezone.utc).isoformat()
-        expires = (
-            datetime.fromisoformat(now) + timedelta(seconds=lease_seconds)
-        ).isoformat()
+        expires = (datetime.fromisoformat(now) + timedelta(seconds=lease_seconds)).isoformat()
         with self._connection() as conn, conn:
             cursor = conn.execute(
                 "UPDATE jobs SET lease_expires_at = ?, heartbeat_at = ? "
@@ -876,9 +879,7 @@ class Store:
         """
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as conn, conn:
-            expired = (
-                "state = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?"
-            )
+            expired = "state = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?"
             failed = conn.execute(
                 f"UPDATE jobs SET state = 'failed', error = 'lease expired', finished_at = ?, "
                 f"lease_owner = NULL, lease_expires_at = NULL "
@@ -1084,9 +1085,7 @@ class Store:
             if keep_days is not None:
                 # Same aware-UTC isoformat save_run writes, so the string
                 # comparison is chronological.
-                cutoff = (
-                    datetime.now(timezone.utc) - timedelta(days=keep_days)
-                ).isoformat()
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
                 victims.update(
                     (r["org_id"], r["id"])
                     for r in conn.execute(
@@ -1125,9 +1124,7 @@ class Store:
                     "DELETE FROM test_results WHERE org_id = ? AND run_id = ?",
                     (org_id, run_id),
                 )
-                conn.execute(
-                    "DELETE FROM runs WHERE org_id = ? AND id = ?", (org_id, run_id)
-                )
+                conn.execute("DELETE FROM runs WHERE org_id = ? AND id = ?", (org_id, run_id))
         return len(victims), blob_paths
 
     def get_run(self, org_id: str, run_id: str) -> tuple[RunResult, ScoreReport]:
@@ -1140,8 +1137,7 @@ class Store:
                 raise KeyError(run_id)
 
             result_rows = conn.execute(
-                "SELECT result_json FROM test_results "
-                "WHERE org_id = ? AND run_id = ? ORDER BY id",
+                "SELECT result_json FROM test_results WHERE org_id = ? AND run_id = ? ORDER BY id",
                 (org_id, run_id),
             ).fetchall()
         results = [TestResult.model_validate_json(r["result_json"]) for r in result_rows]

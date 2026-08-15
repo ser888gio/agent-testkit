@@ -27,6 +27,8 @@ ORG_CLAIM = "org_id"
 SESSION_COOKIE = "agentkit_session"
 LOGIN_STATE_COOKIE = "agentkit_login_state"
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+_IDP_UNAVAILABLE = "identity provider unavailable"
+_INVALID_TOKEN = "invalid token"
 
 
 @dataclass(frozen=True)
@@ -104,9 +106,7 @@ def _settings() -> _Settings | None:
     if mode == "dev":
         return None
     if mode != "oidc":
-        raise AuthConfigError(
-            "AGENTKIT_AUTH_MODE must be 'oidc' or explicit loopback-only 'dev'"
-        )
+        raise AuthConfigError("AGENTKIT_AUTH_MODE must be 'oidc' or explicit loopback-only 'dev'")
 
     values = [os.environ.get(name, "").strip() for name in _OIDC_ENV_VARS]
     missing = [name for name, value in zip(_OIDC_ENV_VARS, values, strict=True) if not value]
@@ -165,21 +165,21 @@ def _principal_from_token(token: str, settings: _Settings) -> tuple[Principal, d
         )
     except jwt_exceptions.PyJWKClientConnectionError as exc:
         _LOG.warning("OIDC JWKS endpoint is unavailable")
-        raise HTTPException(status_code=503, detail="identity provider unavailable") from exc
+        raise HTTPException(status_code=503, detail=_IDP_UNAVAILABLE) from exc
     except (jwt_exceptions.PyJWKClientError, jwt_exceptions.PyJWTError) as exc:
-        raise HTTPException(status_code=401, detail="invalid token") from exc
+        raise HTTPException(status_code=401, detail=_INVALID_TOKEN) from exc
 
     if claims.get("typ") != "Bearer":
-        raise HTTPException(status_code=401, detail="invalid token")
+        raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
     org_id = claims.get(ORG_CLAIM)
     subject = claims.get("sub")
     email = claims.get("email", "")
     if not isinstance(org_id, str) or not org_id.strip():
-        raise HTTPException(status_code=401, detail="invalid token")
+        raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
     if not isinstance(subject, str) or not subject.strip():
-        raise HTTPException(status_code=401, detail="invalid token")
+        raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
     if not isinstance(email, str):
-        raise HTTPException(status_code=401, detail="invalid token")
+        raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
     roles = _roles(claims)
     if roles.isdisjoint({"admin", "viewer"}):
         raise HTTPException(status_code=403, detail="application role required")
@@ -263,9 +263,9 @@ def begin_browser_login(next_url: str | None) -> tuple[str, str]:
 
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
-    challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode()).digest()
-    ).rstrip(b"=").decode()
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    )
     now = time.time()
     with _state_lock:
         for key, attempt in list(_login_attempts.items()):
@@ -313,13 +313,13 @@ def _exchange_code(settings: _Settings, code: str, verifier: str) -> dict:
         raise HTTPException(status_code=401, detail="authorization code rejected") from exc
     except (error.URLError, TimeoutError) as exc:
         _LOG.warning("OIDC token endpoint is unavailable")
-        raise HTTPException(status_code=503, detail="identity provider unavailable") from exc
+        raise HTTPException(status_code=503, detail=_IDP_UNAVAILABLE) from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         _LOG.warning("OIDC token endpoint returned an invalid response")
-        raise HTTPException(status_code=503, detail="identity provider unavailable") from exc
+        raise HTTPException(status_code=503, detail=_IDP_UNAVAILABLE) from exc
     if not isinstance(token_response, dict):
         _LOG.warning("OIDC token endpoint returned a non-object response")
-        raise HTTPException(status_code=503, detail="identity provider unavailable")
+        raise HTTPException(status_code=503, detail=_IDP_UNAVAILABLE)
     return token_response
 
 

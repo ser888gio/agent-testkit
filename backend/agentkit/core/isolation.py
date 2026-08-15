@@ -361,6 +361,18 @@ class _RemoteObject:
         return int(self._session.request("len", self._path))
 
 
+def _run_python_command(agent: Any, sandbox: Any, payload: Any) -> tuple[str, str, float]:
+    fn = cloudpickle.loads(payload)
+    started = time.perf_counter()
+    try:
+        fn(agent, sandbox)
+        return ("passed", "", (time.perf_counter() - started) * 1000)
+    except AssertionError as exc:
+        return ("failed", str(exc), (time.perf_counter() - started) * 1000)
+    except Exception as exc:  # noqa: BLE001 - evidence, not worker crash
+        return ("error", str(exc), (time.perf_counter() - started) * 1000)
+
+
 def _agent_child(
     command: Connection,
     rpc: Connection,
@@ -385,15 +397,7 @@ def _agent_child(
                 command.send(("result", cloudpickle.dumps(response)))
                 continue
             if kind == "python":
-                fn = cloudpickle.loads(payload)
-                started = time.perf_counter()
-                try:
-                    fn(agent, sandbox)
-                    outcome = ("passed", "", (time.perf_counter() - started) * 1000)
-                except AssertionError as exc:
-                    outcome = ("failed", str(exc), (time.perf_counter() - started) * 1000)
-                except Exception as exc:  # noqa: BLE001 - evidence, not worker crash
-                    outcome = ("error", str(exc), (time.perf_counter() - started) * 1000)
+                outcome = _run_python_command(agent, sandbox, payload)
                 command.send(("result", cloudpickle.dumps(outcome)))
                 continue
             raise ValueError(f"unknown agent command: {kind}")
@@ -428,8 +432,26 @@ class _AgentController:
         self._command: Connection | None = None
         self._rpc: Connection | None = None
 
+    def _service_rpc(self, deadline: float) -> tuple[str, Any] | None:
+        """Handle one pending sandbox RPC message.
+
+        Returns a terminal result, or None to keep polling.
+        """
+        try:
+            message = self._rpc.recv()
+        except (EOFError, OSError):
+            return "dead", None
+        if message[0] > deadline:
+            return "timeout", None
+        try:
+            self._rpc.send(_handle_rpc(self._sandbox, self._references, message))
+        except (EOFError, OSError):
+            return "dead", None
+        return None
+
     def _service_until(self, deadline: float) -> tuple[str, Any]:
-        assert self._command is not None and self._rpc is not None
+        if self._command is None or self._rpc is None:
+            raise RuntimeError("_service_until called before _start succeeded")
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -438,18 +460,9 @@ class _AgentController:
             if not ready:
                 return "timeout", None
             if self._rpc in ready:
-                try:
-                    message = self._rpc.recv()
-                except (EOFError, OSError):
-                    return "dead", None
-                if message[0] > deadline:
-                    return "timeout", None
-                try:
-                    self._rpc.send(
-                        _handle_rpc(self._sandbox, self._references, message)
-                    )
-                except (EOFError, OSError):
-                    return "dead", None
+                result = self._service_rpc(deadline)
+                if result is not None:
+                    return result
             if self._command in ready:
                 try:
                     return self._command.recv()
@@ -499,7 +512,8 @@ class _AgentController:
         ready, error = self._start(time.monotonic() + GRACE_SECONDS)
         if not ready:
             return "error", error
-        assert self._command is not None
+        if self._command is None:
+            raise RuntimeError("_request called before _start succeeded")
         deadline = time.monotonic() + timeout_s
         try:
             self._command.send((kind, payload))
@@ -540,6 +554,13 @@ class _AgentController:
             return "error", "timeout", None
         return "error", str(result), None
 
+    def _shutdown_proc(self, proc: Any, kill: bool) -> None:
+        if not kill:
+            proc.join(timeout=0.5)
+        if proc.is_alive():
+            _kill_process_tree(proc)
+        proc.join(timeout=GRACE_SECONDS)
+
     def close(self, kill: bool = False) -> None:
         command, rpc, proc = self._command, self._rpc, self._proc
         self._command = self._rpc = self._proc = None
@@ -553,11 +574,7 @@ class _AgentController:
         if rpc is not None:
             rpc.close()
         if proc is not None:
-            if not kill:
-                proc.join(timeout=0.5)
-            if proc.is_alive():
-                _kill_process_tree(proc)
-            proc.join(timeout=GRACE_SECONDS)
+            self._shutdown_proc(proc, kill)
         self._worker_pid.value = 0
 
 
@@ -740,7 +757,8 @@ class IsolatedRunner:
         failure = self._start(deadline)
         if failure is not None:
             return failure
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("_request called before _start succeeded")
         try:
             encoded = cloudpickle.dumps(payload)
             self._conn.send((kind, encoded))

@@ -91,6 +91,28 @@ def _redact_assertions(
     ]
 
 
+def _run_turns(
+    agent: Agent | None,
+    test: TestCase,
+    run_turn: Callable[[Any, float], AgentResponse] | None,
+) -> AgentResponse:
+    # Single-input tests run one turn; multi-turn tests run each turn in
+    # sequence WITHOUT resetting the sandbox between turns, so state (and
+    # any poisoned memory) carries across turns like a server-side session.
+    # The final turn's response is what assertions run against.
+    turns = test.turns if test.turns else [test.input]
+    for turn in turns:
+        if run_turn is None:
+            if agent is None:  # pragma: no cover - internal invariant
+                raise ValueError("agent is required without an isolated turn runner")
+            response = _run_with_timeout(agent, turn, test.timeout_s)
+        else:
+            response = run_turn(turn, test.timeout_s)
+        if response.error == "timeout":
+            break
+    return response
+
+
 def run_one(
     agent: Agent | None,
     sandbox: Sandbox | None,
@@ -110,20 +132,7 @@ def run_one(
         else:
             before = None
 
-        # Single-input tests run one turn; multi-turn tests run each turn in
-        # sequence WITHOUT resetting the sandbox between turns, so state (and
-        # any poisoned memory) carries across turns like a server-side session.
-        # The final turn's response is what assertions run against.
-        turns = test.turns if test.turns else [test.input]
-        for turn in turns:
-            if run_turn is None:
-                if agent is None:  # pragma: no cover - internal invariant
-                    raise ValueError("agent is required without an isolated turn runner")
-                response = _run_with_timeout(agent, turn, test.timeout_s)
-            else:
-                response = run_turn(turn, test.timeout_s)
-            if response.error == "timeout":
-                break
+        response = _run_turns(agent, test, run_turn)
 
         # An isolated turn runner kills the agent worker before returning a
         # timeout, so the supervisor-owned sandbox is stable.  Direct calls to
@@ -165,20 +174,7 @@ def run_one(
             finished_at=_now(),
         )
     except Exception as exc:  # noqa: BLE001 - runner must never raise
-        return TestResult(
-            test_id=test.id,
-            category=test.category,
-            risk=test.risk,
-            status=Status.error,
-            latency_ms=None,
-            assertion_results=[],
-            request=None,
-            response=None,
-            sandbox_diff=None,
-            error=redactor.redact_text(str(exc)),
-            started_at=started,
-            finished_at=_now(),
-        )
+        return _error_result(test, started, str(exc), redactor)
 
 
 def _run_python_test(
@@ -225,20 +221,7 @@ def _run_python_test(
             finished_at=_now(),
         )
     except Exception as exc:  # noqa: BLE001 - runner must never raise
-        return TestResult(
-            test_id=test.id,
-            category=test.category,
-            risk=test.risk,
-            status=Status.error,
-            latency_ms=None,
-            assertion_results=[],
-            request=None,
-            response=None,
-            sandbox_diff=None,
-            error=redactor.redact_text(str(exc)),
-            started_at=started,
-            finished_at=_now(),
-        )
+        return _error_result(test, started, str(exc), redactor)
 
 
 def _error_result(
@@ -274,6 +257,31 @@ def _sandbox_modules() -> tuple[str, ...]:
     return tuple(sorted(modules))
 
 
+def _run_isolated(
+    isolated: IsolatedRunner,
+    test: TestCase | PythonTestCase,
+    redactor: Redactor,
+) -> TestResult:
+    test_started = _now()
+    if isinstance(test, PythonTestCase):
+        if not math.isfinite(test.timeout_s) or test.timeout_s <= 0:
+            result: TestResult | IsolationFailure = IsolationFailure(
+                "timeout_s must be finite and > 0"
+            )
+        else:
+            result = isolated.run_python_test(
+                test, test.timeout_s + isolation.GRACE_SECONDS
+            )
+    else:
+        turns = len(test.turns) if test.turns else 1
+        result = isolated.run_test(
+            test, turns * test.timeout_s + isolation.GRACE_SECONDS
+        )
+    if isinstance(result, IsolationFailure):
+        result = _error_result(test, test_started, result.error, redactor)
+    return result
+
+
 def run(
     target: TargetConfig,
     tests: list[TestCase | PythonTestCase],
@@ -298,28 +306,7 @@ def run(
     results: list[TestResult] = []
     try:
         for test in tests:
-            test_started = _now()
-            if isinstance(test, PythonTestCase):
-                if not math.isfinite(test.timeout_s) or test.timeout_s <= 0:
-                    result: TestResult | IsolationFailure = IsolationFailure(
-                        "timeout_s must be finite and > 0"
-                    )
-                else:
-                    result = isolated.run_python_test(
-                        test, test.timeout_s + isolation.GRACE_SECONDS
-                    )
-                if isinstance(result, IsolationFailure):
-                    result = _error_result(test, test_started, result.error, redactor)
-                results.append(result)
-                continue
-
-            turns = len(test.turns) if test.turns else 1
-            result = isolated.run_test(
-                test, turns * test.timeout_s + isolation.GRACE_SECONDS
-            )
-            if isinstance(result, IsolationFailure):
-                result = _error_result(test, test_started, result.error, redactor)
-            results.append(result)
+            results.append(_run_isolated(isolated, test, redactor))
     finally:
         isolated.close()
 

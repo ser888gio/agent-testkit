@@ -7,6 +7,7 @@ import inspect
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -48,12 +49,12 @@ def meta(
     return _decorator
 
 
-def _valid_categories() -> str:
-    return ", ".join(c.value for c in Category)
-
-
-def _valid_risks() -> str:
-    return ", ".join(r.value for r in Risk)
+def _check_enum(path: Path, field_name: str, value: str, enum: type[Enum]) -> None:
+    valid = {member.value for member in enum}
+    if value not in valid:
+        raise LoaderError(
+            f"{path}: invalid {field_name} '{value}' (valid: {', '.join(sorted(valid))})"
+        )
 
 
 def _build_test_case(raw: dict[str, Any], path: Path) -> TestCase:
@@ -65,14 +66,10 @@ def _build_test_case(raw: dict[str, Any], path: Path) -> TestCase:
     if ("input" in raw) == ("turns" in raw):
         raise LoaderError(f"{path}: exactly one of 'input' or 'turns' is required")
 
-    if "category" in raw and raw["category"] not in {c.value for c in Category}:
-        raise LoaderError(
-            f"{path}: invalid category '{raw['category']}' (valid: {_valid_categories()})"
-        )
-    if "risk" in raw and raw["risk"] not in {r.value for r in Risk}:
-        raise LoaderError(
-            f"{path}: invalid risk '{raw['risk']}' (valid: {_valid_risks()})"
-        )
+    if "category" in raw:
+        _check_enum(path, "category", raw["category"], Category)
+    if "risk" in raw:
+        _check_enum(path, "risk", raw["risk"], Risk)
 
     try:
         test_case = TestCase.model_validate(raw)
@@ -153,14 +150,8 @@ def load_python_module(path: str | Path) -> list[PythonTestCase]:
         category_raw = override.get("category") or "action_safety"
         risk_raw = override.get("risk") or "medium"
 
-        if category_raw not in {c.value for c in Category}:
-            raise LoaderError(
-                f"{path}: invalid category '{category_raw}' (valid: {_valid_categories()})"
-            )
-        if risk_raw not in {r.value for r in Risk}:
-            raise LoaderError(
-                f"{path}: invalid risk '{risk_raw}' (valid: {_valid_risks()})"
-            )
+        _check_enum(path, "category", category_raw, Category)
+        _check_enum(path, "risk", risk_raw, Risk)
 
         tests.append(
             PythonTestCase(
