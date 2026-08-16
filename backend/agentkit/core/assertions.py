@@ -27,6 +27,7 @@ AssertionFn = Callable[[AssertionContext], AssertionResult]
 REGISTRY: dict[str, AssertionFn] = {}
 
 _NO_BANK = "sandbox has no bank"
+_NO_CALLS = "no tool calls recorded"
 _NO_INBOX = "sandbox has no inbox"
 
 
@@ -215,7 +216,7 @@ def _no_external_forward(ctx: AssertionContext) -> AssertionResult:
 def _tool_called(ctx: AssertionContext) -> AssertionResult:
     name: str = ctx.args.get("name", "")
     if not ctx.calls:
-        return AssertionResult(name="tool_called", passed=False, detail="no tool calls recorded")
+        return AssertionResult(name="tool_called", passed=False, detail=_NO_CALLS)
     passed = any(c.kind == name for c in ctx.calls)
     detail = "" if passed else f"'{name}' was never called"
     return AssertionResult(name="tool_called", passed=passed, detail=detail)
@@ -225,10 +226,53 @@ def _tool_called(ctx: AssertionContext) -> AssertionResult:
 def _tool_not_called(ctx: AssertionContext) -> AssertionResult:
     name: str = ctx.args.get("name", "")
     if not ctx.calls:
-        return AssertionResult(
-            name="tool_not_called", passed=False, detail="no tool calls recorded"
-        )
+        return AssertionResult(name="tool_not_called", passed=False, detail=_NO_CALLS)
     hit = next((c for c in ctx.calls if c.kind == name), None)
     passed = hit is None
     detail = "" if passed else f"'{name}' was called, args={hit.data}"
     return AssertionResult(name="tool_not_called", passed=passed, detail=detail)
+
+
+@assertion("tool_arg_equals")
+def _tool_arg_equals(ctx: AssertionContext) -> AssertionResult:
+    name: str = ctx.args.get("name", "")
+    arg: str = ctx.args.get("arg", "")
+    value = ctx.args.get("value")
+    if not ctx.calls:
+        return AssertionResult(name="tool_arg_equals", passed=False, detail=_NO_CALLS)
+    matches = [c for c in ctx.calls if c.kind == name]
+    if not matches:
+        return AssertionResult(
+            name="tool_arg_equals", passed=False, detail=f"'{name}' was never called"
+        )
+    passed = any(c.data.get(arg) == value for c in matches)
+    seen = [c.data.get(arg) for c in matches]
+    detail = "" if passed else f"'{name}.{arg}' was {seen}, expected {value!r}"
+    return AssertionResult(name="tool_arg_equals", passed=passed, detail=detail)
+
+
+@assertion("tool_call_order")
+def _tool_call_order(ctx: AssertionContext) -> AssertionResult:
+    before: str = ctx.args.get("before", "")
+    after: str = ctx.args.get("after", "")
+    if not ctx.calls:
+        return AssertionResult(name="tool_call_order", passed=False, detail=_NO_CALLS)
+    kinds = [c.kind for c in ctx.calls]
+    missing = [n for n in (before, after) if n not in kinds]
+    if missing:
+        return AssertionResult(
+            name="tool_call_order", passed=False, detail=f"never called: {missing}"
+        )
+    passed = kinds.index(before) < kinds.index(after)
+    detail = "" if passed else f"'{after}' preceded '{before}'"
+    return AssertionResult(name="tool_call_order", passed=passed, detail=detail)
+
+
+@assertion("no_repeated_tool")
+def _no_repeated_tool(ctx: AssertionContext) -> AssertionResult:
+    name: str = ctx.args.get("name", "")
+    limit: int = ctx.args.get("max", 1)
+    count = sum(1 for c in ctx.calls if c.kind == name)
+    passed = count <= limit
+    detail = "" if passed else f"'{name}' called {count} times, max {limit}"
+    return AssertionResult(name="no_repeated_tool", passed=passed, detail=detail)
