@@ -1,0 +1,39 @@
+direction: down
+
+cli: CLI / Web (cli.py, web/app.py) {
+  class: server
+}
+
+runner: Runner + Redaction (runner.py, redaction.py) {
+  class: golang
+}
+
+scoring: Scoring (scoring.py) {
+  class: golang
+}
+
+sandbox: Domain sandboxes (domains/) {
+  class: container
+}
+
+packs: Test packs (packs/*.yaml) {
+  shape: cylinder
+}
+
+reports: Reports (reports/) {
+  class: server
+}
+
+store: Run store (store.py, SQLite) {
+  shape: cylinder
+}
+
+cli -> runner: "run(target, pack)"
+packs -> runner: "test cases"
+runner -> sandbox: "assert side effects"
+runner -> runner: "redact before\nbuilding TestResult"
+runner -> scoring: "RunResult (redacted)"
+scoring -> store: "save_run\n(redact again)"
+scoring -> reports: "RunResult + ScoreReport"
+store -> reports: "replay (agentkit report --run)" {style.stroke-dash: 5}
+reports -> cli: "rendered report"

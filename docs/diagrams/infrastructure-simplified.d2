@@ -1,0 +1,37 @@
+direction: right
+
+user: Operator / CI {
+  class: users
+  icon: https://icons.terrastruct.com/essentials%2F359-users.svg
+}
+
+web: agentkit web (FastAPI) {
+  class: server
+  icon: https://icons.terrastruct.com/tech%2F022-server.svg
+}
+
+worker: Run worker (isolated container) {
+  class: container
+  icon: https://icons.terrastruct.com/dev%2Fdocker.svg
+}
+
+target: Target agent endpoint {
+  class: cloud
+}
+
+db: Run store (SQLite) {
+  class: server
+  shape: cylinder
+}
+
+keycloak: Keycloak (OIDC) {
+  class: server
+  icon: https://icons.terrastruct.com/dev%2Fdocker.svg
+}
+
+user -> web: "HTTP / CLI"
+web -> keycloak: "auth" {style.stroke-dash: 5}
+web -> db: "reads runs" {style.stroke-dash: 5}
+web -> worker: "enqueue run" {style.stroke-dash: 5}
+worker -> target: "black-box calls\n(egress-restricted)"
+worker -> db: "writes redacted\nresults (file, not net)"
