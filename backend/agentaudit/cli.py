@@ -278,7 +278,14 @@ def run_cmd(
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(2) from exc
 
-    rr = run_tests(cfg, tests)
+    total = len(tests)
+    # Progress is chatter: emit it only for the human-facing table format.
+    def progress(index: int, test) -> None:
+        typer.echo(f"  [{index + 1}/{total}] {test.id}", err=True)
+
+    if format != "json":
+        typer.echo(f"running {total} test(s) against {cfg.id}...", err=True)
+    rr = run_tests(cfg, tests, on_test=progress if format != "json" else None)
     report = score(rr, fail_under=fail_under, block_on_critical=block_on_critical)
 
     store = Store(db)
