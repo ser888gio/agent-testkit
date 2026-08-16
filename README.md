@@ -35,6 +35,17 @@ Overall (weighted): 100%   Pass rate: 100%   Critical failures: 0
 Gate: PASS
 ```
 
+**`agentkit: command not found`?** `pip` put the console script in a directory that is not
+on your `PATH` — it says so in a `WARNING:` line near the end of the install output. Either
+run the module directly:
+
+```bash
+python -m agentkit.cli run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml
+```
+
+or add the directory `pip` named to your `PATH` (Windows user installs land in
+`%APPDATA%\Python\PythonXY\Scripts`, Linux/macOS in `~/.local/bin`).
+
 Exit code `0` — wire that into CI. Every run is persisted to `agentkit.db` (SQLite):
 
 ```bash
