@@ -1,8 +1,9 @@
 import json
 
+from typer.testing import CliRunner
+
 from agentkit.cli import app
 from agentkit.core.store import DEFAULT_ORG, Store
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

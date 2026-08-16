@@ -10,12 +10,20 @@ from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
+import yaml
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from pydantic import ValidationError
+
+import agentkit
+
 # Eagerly import built-in domains so their sandboxes are registered before
 # `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
 # "feat/runner" section, for why this matters).
 import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
-import yaml
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentkit.core.attacks import split_variant
 from agentkit.core.loader import LoaderError, discover
@@ -36,13 +44,6 @@ from agentkit.web.auth import (
     require_admin,
     reset_auth_state,
 )
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-from pydantic import ValidationError
-
-import agentkit
 
 BASE_DIR = Path(__file__).parent
 PACKAGE_DIR = Path(agentkit.__file__).resolve().parent

@@ -2,12 +2,12 @@
 # Run agentkit's validation ladder: lint + tests.
 #
 # Usage:
-#   tools/validate.sh                 lint changed files + full pytest suite
-#   tools/validate.sh --affected      lint changed files + only the affected tests
+#   tools/validate.sh                 lint the repo + full pytest suite
+#   tools/validate.sh --affected      lint the repo + only the affected tests
 #   tools/validate.sh --affected --base <ref>
 #                                     affected scope relative to <ref>
-#   tools/validate.sh --lint-only     lint changed files, skip tests
-#   tools/validate.sh --lint-all      lint the entire repository (see note below)
+#   tools/validate.sh --lint-only     lint the repo, skip tests
+#   tools/validate.sh --lint-all      accepted for compatibility; lint is repo-wide already
 #
 # The full suite runs in a few seconds, so --affected is for tight iteration loops;
 # prefer the default before declaring work complete.
@@ -19,20 +19,19 @@ cd "$(dirname "$0")/.."
 
 AFFECTED=0
 LINT_ONLY=0
-LINT_ALL=0
 BASE_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --affected)  AFFECTED=1; shift ;;
     --lint-only) LINT_ONLY=1; shift ;;
-    --lint-all)  LINT_ALL=1; shift ;;
+    --lint-all)  shift ;;                  # no-op: lint is repo-wide already
     --base)
       [[ $# -ge 2 ]] || { echo "error: --base requires a ref" >&2; exit 2; }
       BASE_ARGS=(--base "$2")
       shift 2
       ;;
-    -h|--help)   sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)           echo "error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -76,19 +75,10 @@ if [[ ${#RUN[@]} -eq 0 ]]; then
 fi
 echo "==> runner: ${RUN[*]}"
 
-if [[ "$LINT_ALL" -eq 1 ]]; then
-  echo "==> ruff check . (whole repository)"
-  "${RUN[@]}" ruff check .
-else
-  # shellcheck disable=SC2207
-  LINT_FILES=($(bash tools/affected.sh --files-only "${BASE_ARGS[@]}" | grep '\.py$' || true))
-  if [[ ${#LINT_FILES[@]} -eq 0 ]]; then
-    echo "==> ruff: no changed Python files to lint"
-  else
-    echo "==> ruff check ${LINT_FILES[*]}"
-    "${RUN[@]}" ruff check "${LINT_FILES[@]}"
-  fi
-fi
+# The repo lints clean and CI enforces `ruff check .`, so always lint everything: a
+# changed-files-only pass would let a violation reach a red CI run unnoticed.
+echo "==> ruff check . (whole repository)"
+"${RUN[@]}" ruff check .
 
 if [[ "$LINT_ONLY" -eq 1 ]]; then
   echo "==> lint only: done"

@@ -199,8 +199,6 @@ reports into agentkit's schema so you can combine both.
   not implemented.
 - **Two demo verticals.** Treasury and email are real, working examples, not a general
   library of agent domains — adding a new one means writing a `Sandbox` subclass.
-- **Repo-wide lint is currently red** from pre-existing violations; `tools/validate.sh` lints
-  changed files only.
 
 ## Roadmap: adaptive assurance platform
 
