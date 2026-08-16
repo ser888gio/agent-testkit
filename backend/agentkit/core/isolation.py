@@ -229,6 +229,14 @@ def _handle_rpc(
     try:
         if operation == "getattr":
             name = args[0]
+            # The agent is untrusted and this proxy resolves attribute paths in
+            # the *supervisor*, which holds unredacted evidence.  Sandboxes have
+            # no declared tool surface to whitelist against -- agents walk
+            # arbitrary paths like `sandbox.bank.transfer` by design -- so the
+            # boundary is drawn at dunders instead: `__class__.__init__.__globals__`
+            # is the walk from a proxied sandbox to supervisor code execution.
+            if isinstance(name, str) and name.startswith("__"):
+                raise AttributeError(f"sandbox RPC refuses dunder access: {name}")
             child_path = (*path, ("attr", name))
             result = _encode_remote(
                 _resolve(root, child_path, references), child_path, references
@@ -335,6 +343,18 @@ class _RemoteObject:
         object.__setattr__(self, "_path", path)
 
     def __getattr__(self, name: str) -> Any:
+        # Refuses dunders that do NOT exist on this proxy, so a walk like
+        # `.__globals__` cannot be forwarded to the supervisor.
+        #
+        # It does NOT stop dunders Python resolves locally on the class itself
+        # (`__class__`, `__dict__`, `__init__`, `__reduce__`): `__getattr__` is
+        # never called for those, so no guard here can see them. An agent can
+        # still reach this module's globals via `sandbox.__class__`. Closing
+        # that needs a proxy with no reachable attributes, not another check --
+        # see the isolation caveat in infra/CLAUDE.md. The container boundary,
+        # not this guard, is what makes that escalation survivable.
+        if name.startswith("__"):
+            raise AttributeError(f"sandbox RPC refuses dunder access: {name}")
         return self._session.request("getattr", self._path, name)
 
     def __setattr__(self, name: str, value: Any) -> None:

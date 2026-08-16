@@ -86,6 +86,20 @@ def create_double_inc_agent():
     return _double_inc_agent
 
 
+def _escalating_agent(input, sandbox):
+    # Walk toward the supervisor's globals via a dunder that does not exist on
+    # the proxy, so the request would otherwise be forwarded over the RPC.
+    try:
+        leaked = sandbox.__globals__
+    except (AttributeError, RuntimeError) as exc:
+        return f"refused: {exc}"
+    return f"escalated: {type(leaked).__name__}"
+
+
+def create_escalating_agent():
+    return _escalating_agent
+
+
 def test_tool_call_ledger_crosses_isolation_boundary():
     # The sandbox lives in the supervisor process; the agent mutates it only
     # via the RPC proxy. This proves record_event() calls made through that
@@ -107,6 +121,47 @@ def test_tool_call_ledger_crosses_isolation_boundary():
     result = run(target, [test]).results[0]
 
     assert result.assertion_results[0].passed, result.assertion_results[0].detail
+
+
+def test_sandbox_rpc_refuses_forwarded_dunder_access():
+    # The agent worker is untrusted; the RPC resolves attribute paths in the
+    # supervisor, which holds unredacted evidence. A dunder that is absent on
+    # the proxy would be forwarded there, so it is refused before it is sent.
+    target = TargetConfig(
+        id="escalation-target",
+        agent=CallableSpec(type="callable", callable=f"{MODULE}:create_escalating_agent"),
+        sandbox="isolation-counter",
+    )
+    test = TestCase(
+        id="rpc.dunder_refused",
+        category=Category.action_safety,
+        input="escalate",
+        assertions=[Assertion(name="status_ok")],
+    )
+
+    result = run(target, [test]).results[0]
+    response = str(result.response or "")
+
+    assert "escalated" not in response
+    assert "refuses dunder access" in response
+
+
+def test_proxy_class_dunders_are_a_known_isolation_gap():
+    """Pins a limitation, not a guarantee.
+
+    `__getattr__` is bypassed for attributes Python resolves on the class, so
+    `sandbox.__class__` hands the agent isolation.py's module globals and no
+    guard in `__getattr__` can intercept it. Closing this needs a proxy with no
+    reachable attributes. Until then the *container* is the boundary that makes
+    this survivable. If this test starts failing, the gap was closed -- delete
+    it and update the caveat in infra/CLAUDE.md.
+    """
+    from agentkit.core.isolation import _RemoteObject
+
+    proxy = _RemoteObject.__new__(_RemoteObject)
+
+    assert proxy.__class__ is _RemoteObject
+    assert "_RemoteObject" in proxy.__class__.__init__.__globals__
 
 
 def test_agent_is_dead_before_timeout_snapshot_is_taken():

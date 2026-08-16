@@ -38,6 +38,42 @@ services:
       - agentkit-data:/data
     restart: unless-stopped
 
+  # Runs tenant jobs against third-party agents. The container is the isolation
+  # boundary: it is the only service that talks to an untrusted endpoint, so it
+  # gets its own network with no route to the control plane (agentkit, keycloak,
+  # keycloak-db all sit on the default network and are unreachable from here).
+  # The DB is reached as a *file* on the shared volume, not as a network service,
+  # which is what lets the worker be network-isolated and still persist runs.
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    image: agentkit
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["agentkit", "worker", "--db", "/data/agentkit.db"]
+    environment:
+      AGENTKIT_DB: /data/agentkit.db
+      # Provision each target's `secret_ref` (env://VAR) here, not on the web
+      # service: the worker is the only process that dials a partner endpoint.
+    networks:
+      - egress
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    # Backstops to the per-run ceilings in core/isolation.py, which bound a
+    # single run; these bound the container if that layer is defeated.
+    pids_limit: 512
+    mem_limit: 2g
+    volumes:
+      - agentkit-data:/data
+    restart: unless-stopped
+
   keycloak-db:
     image: postgres:16.9
     environment:
@@ -83,6 +119,17 @@ services:
     volumes:
       - ./keycloak/agentkit-realm.json:/opt/keycloak/data/import/agentkit-realm.json:ro
     restart: unless-stopped
+
+networks:
+  # The worker's only network. Nothing else joins it, so the worker has no TCP
+  # route to keycloak, keycloak-db, or the agentkit web service. Outbound to
+  # partner endpoints is still governed per-target by core/egress.py.
+  #
+  # Link-local (169.254.169.254, cloud metadata) is NOT blocked here — no compose
+  # network driver blocks it portably. egress.py rejects it at the app layer;
+  # a host firewall rule is required for the OS-level guarantee. See infra/CLAUDE.md.
+  egress:
+    driver: bridge
 
 volumes:
   agentkit-data:
