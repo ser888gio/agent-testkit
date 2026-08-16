@@ -53,6 +53,29 @@ def test_run_exits_two_on_missing_target(tmp_path):
     assert result.exit_code == 2, result.output
 
 
+def test_run_requires_exactly_one_of_target_or_endpoint(tmp_path):
+    db = str(tmp_path / "a.db")
+    for args in (
+        [],  # neither
+        ["--endpoint", "https://a.example.com/x", "--target", TREASURY_TARGET],  # both
+    ):
+        result = runner.invoke(app, ["run", TREASURY_PACK, "--db", db, *args])
+        assert result.exit_code == 2, result.output
+
+
+def test_run_endpoint_builds_a_target_named_after_the_host(tmp_path):
+    """--endpoint stands in for a config file: default request/response shape."""
+    from agentkit.cli import _load_target_or_exit
+
+    cfg = _load_target_or_exit(None, "https://agent.example.com/chat")
+    assert cfg.id == "agent.example.com"
+    assert cfg.agent.type == "http"
+    assert cfg.agent.endpoint == "https://agent.example.com/chat"
+    assert cfg.agent.request == {"json": {"input": "{{ input }}"}}
+    assert cfg.agent.response.text_path == "$.text"
+    assert cfg.sandbox is None
+
+
 def test_run_fail_under_boundary_exits_one(tmp_path):
     db = str(tmp_path / "a.db")
     reckless_target = tmp_path / "reckless.yaml"

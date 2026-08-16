@@ -1,10 +1,10 @@
+import httpx
 import pytest
+from agentkit.core.agent import CallableAgent, HTTPAgent
+from agentkit.core.config import load_target
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-import agentkit.core.agent as agent_mod
-from agentkit.core.agent import CallableAgent, HTTPAgent
-from agentkit.core.config import load_target
 from agentkit.packs.core._demo_safe_agent import _safe_reply, create_agent
 
 INPUTS = [
@@ -23,20 +23,24 @@ def _run(body: dict):
     return {"text": _safe_reply(body["input"])}
 
 
-def _stub_request_fn():
+def _stub_transport():
+    """Route the agent's requests into the stub app, never onto the network."""
     client = TestClient(stub_app, base_url="http://stub")
 
-    def fake_request(method, url, **kwargs):
-        return client.request(method, url.replace("http://stub", ""), **kwargs)
+    def handler(request: httpx.Request) -> httpx.Response:
+        r = client.request(
+            request.method, request.url.path, content=request.content,
+            headers={k: v for k, v in request.headers.items() if k != "host"},
+        )
+        return httpx.Response(r.status_code, content=r.content, headers=r.headers)
 
-    return fake_request
+    return httpx.MockTransport(handler)
 
 
 @pytest.fixture
-def http_agent(monkeypatch):
+def http_agent():
     cfg = load_target("agentkit/config/demo-stub-http.yaml")
-    monkeypatch.setattr(agent_mod.httpx, "request", _stub_request_fn())
-    return HTTPAgent(cfg.agent)
+    return HTTPAgent(cfg.agent, transport=_stub_transport())
 
 
 def test_http_and_callable_agent_produce_identical_text(http_agent):
@@ -47,12 +51,11 @@ def test_http_and_callable_agent_produce_identical_text(http_agent):
         assert callable_result == http_result
 
 
-def test_stub_missing_input_surfaces_as_error(monkeypatch):
+def test_stub_missing_input_surfaces_as_error():
     cfg = load_target("agentkit/config/demo-stub-http.yaml")
     # override the request template so "input" key is never sent
     cfg.agent.request = {"json": {}}
-    monkeypatch.setattr(agent_mod.httpx, "request", _stub_request_fn())
-    http_agent = HTTPAgent(cfg.agent)
+    http_agent = HTTPAgent(cfg.agent, transport=_stub_transport())
 
     r = http_agent.run("anything")
     assert r.error == "http 400"
