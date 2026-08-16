@@ -30,12 +30,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic" },
-    { name = "cloudpickle", specifier = ">=3.0" },
+    { name = "cloudpickle", specifier = ">=3.1.2" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jinja2" },
-    { name = "pydantic", specifier = ">=2" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8" },
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.13.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "python-multipart" },
     { name = "pyyaml" },
