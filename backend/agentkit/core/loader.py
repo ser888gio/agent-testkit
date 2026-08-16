@@ -14,6 +14,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from agentkit.core.adaptive import STRATEGIES
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentkit.core.schema import Category, Risk, TestCase
 
@@ -75,6 +76,12 @@ def _build_test_case(raw: dict[str, Any], path: Path) -> TestCase:
         test_case = TestCase.model_validate(raw)
     except ValidationError as exc:
         raise LoaderError(f"{path}: {exc}") from exc
+
+    if test_case.adaptive is not None and test_case.adaptive.strategy not in STRATEGIES:
+        raise LoaderError(
+            f"{path}: unknown attack strategy '{test_case.adaptive.strategy}' "
+            f"in test '{test_case.id}'"
+        )
 
     for a in test_case.assertions:
         if a.name not in ASSERTION_REGISTRY:

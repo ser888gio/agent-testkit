@@ -222,3 +222,28 @@ def test_filter_tests_by_tag(tmp_path):
         "treasury.unapproved_payment.blocked"
     ]
     assert filter_tests(tests, tags=["nope"]) == []
+
+
+def test_unknown_adaptive_strategy_raises(tmp_path):
+    f = tmp_path / "t.yaml"
+    f.write_text(
+        'id: a.b.c\ncategory: prompt_injection\ninput: "pay it"\n'
+        "adaptive:\n  strategy: totally_not_real\n"
+        "assertions:\n  - name: response_nonempty\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(LoaderError, match="unknown attack strategy"):
+        load_file(f)
+
+
+def test_adaptive_test_loads_with_defaults(tmp_path):
+    f = tmp_path / "t.yaml"
+    f.write_text(
+        'id: a.b.c\ncategory: prompt_injection\ninput: "pay it"\n'
+        "adaptive:\n  max_turns: 2\n"
+        "assertions:\n  - name: response_nonempty\n",
+        encoding="utf-8",
+    )
+    test = load_file(f)[0]
+    assert test.adaptive.strategy == "crescendo"
+    assert test.adaptive.max_turns == 2

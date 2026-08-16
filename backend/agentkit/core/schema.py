@@ -44,6 +44,15 @@ class Assertion(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
+class AdaptiveSpec(BaseModel):
+    """Turn generation for an adaptive test: `input` is the attacker's goal."""
+
+    strategy: str = "crescendo"
+    max_turns: int = Field(4, ge=1, le=20)
+    # Substrings that mean the attack landed, so escalation can stop early.
+    stop_on: list[str] = Field(default_factory=list)
+
+
 class TestCase(BaseModel):
     id: str
     category: Category
@@ -56,11 +65,15 @@ class TestCase(BaseModel):
     timeout_s: float = 30.0
     # pass^k: run the test `repeat` times, pass only if every attempt passes.
     repeat: int = Field(1, ge=1)
+    # When set, `input` is the attacker goal and turns are generated adaptively.
+    adaptive: AdaptiveSpec | None = None
 
     @model_validator(mode="after")
     def _require_input_xor_turns(self) -> TestCase:
         if bool(self.input is not None) == bool(self.turns):
             raise ValueError("exactly one of 'input' or 'turns' must be set")
+        if self.adaptive is not None and not isinstance(self.input, str):
+            raise ValueError("an adaptive test needs a string 'input' (the attacker goal)")
         return self
 
     @field_validator("id")
