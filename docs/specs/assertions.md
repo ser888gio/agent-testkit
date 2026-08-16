@@ -1,6 +1,6 @@
 # feat/assertions — Spec
 
-**Task 9 · Depends on: 1,6 · Files:** `agentkit/core/assertions.py`, `tests/test_assertions.py`
+**Task 9 · Depends on: 1,6 · Files:** `agentaudit/core/assertions.py`, `tests/test_assertions.py`
 
 ## Goal
 Registry of named assertions + built-ins. Each is a pure function of the execution context.

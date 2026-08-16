@@ -24,11 +24,11 @@ module spec, but verify claims against the code — docs can drift.
 2. **Execution flow** — numbered, each step cited
 3. **Domain rules and invariants** — what must stay true (e.g. runner never raises,
    redaction runs before evidence is stored)
-4. **Persistence operations** — what touches `Store` / `agentkit.db`
+4. **Persistence operations** — what touches `Store` / `agentaudit.db`
 5. **External calls** — anything leaving the process (`httpx` should appear only in
    `core/agent.py`)
 6. **Relevant tests** — `tests/test_*.py::test_name`, plus any YAML packs in
-   `agentkit/packs/` that reference the affected symbols by string name
+   `agentaudit/packs/` that reference the affected symbols by string name
 7. **Affected components** — names from `docs/components.yaml`
 8. **Confirmed findings vs open questions** — label every claim as one or the other
 

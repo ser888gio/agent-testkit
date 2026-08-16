@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Map changed files to the agentkit components and pytest targets they affect.
+# Map changed files to the agentaudit components and pytest targets they affect.
 #
 # Usage:
 #   tools/affected.sh [--base <ref>] [--tests-only | --components-only | --files-only]
@@ -75,9 +75,9 @@ while IFS= read -r file; do
     pyproject.toml|uv.lock)
       full_suite=1 ;;
 
-    backend/agentkit/core/sandbox.py)
+    backend/agentaudit/core/sandbox.py)
       add_component core; add_test tests/test_sandbox_core.py ;;
-    backend/agentkit/core/*.py)
+    backend/agentaudit/core/*.py)
       add_component core
       module="$(basename "$file" .py)"
       candidate="tests/test_${module}.py"
@@ -93,23 +93,23 @@ while IFS= read -r file; do
       esac
       ;;
 
-    backend/agentkit/domains/treasury/*) add_component domains; add_test tests/test_treasury.py ;;
-    backend/agentkit/domains/email/*)    add_component domains; add_test tests/test_email.py ;;
-    backend/agentkit/domains/*)          add_component domains; add_test tests/test_sandbox_core.py ;;
+    backend/agentaudit/domains/treasury/*) add_component domains; add_test tests/test_treasury.py ;;
+    backend/agentaudit/domains/email/*)    add_component domains; add_test tests/test_email.py ;;
+    backend/agentaudit/domains/*)          add_component domains; add_test tests/test_sandbox_core.py ;;
 
-    backend/agentkit/reports/*)
+    backend/agentaudit/reports/*)
       add_component reports
       add_test tests/test_reports.py
       add_test tests/test_compliance.py ;;
 
-    frontend/agentkit/web/*)
+    frontend/agentaudit/web/*)
       add_component web
       add_test tests/test_web.py
       add_test tests/test_security_p0.py ;;
 
-    backend/agentkit/cli.py)      add_component cli;  add_test tests/test_cli.py ;;
-    agentkit/config/*)    add_component cli;  add_test tests/test_config.py ;;
-    agentkit/packs/*)
+    backend/agentaudit/cli.py)      add_component cli;  add_test tests/test_cli.py ;;
+    agentaudit/config/*)    add_component cli;  add_test tests/test_config.py ;;
+    agentaudit/packs/*)
       add_component packs
       add_test tests/test_packs_core.py
       add_test tests/test_packs_domain.py

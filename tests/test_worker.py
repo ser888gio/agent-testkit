@@ -3,8 +3,8 @@ import time
 
 import pytest
 
-from agentkit.core.store import Store
-from agentkit.worker import PermanentJobError, execute_job, main, work_once
+from agentaudit.core.store import Store
+from agentaudit.worker import PermanentJobError, execute_job, main, work_once
 
 MODULE = "tests.test_worker"
 
@@ -91,7 +91,7 @@ def test_resolved_secret_is_not_written_to_job_errors_or_logs(tmp_path, monkeypa
     store.save_pack("org-a", "pack-1", "Pack One", [_TEST])
     job_id = store.enqueue_job("org-a", "bad-endpoint", "pack-1")
 
-    with caplog.at_level("WARNING", logger="agentkit.worker"):
+    with caplog.at_level("WARNING", logger="agentaudit.worker"):
         work_once(store, "w1")
 
     job = store.get_job("org-a", job_id)
@@ -111,7 +111,7 @@ def test_execute_job_raises_permanent_for_a_foreign_orgs_target(tmp_path):
 def test_infrastructure_faults_are_left_for_lease_expiry(tmp_path, monkeypatch):
     store, job_id = _store_with_job(tmp_path)
     monkeypatch.setattr(
-        "agentkit.worker.run_tests", lambda *a, **k: (_ for _ in ()).throw(OSError("disk gone"))
+        "agentaudit.worker.run_tests", lambda *a, **k: (_ for _ in ()).throw(OSError("disk gone"))
     )
 
     work_once(store, "w1", lease_seconds=-1)
@@ -156,7 +156,7 @@ def test_per_org_cap_stops_one_partner_starving_another(tmp_path):
 
 def test_heartbeat_keeps_a_long_job_from_being_reclaimed(tmp_path, monkeypatch):
     store, job_id = _store_with_job(tmp_path)
-    monkeypatch.setattr("agentkit.worker.run_tests", _slow_run)
+    monkeypatch.setattr("agentaudit.worker.run_tests", _slow_run)
 
     done = threading.Thread(target=work_once, args=(store, "w1"), kwargs={"lease_seconds": 4})
     done.start()
@@ -169,7 +169,7 @@ def test_heartbeat_keeps_a_long_job_from_being_reclaimed(tmp_path, monkeypatch):
 
 
 def _slow_run(target, tests, **kw):
-    from agentkit.core.runner import run as real_run
+    from agentaudit.core.runner import run as real_run
 
     time.sleep(3)
     return real_run(target, tests, **kw)

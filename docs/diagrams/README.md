@@ -32,6 +32,6 @@ Source: [`architecture-simplified.d2`](./architecture-simplified.d2). Reflects t
 runner/control-plane split described in the root `CLAUDE.md`: CLI/web drive the runner,
 the runner asserts against domain sandboxes and redacts before handing off a `RunResult`,
 scoring persists it via the store (redacting again as defense-in-depth) and produces a
-`ScoreReport`, and `agentkit report --run` replays a stored run through the report
+`ScoreReport`, and `agentaudit report --run` replays a stored run through the report
 renderers. For the full module-level breakdown, see
 [`docs/architecture.md`](../architecture.md).

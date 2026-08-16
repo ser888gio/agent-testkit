@@ -2,9 +2,9 @@
 
 ## Project Structure & Module Organization
 
-`agentkit` is a Python 3.10+ package with multiple source roots. Core execution code lives in `backend/agentkit/core/`; domain adapters are under `backend/agentkit/domains/`; reporting and CLI code live in `backend/agentkit/reports/` and `backend/agentkit/cli.py`. The FastAPI/Jinja dashboard is in `frontend/agentkit/web/`. YAML configurations and reusable product test packs belong in `agentkit/config/` and `agentkit/packs/`. Keep Alembic migrations in `infra/alembic/`, documentation in `docs/`, and repository tests in `tests/`.
+`agentaudit` is a Python 3.10+ package with multiple source roots. Core execution code lives in `backend/agentaudit/core/`; domain adapters are under `backend/agentaudit/domains/`; reporting and CLI code live in `backend/agentaudit/reports/` and `backend/agentaudit/cli.py`. The FastAPI/Jinja dashboard is in `frontend/agentaudit/web/`. YAML configurations and reusable product test packs belong in `agentaudit/config/` and `agentaudit/packs/`. Keep Alembic migrations in `infra/alembic/`, documentation in `docs/`, and repository tests in `tests/`.
 
-Import package modules as `agentkit.*`, never `backend.agentkit.*`. Observe any more specific guidance in the nearest `CLAUDE.md` when editing a subsystem.
+Import package modules as `agentaudit.*`, never `backend.agentaudit.*`. Observe any more specific guidance in the nearest `CLAUDE.md` when editing a subsystem.
 
 ## Build, Test, and Development Commands
 
@@ -13,7 +13,7 @@ Import package modules as `agentkit.*`, never `backend.agentkit.*`. Observe any 
 - `bash tools/validate.sh --affected` lints changed Python files and runs mapped tests for quick iteration.
 - `bash tools/validate.sh` runs changed-file linting plus the full suite; use this before submitting.
 - `uv build` produces wheel and source distributions in `dist/`.
-- `uv run agentkit ui` starts the dashboard at `http://127.0.0.1:8000`.
+- `uv run agentaudit ui` starts the dashboard at `http://127.0.0.1:8000`.
 
 The validation scripts require Bash. CI tests Python 3.10 through 3.13 and builds the package.
 

@@ -3,7 +3,7 @@
     "allow": [
       "Bash(python -m pytest*)",
       "Bash(.venv/Scripts/python -m pytest*)",
-      "Bash(agentkit *)",
+      "Bash(agentaudit *)",
       "Bash(uv run --extra dev pytest*)",
       "Bash(uv run --extra dev ruff*)",
       "Bash(uv sync*)",

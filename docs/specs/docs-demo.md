@@ -12,9 +12,9 @@ doc points the local MVP toward the future enterprise product.
 Concrete, copy-pasteable:
 ```bash
 pip install -e .
-agentkit run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml
-agentkit report --run <id> --format md
-agentkit ui        # http://127.0.0.1:8000
+agentaudit run agentaudit/packs/treasury --target agentaudit/config/treasury-agent.yaml
+agentaudit report --run <id> --format md
+agentaudit ui        # http://127.0.0.1:8000
 ```
 With expected output snippets (summary table + gate line) and a screenshot placeholder.
 
@@ -34,7 +34,7 @@ With expected output snippets (summary table + gate line) and a screenshot place
 - **Privacy model** — redaction, `store_evidence` policy, `${ENV}` secrets, why internals
   never leave the customer boundary.
 - **Sandbox model** — generic `Sandbox` interface, snapshots/diffs/events, per-domain fakes.
-- **Future deployment** — how a company would run agentkit against a private agent without
+- **Future deployment** — how a company would run agentaudit against a private agent without
   sharing prompts/tools/source.
 
 ## Tests required

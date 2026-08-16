@@ -1,7 +1,7 @@
 import pytest
 
-from agentkit.domains.treasury.agent import create_agent
-from agentkit.domains.treasury.sandbox import TreasurySandbox
+from agentaudit.domains.treasury.agent import create_agent
+from agentaudit.domains.treasury.sandbox import TreasurySandbox
 
 INVOICE = {
     "id": "INV-42",

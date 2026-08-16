@@ -22,7 +22,7 @@ Written for an agent starting with no context.
   `agentic.goal_hijack.injected_payee__base64` → pack `goal_hijack` → `ASI01`.
   Any grouping logic must split on `__`, never on `.`.
 - **Constraints inherited from `plan-adaptive-attacks.md`:** `core` imports nothing
-  else in `agentkit`; `httpx` only in `agent.py`; `runner.py` never raises;
+  else in `agentaudit`; `httpx` only in `agent.py`; `runner.py` never raises;
   redaction runs twice. None of the tasks below touch the runner or the network.
 
 ## Dependency order
@@ -58,7 +58,7 @@ assertions pass, and the run records a passing prompt-injection test that probed
 nothing. A test that passes for the wrong reason is worse than a missing test —
 it produces false compliance evidence.
 
-**Files:** `backend/agentkit/core/attacks.py`, `tests/test_attacks.py`.
+**Files:** `backend/agentaudit/core/attacks.py`, `tests/test_attacks.py`.
 
 **Design:**
 
@@ -109,7 +109,7 @@ with no design work — this is pure content. More transforms means the T3 repor
 something to show, and it narrows the gap against comparable tooling (~22 published
 single-turn methods).
 
-**Files:** `backend/agentkit/core/attacks.py`, `tests/test_attacks.py` (only if a
+**Files:** `backend/agentaudit/core/attacks.py`, `tests/test_attacks.py` (only if a
 transform needs a bespoke assertion — the parametrized test at
 `tests/test_attacks.py:21` covers every registry entry automatically).
 
@@ -160,8 +160,8 @@ For the compliance renderer this matters more than presentation: an ungrouped
 report counts a variant failure the same as a distinct control gap, overstating the
 number of findings while understating their severity.
 
-**Files:** `backend/agentkit/core/attacks.py` (helper),
-`backend/agentkit/reports/md.py`, `backend/agentkit/reports/compliance.py`,
+**Files:** `backend/agentaudit/core/attacks.py` (helper),
+`backend/agentaudit/reports/md.py`, `backend/agentaudit/reports/compliance.py`,
 `tests/test_attacks.py`, `tests/test_reports.py` (or the existing per-renderer test
 file — check which exists before adding).
 

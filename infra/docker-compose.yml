@@ -3,19 +3,19 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile
-    image: agentkit
-    command: ["agentkit", "migrate", "--db", "/data/agentkit.db"]
+    image: agentaudit
+    command: ["agentaudit", "migrate", "--db", "/data/agentaudit.db"]
     environment:
-      AGENTKIT_DB: /data/agentkit.db
+      AGENTAUDIT_DB: /data/agentaudit.db
     volumes:
-      - agentkit-data:/data
+      - agentaudit-data:/data
     restart: "no"
 
-  agentkit:
+  agentaudit:
     build:
       context: ..
       dockerfile: infra/Dockerfile
-    image: agentkit
+    image: agentaudit
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -24,23 +24,23 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      AGENTKIT_DB: /data/agentkit.db
-      AGENTKIT_PACKS: /opt/venv/lib/python3.12/site-packages/agentkit/packs
-      AGENTKIT_AUTH_MODE: oidc
-      AGENTKIT_OIDC_ISSUER: http://localhost:8080/realms/agentkit
-      AGENTKIT_OIDC_JWKS_URL: http://keycloak:8080/realms/agentkit/protocol/openid-connect/certs
-      AGENTKIT_OIDC_TOKEN_URL: http://keycloak:8080/realms/agentkit/protocol/openid-connect/token
-      AGENTKIT_OIDC_AUDIENCE: agentkit-api
-      AGENTKIT_OIDC_CLIENT_ID: agentkit-web
-      AGENTKIT_OIDC_REDIRECT_URI: http://localhost:8000/auth/callback
+      AGENTAUDIT_DB: /data/agentaudit.db
+      AGENTAUDIT_PACKS: /opt/venv/lib/python3.12/site-packages/agentaudit/packs
+      AGENTAUDIT_AUTH_MODE: oidc
+      AGENTAUDIT_OIDC_ISSUER: http://localhost:8080/realms/agentaudit
+      AGENTAUDIT_OIDC_JWKS_URL: http://keycloak:8080/realms/agentaudit/protocol/openid-connect/certs
+      AGENTAUDIT_OIDC_TOKEN_URL: http://keycloak:8080/realms/agentaudit/protocol/openid-connect/token
+      AGENTAUDIT_OIDC_AUDIENCE: agentaudit-api
+      AGENTAUDIT_OIDC_CLIENT_ID: agentaudit-web
+      AGENTAUDIT_OIDC_REDIRECT_URI: http://localhost:8000/auth/callback
     volumes:
       # Persist the sqlite run store across container restarts.
-      - agentkit-data:/data
+      - agentaudit-data:/data
     restart: unless-stopped
 
   # Runs tenant jobs against third-party agents. The container is the isolation
   # boundary: it is the only service that talks to an untrusted endpoint, so it
-  # gets its own network with no route to the control plane (agentkit, keycloak,
+  # gets its own network with no route to the control plane (agentaudit, keycloak,
   # keycloak-db all sit on the default network and are unreachable from here).
   # The DB is reached as a *file* on the shared volume, not as a network service,
   # which is what lets the worker be network-isolated and still persist runs.
@@ -48,13 +48,13 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile
-    image: agentkit
+    image: agentaudit
     depends_on:
       migrate:
         condition: service_completed_successfully
-    command: ["agentkit", "worker", "--db", "/data/agentkit.db"]
+    command: ["agentaudit", "worker", "--db", "/data/agentaudit.db"]
     environment:
-      AGENTKIT_DB: /data/agentkit.db
+      AGENTAUDIT_DB: /data/agentaudit.db
       # Provision each target's `secret_ref` (env://VAR) here, not on the web
       # service: the worker is the only process that dials a partner endpoint.
     networks:
@@ -71,7 +71,7 @@ services:
     pids_limit: 512
     mem_limit: 2g
     volumes:
-      - agentkit-data:/data
+      - agentaudit-data:/data
     restart: unless-stopped
 
   keycloak-db:
@@ -104,8 +104,8 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in infra/.env}
       KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME: http://localhost:8080
-      AGENTKIT_CI_ACME_SECRET: ${AGENTKIT_CI_ACME_SECRET:?set AGENTKIT_CI_ACME_SECRET in infra/.env}
-      AGENTKIT_DEMO_USER_PASSWORD: ${AGENTKIT_DEMO_USER_PASSWORD:?set AGENTKIT_DEMO_USER_PASSWORD in infra/.env}
+      AGENTAUDIT_CI_ACME_SECRET: ${AGENTAUDIT_CI_ACME_SECRET:?set AGENTAUDIT_CI_ACME_SECRET in infra/.env}
+      AGENTAUDIT_DEMO_USER_PASSWORD: ${AGENTAUDIT_DEMO_USER_PASSWORD:?set AGENTAUDIT_DEMO_USER_PASSWORD in infra/.env}
     healthcheck:
       test:
         - CMD-SHELL
@@ -117,12 +117,12 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      - ./keycloak/agentkit-realm.json:/opt/keycloak/data/import/agentkit-realm.json:ro
+      - ./keycloak/agentaudit-realm.json:/opt/keycloak/data/import/agentaudit-realm.json:ro
     restart: unless-stopped
 
 networks:
   # The worker's only network. Nothing else joins it, so the worker has no TCP
-  # route to keycloak, keycloak-db, or the agentkit web service. Outbound to
+  # route to keycloak, keycloak-db, or the agentaudit web service. Outbound to
   # partner endpoints is still governed per-target by core/egress.py.
   #
   # Link-local (169.254.169.254, cloud metadata) is NOT blocked here — no compose
@@ -132,5 +132,5 @@ networks:
     driver: bridge
 
 volumes:
-  agentkit-data:
+  agentaudit-data:
   keycloak-db-data:

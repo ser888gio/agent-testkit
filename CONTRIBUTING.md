@@ -31,9 +31,9 @@ files only for that reason. Don't fold unrelated lint fixes into a feature PR.
 See [`CLAUDE.md`](CLAUDE.md) for the full repository map, architecture rules, and validation
 ladder — it's the canonical guide for both human and AI contributors. Highlights:
 
-- Test engine: `backend/agentkit/core/`
-- Domain sandboxes: `backend/agentkit/domains/`
-- Test content (YAML, not code): `agentkit/packs/`
+- Test engine: `backend/agentaudit/core/`
+- Domain sandboxes: `backend/agentaudit/domains/`
+- Test content (YAML, not code): `agentaudit/packs/`
 - Repo tests: `tests/`, one file per module (`tests/test_<module>.py`)
 
 ## Pull requests

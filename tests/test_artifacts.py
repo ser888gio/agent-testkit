@@ -2,8 +2,8 @@ import inspect
 
 import pytest
 
-from agentkit.core.artifacts import ArtifactKeyError, artifact_key
-from agentkit.core.store import Store
+from agentaudit.core.artifacts import ArtifactKeyError, artifact_key
+from agentaudit.core.store import Store
 from tests.test_web import _seed_store
 
 

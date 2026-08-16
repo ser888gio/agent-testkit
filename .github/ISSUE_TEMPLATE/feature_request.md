@@ -7,7 +7,7 @@ labels: enhancement
 
 **Problem**
 
-What are you trying to test or evaluate that agentkit doesn't cover today?
+What are you trying to test or evaluate that agentaudit doesn't cover today?
 
 **Proposed solution**
 

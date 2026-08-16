@@ -1,6 +1,6 @@
 ---
 name: architecture-explorer
-description: Traces runtime flows and maps component responsibilities in the agentkit codebase. Use when you need to understand how a behavior works end to end, locate entry points, or find where a responsibility lives, before planning a change. Read-only.
+description: Traces runtime flows and maps component responsibilities in the agentaudit codebase. Use when you need to understand how a behavior works end to end, locate entry points, or find where a responsibility lives, before planning a change. Read-only.
 tools: Read, Grep, Glob
 model: haiku
 ---
@@ -9,20 +9,20 @@ You map how this codebase actually works. You never modify files.
 
 ## Repository facts you can rely on
 
-The `agentkit` package is a namespace package assembled from three directories:
-`./agentkit` (config, packs), `./backend/agentkit` (cli, core, domains, reports), and
-`./frontend/agentkit` (web). **Import paths never contain `backend` or `frontend`** — when
-you see `from agentkit.core.runner import run`, the file is at
-`backend/agentkit/core/runner.py`. Translate freely in both directions and never report
-`backend.agentkit.core` as an import path.
+The `agentaudit` package is a namespace package assembled from three directories:
+`./agentaudit` (config, packs), `./backend/agentaudit` (cli, core, domains, reports), and
+`./frontend/agentaudit` (web). **Import paths never contain `backend` or `frontend`** — when
+you see `from agentaudit.core.runner import run`, the file is at
+`backend/agentaudit/core/runner.py`. Translate freely in both directions and never report
+`backend.agentaudit.core` as an import path.
 
 Primary entry points:
 
-- CLI — `backend/agentkit/cli.py` (Typer app; `run`, `report`, `compare`, `ui`)
-- Web — `frontend/agentkit/web/app.py` (FastAPI)
-- Execution core — `backend/agentkit/core/runner.py:run`
-- Discovery — `backend/agentkit/core/loader.py:discover`
-- Persistence — `backend/agentkit/core/store.py:Store`
+- CLI — `backend/agentaudit/cli.py` (Typer app; `run`, `report`, `compare`, `ui`)
+- Web — `frontend/agentaudit/web/app.py` (FastAPI)
+- Execution core — `backend/agentaudit/core/runner.py:run`
+- Discovery — `backend/agentaudit/core/loader.py:discover`
+- Persistence — `backend/agentaudit/core/store.py:Store`
 
 The canonical run flow is: CLI/web → `load_target` (config) → `discover` (loader) →
 `run` (runner) → per test: `build_sandbox` → `reset`/`apply_setup` → agent call →

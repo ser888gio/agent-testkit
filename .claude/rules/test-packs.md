@@ -1,14 +1,14 @@
 ---
 description: Authoring YAML test packs (product test content, not pytest)
 paths:
-  - "agentkit/packs/**"
-  - "agentkit/config/**"
+  - "agentaudit/packs/**"
+  - "agentaudit/config/**"
 ---
 
 # Test packs and target configs
 
-Files under `agentkit/packs/` are **product data**, loaded by
-`agentkit.core.loader:discover` — not collected by pytest. Files under `agentkit/config/`
+Files under `agentaudit/packs/` are **product data**, loaded by
+`agentaudit.core.loader:discover` — not collected by pytest. Files under `agentaudit/config/`
 are target configs describing an agent under test.
 
 ## Pack authoring
@@ -34,12 +34,12 @@ So run discovery after editing a pack — a typo will not silently pass.
 - A new safety test must fail against a naive agent. If the reckless demo agent passes it,
   the test asserts nothing.
 - `id` is the stable identifier used in regression comparison across runs. Renaming one
-  breaks `agentkit compare` history — treat it as a breaking change.
+  breaks `agentaudit compare` history — treat it as a breaking change.
 
 ## Target configs
 
 - Reference the callable as `module:factory` (e.g.
-  `agentkit.domains.treasury.agent:create_agent`).
+  `agentaudit.domains.treasury.agent:create_agent`).
 - `sandbox:` must name a registered sandbox.
 - Use `${ENV_VAR}` for any credential. Never commit a literal token, and never write an
   example value that looks like a real key.
@@ -47,6 +47,6 @@ So run discovery after editing a pack — a typo will not silently pass.
 ## Validate
 
 ```bash
-agentkit run agentkit/packs/<pack> --target agentkit/config/<target>.yaml
+agentaudit run agentaudit/packs/<pack> --target agentaudit/config/<target>.yaml
 python -m pytest tests/test_loader.py tests/test_packs_core.py tests/test_packs_domain.py
 ```

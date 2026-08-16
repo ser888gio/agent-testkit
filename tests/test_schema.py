@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from agentkit.core.schema import (
+from agentaudit.core.schema import (
     Assertion,
     AssertionResult,
     Category,

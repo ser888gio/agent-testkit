@@ -14,7 +14,7 @@ suite to "check" behaviour — that is the caller's job.
 - Suite: pytest, `testpaths = ["tests"]`. The **full suite is ~174 tests in ~4 seconds**, so
   never recommend an elaborate selection when the full run is comparable. Recommend
   narrow selection for tight iteration loops, and the full suite for final validation.
-- Naming maps one-to-one: `tests/test_<module>.py` ↔ `agentkit/core/<module>.py` etc.
+- Naming maps one-to-one: `tests/test_<module>.py` ↔ `agentaudit/core/<module>.py` etc.
 - Shared helpers: `tests/_fixtures.py` (underscore-prefixed so pytest skips collection;
   imported explicitly). **There is no `conftest.py`** — do not tell the caller to look for
   fixtures there.
@@ -24,8 +24,8 @@ suite to "check" behaviour — that is the caller's job.
 - **`examples/` is currently empty** (only stale `__pycache__`), although `README.md` still
   documents scripts there. Never cite an `examples/` file as coverage without checking it
   exists.
-- `agentkit/packs/**/*.yaml` are **not** pytest tests. They are product test content run by
-  `agentkit.core.loader:discover`. Do not report them as coverage for repo code, but do
+- `agentaudit/packs/**/*.yaml` are **not** pytest tests. They are product test content run by
+  `agentaudit.core.loader:discover`. Do not report them as coverage for repo code, but do
   report them when the caller is changing assertions, schema enums, or loader behaviour,
   since packs reference those by string name.
 - `PytestCollectionWarning` about `TestCase` is expected noise (`core/schema.py` class named

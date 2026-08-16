@@ -1,4 +1,4 @@
-# Productionizing AgentKit
+# Productionizing AgentAudit
 
 Agent-executable task breakdown for serving a small set of trusted design partners.
 
@@ -6,7 +6,7 @@ This plan is written for agents that start with no conversation context. Each ta
 
 ## Context
 
-`agentkit` is currently a correct single-operator tool: one process, one SQLite file, one packs directory, with runs executed inline in the request handler.
+`agentaudit` is currently a correct single-operator tool: one process, one SQLite file, one packs directory, with runs executed inline in the request handler.
 
 The goal is to serve a small set of trusted design partners. Each partner must see only their own agents, tests, and evidence, without over-building for scale that does not exist yet.
 
@@ -71,10 +71,10 @@ Every agent must read this before starting.
 
 ### Repo Shape
 
-The `agentkit` package is split across `./agentkit`, `./backend`, and `./frontend`, then reassembled by setuptools namespace packages. Import paths never contain `backend` or `frontend`; use imports such as:
+The `agentaudit` package is split across `./agentaudit`, `./backend`, and `./frontend`, then reassembled by setuptools namespace packages. Import paths never contain `backend` or `frontend`; use imports such as:
 
 ```python
-from agentkit.core.store import Store
+from agentaudit.core.store import Store
 ```
 
 ### Commands
@@ -105,16 +105,16 @@ Do not add a reverse edge:
 cli/web -> core + reports + domains
 reports -> core
 domains -> core.sandbox
-core -> nothing else from agentkit
+core -> nothing else from agentaudit
 ```
 
 ### Hard Invariants
 
-- `httpx` is imported in exactly one file: `backend/agentkit/core/agent.py`.
+- `httpx` is imported in exactly one file: `backend/agentaudit/core/agent.py`.
 - SQLite/SQL is reached only through `core/store.py:Store`.
 - Redaction runs twice on purpose: `runner.py` before building a `TestResult`, and `store.py:save_run` before the write. Removing either because "the other covers it" defeats the design.
 - `runner.py` must never raise; failures become `Status.ERROR` results.
-- The `import agentkit.domains.*.sandbox  # noqa: F401` lines in `cli.py` and `web/app.py` look dead and are not; they trigger `@register_sandbox`. Leave them.
+- The `import agentaudit.domains.*.sandbox  # noqa: F401` lines in `cli.py` and `web/app.py` look dead and are not; they trigger `@register_sandbox`. Leave them.
 
 ### Testing Convention
 
@@ -157,14 +157,14 @@ Human review required: T7, T15, T16. These touch security-sensitive or evidence-
 **Status:** Superseded by the Alembic amendment at the end of this document.
 
 **Original dependencies:** none
-**Original files:** `infra/migrations/`, `backend/agentkit/migrate.py`, `pyproject.toml`
+**Original files:** `infra/migrations/`, `backend/agentaudit/migrate.py`, `pyproject.toml`
 
 The original plan called for ordered raw-SQL migrations with custom versioning and no Alembic. That decision was explicitly overridden during implementation. Use Alembic revisions under `infra/alembic/versions/` for future migration work.
 
 ### T2: `org_id` on Every Row, Store Scoping - Done
 
 **Dependencies:** T1
-**Files:** `backend/agentkit/core/store.py`, new migration, `tests/test_store.py`
+**Files:** `backend/agentaudit/core/store.py`, new migration, `tests/test_store.py`
 
 Retrofitting ownership later means backfilling rows whose owner must be guessed.
 
@@ -187,7 +187,7 @@ python -m pytest
 ### T3: Extract `load_target_dict` - Done
 
 **Dependencies:** none
-**Files:** `backend/agentkit/core/config.py`, `tests/test_config.py`
+**Files:** `backend/agentaudit/core/config.py`, `tests/test_config.py`
 
 Targets must be loadable from a DB row, not only a file path.
 
@@ -196,7 +196,7 @@ Targets must be loadable from a DB row, not only a file path.
 - Keep CLI behavior unchanged.
 - Keep `${ENV_VAR}` interpolation server-side; secrets never sit in stored config.
 
-**Acceptance:** `load_target(path)` and `load_target_dict(yaml.safe_load(text))` produce identical `TargetConfig` objects for every fixture in `agentkit/config/`.
+**Acceptance:** `load_target(path)` and `load_target_dict(yaml.safe_load(text))` produce identical `TargetConfig` objects for every fixture in `agentaudit/config/`.
 
 **Validate:**
 
@@ -207,7 +207,7 @@ python -m pytest tests/test_config.py tests/test_cli.py
 ### T4: Add `load_tests_from_rows` - Done
 
 **Dependencies:** none
-**Files:** `backend/agentkit/core/loader.py`, `tests/test_loader.py`
+**Files:** `backend/agentaudit/core/loader.py`, `tests/test_loader.py`
 
 - Add `load_tests_from_rows(rows: list[dict]) -> list[TestCase]`.
 - Reuse the existing `_build_test_case` (`loader.py:59`) verbatim. It already enforces the assertion registry (`loader.py:80`), category/risk enums, and input-xor-turns rule.
@@ -225,7 +225,7 @@ python -m pytest tests/test_loader.py
 ### T5: Targets and Packs as DB Rows - Done
 
 **Dependencies:** T2, T3, T4
-**Files:** `backend/agentkit/core/store.py`, new migration, `tests/test_store.py`
+**Files:** `backend/agentaudit/core/store.py`, new migration, `tests/test_store.py`
 
 - Add `targets (id, org_id, name, config_json, created_at, secret_ref)`.
 - Add `packs (id, org_id, name, created_at)`.
@@ -257,9 +257,9 @@ Ships before any external partner gets interactive access. A shared credential h
 ### T6: Keycloak Infrastructure and Realm - Done
 
 **Dependencies:** none
-**Files:** `infra/docker-compose.yml`, `infra/keycloak/agentkit-realm.json`, `docs/`
+**Files:** `infra/docker-compose.yml`, `infra/keycloak/agentaudit-realm.json`, `docs/`
 
-- Add a Keycloak service with its own database, separate from AgentKit's.
+- Add a Keycloak service with its own database, separate from AgentAudit's.
 - Use one realm and one group per org.
 - Add a protocol mapper that puts the org into an `org_id` token claim.
 - Do not add a local memberships table. Keycloak is the single source of truth for identity and org membership.
@@ -278,7 +278,7 @@ check. Service accounts use client credentials; human passwords are never sent t
 **Human review required.**
 
 **Dependencies:** T6, T2
-**Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
+**Files:** `frontend/agentaudit/web/app.py`, `tests/test_web.py`
 
 - Replace process-global `_ACCESS_TOKEN` / `_require_token` with a typed `Principal` carrying org,
   subject, email, realm roles, and authentication method.
@@ -300,7 +300,7 @@ python -m pytest tests/test_web.py
 ### T8: Scope Every Route - Done
 
 **Dependencies:** T7, T5
-**Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
+**Files:** `frontend/agentaudit/web/app.py`, `tests/test_web.py`
 
 - Apply `current_principal` to every application route, not just state-changing ones. The login,
   callback, and logout protocol endpoints are deliberately public.
@@ -323,7 +323,7 @@ python -m pytest
 ### T9: Delete the Filesystem Test Write - Done
 
 **Dependencies:** T5, T8
-**Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
+**Files:** `frontend/agentaudit/web/app.py`, `tests/test_web.py`
 
 This closes the crosstalk hole. `app.py:421` currently writes tenant-authored tests to `get_packs_dir()/user/<id>.yaml`, a directory every org's `discover()` walks.
 
@@ -342,7 +342,7 @@ python -m pytest tests/test_web.py
 ### T10: Connection Pool - Done
 
 **Dependencies:** T2
-**Files:** `frontend/agentkit/web/app.py`, `tests/test_web.py`
+**Files:** `frontend/agentaudit/web/app.py`, `tests/test_web.py`
 
 Use one long-lived `Store` and a bounded SQLite connection pool. Each operation exclusively leases
 a connection for its complete transaction, then returns it. App shutdown closes idle connections
@@ -362,7 +362,7 @@ python -m pytest tests/test_web.py
 ### T11: Jobs Table with Lease Fields
 
 **Dependencies:** T2
-**Files:** new migration, `backend/agentkit/core/store.py`, `tests/test_store.py`
+**Files:** new migration, `backend/agentaudit/core/store.py`, `tests/test_store.py`
 
 Add `jobs`:
 
@@ -385,7 +385,7 @@ python -m pytest tests/test_store.py
 ### T12: Worker Process
 
 **Dependencies:** T11
-**Files:** `backend/agentkit/worker.py`, `pyproject.toml`, `tests/test_worker.py`
+**Files:** `backend/agentaudit/worker.py`, `pyproject.toml`, `tests/test_worker.py`
 
 - Add a worker loop: select queued jobs ordered by priority and creation time with `FOR UPDATE SKIP LOCKED LIMIT 1`, claim with `lease_owner` and `lease_expires_at`, run, and persist.
 - Call unchanged `core.runner.run`, then score, then `store.save_run`.
@@ -407,11 +407,11 @@ python -m pytest tests/test_worker.py
 ### T13: Async Submission and Real Status
 
 **Dependencies:** T12
-**Files:** `frontend/agentkit/web/app.py`, templates, `tests/test_web.py`
+**Files:** `frontend/agentaudit/web/app.py`, templates, `tests/test_web.py`
 
 - `POST /runs` (`app.py:655`) inserts a job and returns immediately; it no longer calls `run_tests`.
 - `run_status` (`app.py:624`) currently has dead branches because a persisted run always has `finished_at`, so `running` is never true. Repoint it at jobs for real state.
-- Reuse the existing `_status_fragment.html` and `static/poll.js` polling pattern that `frontend/agentkit/web/CLAUDE.md` prescribes. Do not invent a second mechanism.
+- Reuse the existing `_status_fragment.html` and `static/poll.js` polling pattern that `frontend/agentaudit/web/CLAUDE.md` prescribes. Do not invent a second mechanism.
 
 **Acceptance:** `POST /runs` returns without executing; the job is queued and no run row exists yet; the status endpoint reports genuine queued/running/done states.
 
@@ -424,7 +424,7 @@ python -m pytest tests/test_web.py
 ### T14: Artifact Storage Policy
 
 **Dependencies:** T2, T8
-**Files:** new migration, `backend/agentkit/core/artifacts.py`, `frontend/agentkit/web/app.py`
+**Files:** new migration, `backend/agentaudit/core/artifacts.py`, `frontend/agentaudit/web/app.py`
 
 Decide this now even though object storage is deferred. Evidence blobs are where cross-tenant leakage reappears, because the first thing that writes a file inherits none of T2's scoping.
 
@@ -448,7 +448,7 @@ python -m pytest tests/test_artifacts.py tests/test_web.py
 **Human review required.**
 
 **Dependencies:** T12
-**Files:** `backend/agentkit/worker.py`, `backend/agentkit/core/agent.py`, `tests/test_security_p0.py`
+**Files:** `backend/agentaudit/worker.py`, `backend/agentaudit/core/agent.py`, `tests/test_security_p0.py`
 
 #### Secrets
 
@@ -484,7 +484,7 @@ python -m pytest tests/test_security_p0.py tests/test_redaction.py
 
 **Human review required.**
 
-**Shipped:** `backend/agentkit/core/isolation.py`. One spawned supervisor per `run()` owns
+**Shipped:** `backend/agentaudit/core/isolation.py`. One spawned supervisor per `run()` owns
 the real sandbox and evaluates tests. Agent code runs in a nested spawned worker against an
 RPC sandbox proxy. On timeout the worker process tree is killed before the supervisor takes
 the after-snapshot, so no live agent can race or alter the recorded diff. The worker is
@@ -497,8 +497,8 @@ process groups plus hard CPU/address-space rlimits. Windows uses nested kill-on-
 Objects with per-process CPU and memory limits, so descendants are reaped on timeout too.
 
 **Dependencies:** none. This is ungated and worth shipping single-tenant.
-**Files:** `backend/agentkit/core/isolation.py`, `backend/agentkit/core/runner.py`,
-`backend/agentkit/core/schema.py`, `tests/test_isolation.py`, `tests/test_runner.py`
+**Files:** `backend/agentaudit/core/isolation.py`, `backend/agentaudit/core/runner.py`,
+`backend/agentaudit/core/schema.py`, `tests/test_isolation.py`, `tests/test_runner.py`
 
 `runner.py:30` documents the defect: `_run_with_timeout` submits to a `ThreadPoolExecutor` and abandons the thread on timeout, because CPython has no thread-kill primitive. A hung agent leaks a thread and socket per timeout. `runner.py:118` must discard the sandbox diff since the orphan may still be mutating it, so a timed-out test yields no usable evidence.
 
@@ -531,7 +531,7 @@ python -m pytest
 - Run migrations by explicit deploy step, never implicitly on app startup.
 - Run web and worker as separate services from the same image, differing only in command.
 - Put web and worker on different network policies: only web reaches Keycloak's public endpoints; only the worker reaches partner endpoints; the worker does not reach the control-plane DB directly if avoidable.
-- `AGENTKIT_DB` becomes a Postgres DSN.
+- `AGENTAUDIT_DB` becomes a Postgres DSN.
 - Keep SQLite for local dev and the test suite while it stays free; drop it the moment it costs branches in `store.py`.
 - Bind `0.0.0.0` only behind TLS and T7's dependency.
 
@@ -561,7 +561,7 @@ Run this after the phases land.
 7. **Regression canary:** this still works unchanged:
 
    ```powershell
-   agentkit run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml
+   agentaudit run agentaudit/packs/treasury --target agentaudit/config/treasury-agent.yaml
    ```
 
    The CLI's file-based path proves T3/T4/T5 did not break first-party packs.
@@ -585,9 +585,9 @@ Original T1 decided against Alembic/ORM: "No ORM, but strict migration disciplin
 - The migration package is included in built wheels.
 - The application resolves the script directory through package resources rather than assuming a source checkout.
 - The baseline uses `op.execute("CREATE TABLE IF NOT EXISTS ...")`, so it is idempotent against a DB `Store` already initialized directly.
-- `agentkit migrate [--db PATH] [--status]` is a CLI subcommand in `backend/agentkit/cli.py` wrapping `alembic.command.upgrade`, with `sqlalchemy.url` set dynamically from `--db` per invocation.
+- `agentaudit migrate [--db PATH] [--status]` is a CLI subcommand in `backend/agentaudit/cli.py` wrapping `alembic.command.upgrade`, with `sqlalchemy.url` set dynamically from `--db` per invocation.
 - Status lists pending revisions in application order, or reports that the database is up to date.
-- The old `infra/migrations/*.sql` custom raw-SQL engine and `backend/agentkit/migrate.py` hand-rolled runner were deleted.
+- The old `infra/migrations/*.sql` custom raw-SQL engine and `backend/agentaudit/migrate.py` hand-rolled runner were deleted.
 - `tests/test_migrate.py` verifies clean application to a fresh DB, idempotent second invocation, resume from a partially-created baseline, pending/up-to-date status output, and the `alembic_version` table.
 
 Future tasks that touch migrations, including T2, T5, T11, and T14, should add an Alembic revision under `infra/alembic/versions/` via:

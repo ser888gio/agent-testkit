@@ -1,4 +1,4 @@
-# agentkit — EU AI-Act Compliance: Executable Slice + Platform Roadmap
+# agentaudit — EU AI-Act Compliance: Executable Slice + Platform Roadmap
 
 ## How the two plans relate
 
@@ -120,7 +120,7 @@ network-exposed or SaaS-distributed; Phase 0 is loopback + trusted-local.
   per turn.
 - Sandbox reset stays per-test; agent statefulness models a server-side session.
 
-### 0c. Agentic attack packs — `agentkit/packs/agentic/` (CLAUDE §2, Wave 1 of CODEX P4)
+### 0c. Agentic attack packs — `agentaudit/packs/agentic/` (CLAUDE §2, Wave 1 of CODEX P4)
 
 One folder per scenario; **reuse treasury/email sandboxes + existing assertions only**.
 Every pack has a matching **vulnerable fixture** (via `_reckless_factory`) proving the test
@@ -144,7 +144,7 @@ Test ids use the pack namespace (`agentic.tool_misuse.mass_payout`) so the compl
 maps OWASP codes. ASI04/07/08/10 are not black-box testable through one endpoint → no packs;
 surfaced as documented gaps by the report (Wave 2/3 in Phase 4 where lifecycle access exists).
 
-### 0d. Compliance mapping — `agentkit/core/compliance.py` (CLAUDE §3)
+### 0d. Compliance mapping — `agentaudit/core/compliance.py` (CLAUDE §3)
 
 Pure data + lookup, no framework, no LLM (CODEX: "do not use an LLM or eval for
 authoritative classification").
@@ -159,7 +159,7 @@ authoritative classification").
 - `UNCOVERED: list[(code, reason)]` for ASI04/07/08/10.
 - `controls_for(result) -> Control` — one dict lookup + refinement. Not a rules engine.
 
-### 0e. Compliance report — `agentkit/reports/compliance.py` (CLAUDE §4)
+### 0e. Compliance report — `agentaudit/reports/compliance.py` (CLAUDE §4)
 
 Same `(run, score) -> str` interface as `reports/md.py`:
 
@@ -171,7 +171,7 @@ Same `(run, score) -> str` interface as `reports/md.py`:
   No new redaction path — evidence already redacted upstream.
 - **Fail-closed language (CODEX):** the report must render `incomplete` runs as
   *incomplete*, `skipped`/`unsupported` as *not evidence*, and must carry the standing
-  disclaimer that agentkit produces **technical readiness evidence, not a compliance /
+  disclaimer that agentaudit produces **technical readiness evidence, not a compliance /
   CE / conformity determination** — that stays with the provider/deployer/assessor.
 
 ### 0f. CLI + registration (CLAUDE §5)
@@ -185,7 +185,7 @@ Same `(run, score) -> str` interface as `reports/md.py`:
 ### 0g. Docs — `docs/specs/compliance.md` (CLAUDE §6, framed by CODEX)
 
 Control-mapping table; what each pack proves; the multi-turn `turns:` field; the
-fail-closed outcome vocabulary; and an explicit **"what agentkit does NOT certify"**
+fail-closed outcome vocabulary; and an explicit **"what agentaudit does NOT certify"**
 section. **Also** reference the binding-vs-pending legal timeline caveat from CODEX
 (Reg. (EU) 2024/1689 is the binding baseline; the Digital Omnibus is pending OJ
 publication — never merge the two timelines). Store legal metadata + licensed citations
@@ -204,12 +204,12 @@ only, never unlicensed standards text.
 
 ### Phase 0 verification
 
-1. `agentkit run agentkit/packs/agentic --target ...treasury-agent.yaml` — packs
+1. `agentaudit run agentaudit/packs/agentic --target ...treasury-agent.yaml` — packs
    discover/run; the safe demo agent passes; `code_execution` reports `skipped`.
 2. **Tests bite**: a reckless/stateful-vulnerable callable target (per `_reckless_factory`)
    **fails** `tool_misuse` / `memory_poisoning` / `goal_hijack`. Each pack also passes a
    hardened fixture (CODEX gate).
-3. `agentkit report --run <id> --format compliance` — EU-article-grouped report, correct
+3. `agentaudit report --run <id> --format compliance` — EU-article-grouped report, correct
    rollup, ISO/NIST columns, ASI04/07/08/10 under "Not tested".
 4. `tests/test_compliance.py`: `controls_for` maps `data_leakage → Art.10/15` and
    `agentic.tool_misuse.* → ASI02`; report marks ASI04/07/08/10 `not-tested`; no unredacted
@@ -275,7 +275,7 @@ change. Reviewer separation, expiring waivers. Signed JSON/PDF readiness dossier
 source versions, applicability rationale, control matrix, evidence hashes, assurance levels,
 findings, gaps, exclusions, waivers). Draft Annex IV / QMS / risk-register / FRIA / DPIA
 inputs — **never** an automatic DoC/CE/certificate. Internal DPIA + CRA applicability review
-for agentkit itself. Pilot non-high-risk first, then one Annex III case with qualified review.
+for agentaudit itself. Pilot non-high-risk first, then one Annex III case with qualified review.
 
 ---
 

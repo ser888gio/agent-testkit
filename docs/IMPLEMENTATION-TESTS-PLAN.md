@@ -2,7 +2,7 @@
 
 ## Objective
 
-Evolve `agentkit` from a fixed-pack black-box test runner into an adaptive harness platform
+Evolve `agentaudit` from a fixed-pack black-box test runner into an adaptive harness platform
 for AI agents. The platform should:
 
 1. discover what an agent does and how it is exposed,
@@ -29,7 +29,7 @@ We should **not** build one bespoke harness codebase per tested AI agent.
 
 We should build:
 
-- one reusable `agentkit` runtime,
+- one reusable `agentaudit` runtime,
 - one reusable test and harness catalog,
 - one generated or configured **agent profile** per tested system,
 - one generated **harness plan** per agent profile.
@@ -45,7 +45,7 @@ This keeps the product scalable while preserving agent-specific realism.
    Per-agent harnesses should be composed from templates, adapters, simulators, and validators.
 
 3. **External libraries should be wrapped, not allowed to dominate the architecture**
-   `agentkit` should define the core runtime and evidence model; imported tools should plug into it.
+   `agentaudit` should define the core runtime and evidence model; imported tools should plug into it.
 
 4. **Every integration must improve one of three things**
    - attack coverage
@@ -78,7 +78,7 @@ This keeps the product scalable while preserving agent-specific realism.
 
 ## Target Architecture Additions
 
-Add these new core concepts to `agentkit`:
+Add these new core concepts to `agentaudit`:
 
 - `AgentProfile`
   - purpose
@@ -199,13 +199,13 @@ Goal: reuse practical black-box eval and red-team workflows quickly.
 
 ### Integration strategy
 
-Use `promptfoo` as an external execution backend behind an `agentkit` adapter rather than making it the primary runtime.
+Use `promptfoo` as an external execution backend behind an `agentaudit` adapter rather than making it the primary runtime.
 
 ### Subtasks
 
 1. Define an adapter that maps an `AgentProfile` into `promptfoo` configuration.
 2. Support `promptfoo` prompt-based and endpoint-based execution modes.
-3. Normalize `promptfoo` results into `agentkit` `TestResult`s.
+3. Normalize `promptfoo` results into `agentaudit` `TestResult`s.
 4. Map `promptfoo` vulnerabilities and assertions into internal categories and risk levels.
 5. Add import support for reusable `promptfoo` scenarios into the internal test catalog.
 
@@ -241,7 +241,7 @@ Treat `garak` as a probe library and execution backend for black-box adversarial
    - data leakage
    - jailbreak / policy bypass
    - harmful output
-3. Normalize hit reports into reproducible `agentkit` evidence artifacts.
+3. Normalize hit reports into reproducible `agentaudit` evidence artifacts.
 4. Add allowlist and blocklist controls for probe families per domain.
 5. Add cost and runtime budgeting so scans stay bounded.
 
@@ -259,7 +259,7 @@ Treat `garak` as a probe library and execution backend for black-box adversarial
 
 ## 5. `inspect_ai` Bridge
 
-Goal: support richer multi-turn, tool-using, and scored evaluations without giving up the `agentkit` evidence model.
+Goal: support richer multi-turn, tool-using, and scored evaluations without giving up the `agentaudit` evidence model.
 
 ### Why integrate it
 
@@ -267,12 +267,12 @@ Goal: support richer multi-turn, tool-using, and scored evaluations without givi
 
 ### Integration strategy
 
-Bridge `agentkit` harness plans into `inspect_ai` tasks and map outputs back into the `agentkit` store.
+Bridge `agentaudit` harness plans into `inspect_ai` tasks and map outputs back into the `agentaudit` store.
 
 ### Subtasks
 
 1. Define a translation layer from `HarnessPlan` to `inspect_ai` task definitions.
-2. Decide which `inspect_ai` concepts become first-class in `agentkit`:
+2. Decide which `inspect_ai` concepts become first-class in `agentaudit`:
    - task
    - scorer
    - sample
@@ -315,7 +315,7 @@ Reuse ideas and selective task patterns, not full runtime ownership.
    - structured field check
    - LLM judge, optional
 3. Add an internal registry mechanism for reusable small evals.
-4. Document a path for porting community evals into `agentkit` format.
+4. Document a path for porting community evals into `agentaudit` format.
 
 ### Deliverables
 
@@ -454,12 +454,12 @@ They are the right reference point for browser-native agent harnesses and experi
 
 ### Integration strategy
 
-Treat browser evaluation as a specialized harness family inside `agentkit`, not a separate product.
+Treat browser evaluation as a specialized harness family inside `agentaudit`, not a separate product.
 
 ### Subtasks
 
 1. Add a browser harness type to the `HarnessTemplate` model.
-2. Define observation and action adapters between `agentkit` and browser environments.
+2. Define observation and action adapters between `agentaudit` and browser environments.
 3. Add browser-specific artifact capture:
    - screenshots
    - action timelines
@@ -490,11 +490,11 @@ Goal: strengthen security evidence and compliance mapping for customers who need
 
 ### Why integrate it
 
-This helps position `agentkit` as an assurance product rather than just a test runner.
+This helps position `agentaudit` as an assurance product rather than just a test runner.
 
 ### Integration strategy
 
-Reuse benchmark categories and reporting ideas where they match agent risk, without constraining all of `agentkit` to cybersecurity-only use cases.
+Reuse benchmark categories and reporting ideas where they match agent risk, without constraining all of `agentaudit` to cybersecurity-only use cases.
 
 ### Subtasks
 
@@ -623,7 +623,7 @@ Scope:
 
 Outcome:
 
-`agentkit` can ingest and normalize external eval results from practical black-box tools.
+`agentaudit` can ingest and normalize external eval results from practical black-box tools.
 
 ## Milestone B: Adaptive Harness Foundations
 
@@ -634,7 +634,7 @@ Scope:
 
 Outcome:
 
-`agentkit` can generate domain-aware tool-use and conversation harnesses.
+`agentaudit` can generate domain-aware tool-use and conversation harnesses.
 
 ## Milestone C: Iterative Adversarial Engine
 
@@ -645,7 +645,7 @@ Scope:
 
 Outcome:
 
-`agentkit` can select, adapt, escalate, and reproduce attacks rather than only run static suites.
+`agentaudit` can select, adapt, escalate, and reproduce attacks rather than only run static suites.
 
 ## Milestone D: Specialized Environments and Reporting
 
@@ -655,7 +655,7 @@ Scope:
 
 Outcome:
 
-`agentkit` supports browser agents and stronger security/compliance reporting.
+`agentaudit` supports browser agents and stronger security/compliance reporting.
 
 ## What Not To Do
 
@@ -671,7 +671,7 @@ The implementation is successful when:
 
 1. a new agent endpoint can be profiled and assigned a harness plan with minimal manual setup,
 2. the planner can explain why it selected each test or attack family,
-3. third-party eval tools can run through adapters and produce normalized `agentkit` results,
+3. third-party eval tools can run through adapters and produce normalized `agentaudit` results,
 4. multi-turn and tool-use agents can be tested in realistic simulated environments,
 5. successful attacks can be replayed and reproduced,
 6. reports clearly separate:

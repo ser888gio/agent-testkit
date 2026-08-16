@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from agentkit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
-from agentkit.core.schema import (
+from agentaudit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
+from agentaudit.core.schema import (
     AssertionResult,
     Category,
     Risk,
@@ -13,8 +13,8 @@ from agentkit.core.schema import (
     Status,
     TestResult,
 )
-from agentkit.core.scoring import score
-from agentkit.reports import render, to_html, to_json, to_junit, to_markdown, to_plan_markdown
+from agentaudit.core.scoring import score
+from agentaudit.reports import render, to_html, to_json, to_junit, to_markdown, to_plan_markdown
 
 
 def _now():
@@ -209,7 +209,7 @@ def _plan() -> HarnessPlan:
 def test_plan_report_covers_profile_selection_and_untested_areas():
     out = to_plan_markdown(_plan())
 
-    assert "# agentkit plan - treasury-agent" in out
+    assert "# agentaudit plan - treasury-agent" in out
     assert "answered a trivial probe in 12 ms" in out
     assert "written for the treasury domain" in out
     assert "## Not tested (1)" in out

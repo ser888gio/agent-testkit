@@ -2,12 +2,12 @@ import sys
 import time
 from types import SimpleNamespace
 
-from agentkit.core.assertions import AssertionContext, assertion
-from agentkit.core.config import CallableSpec, TargetConfig
-from agentkit.core.isolation import _apply_posix_limits
-from agentkit.core.runner import run
-from agentkit.core.sandbox import Sandbox, register_sandbox
-from agentkit.core.schema import Assertion, AssertionResult, Category, TestCase
+from agentaudit.core.assertions import AssertionContext, assertion
+from agentaudit.core.config import CallableSpec, TargetConfig
+from agentaudit.core.isolation import _apply_posix_limits
+from agentaudit.core.runner import run
+from agentaudit.core.sandbox import Sandbox, register_sandbox
+from agentaudit.core.schema import Assertion, AssertionResult, Category, TestCase
 
 MODULE = "tests.test_isolation"
 
@@ -156,7 +156,7 @@ def test_proxy_class_dunders_are_a_known_isolation_gap():
     this survivable. If this test starts failing, the gap was closed -- delete
     it and update the caveat in infra/CLAUDE.md.
     """
-    from agentkit.core.isolation import _RemoteObject
+    from agentaudit.core.isolation import _RemoteObject
 
     proxy = _RemoteObject.__new__(_RemoteObject)
 

@@ -23,9 +23,9 @@ import it, so `pytest` errors at collection and runs **nothing**:
    left to smoke-test.
 2. Rewrite `tests/test_http_agent.py` to depend on in-repo code only. Replace the
    two `examples.*` imports with:
-   - callable agent: `from agentkit.packs.core._demo_safe_agent import create_agent`
+   - callable agent: `from agentaudit.packs.core._demo_safe_agent import create_agent`
    - HTTP stub: build a tiny FastAPI app **in the test file** that mirrors
-     `agentkit/config/demo-stub-http.yaml` (`POST /run`, body `{"input": "..."}`,
+     `agentaudit/config/demo-stub-http.yaml` (`POST /run`, body `{"input": "..."}`,
      returns `{"text": "..."}`), wrapping the same `_safe_reply` so the parity
      assertion holds. Return HTTP 400 when the `input` key is absent (the second
      test asserts `r.error == "http 400"`).
@@ -34,7 +34,7 @@ import it, so `pytest` errors at collection and runs **nothing**:
    ```python
    from fastapi import FastAPI, HTTPException
    from fastapi.testclient import TestClient
-   from agentkit.packs.core._demo_safe_agent import create_agent, _safe_reply
+   from agentaudit.packs.core._demo_safe_agent import create_agent, _safe_reply
 
    stub_app = FastAPI()
 
@@ -57,10 +57,10 @@ use the same function, don't invent new reply logic.
 
 ## 2. Redact numeric scalars (F2) — P1
 
-**Problem:** `agentkit/core/redaction.py:74-81` — `Redactor.redact()` recurses into
+**Problem:** `agentaudit/core/redaction.py:74-81` — `Redactor.redact()` recurses into
 `dict`/`list` and redacts `str`, but returns `copy.deepcopy(value)` for every other
 scalar. A numeric account/card/phone in an agent's JSON response
-(e.g. `{"account_number": 123456789}`) is stored **verbatim** in `agentkit.db` and
+(e.g. `{"account_number": 123456789}`) is stored **verbatim** in `agentaudit.db` and
 shown in the dashboard — breaking the "redaction by default" guarantee.
 
 **Do:** in `Redactor.redact`, handle `int`/`float` by running text redaction on their
@@ -97,8 +97,8 @@ that's fine. Unmatched numbers keep their original type/value.
 ## 3. Redact evidence once, not twice (F3) — P2
 
 **Problem:** the runner already redacts evidence into `TestResult`
-(`agentkit/core/runner.py:105-107` via `_redact_evidence`), then `Store.save_run`
-redacts the **same** payload a second time (`agentkit/core/store.py:88, 122-131`),
+(`agentaudit/core/runner.py:105-107` via `_redact_evidence`), then `Store.save_run`
+redacts the **same** payload a second time (`agentaudit/core/store.py:88, 122-131`),
 re-instantiating a `Redactor` from the same config. Redundant work, and no single
 source of truth.
 
@@ -154,7 +154,7 @@ names + import order), fix those, and note the rest as follow-up.
 
 ## 5. Stop leaking worker threads on timeout (F5) — P3
 
-**Problem:** `agentkit/core/runner.py:30-40` — `_run_with_timeout` creates a new
+**Problem:** `agentaudit/core/runner.py:30-40` — `_run_with_timeout` creates a new
 `ThreadPoolExecutor` per test and, on timeout, calls `shutdown(wait=False)`; the hung
 `agent.run` thread keeps running for the process lifetime. Against a slow/flaky HTTP
 endpoint, threads and sockets accumulate.
@@ -162,7 +162,7 @@ endpoint, threads and sockets accumulate.
 **Do (lazy, honest):** Python can't force-kill a thread, so make the leak bounded and
 loud rather than pretending to cancel:
 - Use daemon threads so they never block process exit: pass
-  `ThreadPoolExecutor(max_workers=1, thread_name_prefix="agentkit-agent")` and rely on
+  `ThreadPoolExecutor(max_workers=1, thread_name_prefix="agentaudit-agent")` and rely on
   the interpreter reaping daemons at exit (thread-pool workers are daemonic by default
   in CPython, so the process-exit hang is already avoided — verify).
 - Add a `ponytail:` comment stating the ceiling:
@@ -180,9 +180,9 @@ returns `error="timeout"`).
 
 ## 6. Constrain web run/compare paths (F6) — P3, defensive
 
-**Problem:** `agentkit/web/app.py:230-238` — `POST /runs?target=&packs=` loads any YAML
+**Problem:** `agentaudit/web/app.py:230-238` — `POST /runs?target=&packs=` loads any YAML
 path and `discover()` will `exec_module` any `test_*.py` under the given dir
-(`agentkit/core/loader.py:113-122`). `agentkit ui` defaults to `127.0.0.1` (safe), but
+(`agentaudit/core/loader.py:113-122`). `agentaudit ui` defaults to `127.0.0.1` (safe), but
 if it's ever bound to `0.0.0.0` (`--host`), these routes are arbitrary-file-read / RCE.
 
 **Do:** reject `target`/`packs` that resolve outside the current working directory, in
@@ -198,7 +198,7 @@ def _safe_path(p: str) -> Path:
 
 Use it for `target` and `packs` before `load_target` / `discover`. `compare_runs` takes
 run ids (not filesystem paths), so it needs no change. Also add one line to the
-README / `agentkit ui` help noting that `--host 0.0.0.0` exposes run-triggering and
+README / `agentaudit ui` help noting that `--host 0.0.0.0` exposes run-triggering and
 should stay off untrusted networks.
 
 **STOP if:** existing tests pass relative paths that legitimately live outside cwd —

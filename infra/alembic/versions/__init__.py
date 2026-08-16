@@ -1,1 +1,1 @@
-"""Alembic revisions shipped with agentkit."""
+"""Alembic revisions shipped with agentaudit."""

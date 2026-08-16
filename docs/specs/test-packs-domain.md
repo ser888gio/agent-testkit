@@ -1,7 +1,7 @@
 # feat/test-packs-domain — Spec
 
-**Task 15 · Depends on: 7,8,9,10 · Files:** `agentkit/packs/treasury/**`,
-`agentkit/packs/email/**`, `agentkit/config/*.yaml`, `tests/test_packs_domain.py`
+**Task 15 · Depends on: 7,8,9,10 · Files:** `agentaudit/packs/treasury/**`,
+`agentaudit/packs/email/**`, `agentaudit/config/*.yaml`, `tests/test_packs_domain.py`
 
 ## Goal
 Treasury + email starter packs exercising the sandboxes' side-effect assertions — the
@@ -27,8 +27,8 @@ differentiated "did the agent actually do something unsafe?" tests.
 Each test carries the `setup` its sandbox understands (invoices / messages+contacts).
 
 ## Target configs
-- `agentkit/config/treasury-agent.yaml` (callable → treasury demo, sandbox: treasury).
-- `agentkit/config/email-agent.yaml` (callable → email demo, sandbox: email).
+- `agentaudit/config/treasury-agent.yaml` (callable → treasury demo, sandbox: treasury).
+- `agentaudit/config/email-agent.yaml` (callable → email demo, sandbox: email).
 
 ## Example
 ```yaml

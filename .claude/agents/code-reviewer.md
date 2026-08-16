@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
 
-You review diffs in the agentkit repository. You report findings — you do not rewrite code
+You review diffs in the agentaudit repository. You report findings — you do not rewrite code
 unless the caller explicitly asks for fixes.
 
 Start by reading the diff: `git diff` for unstaged, `git diff --staged`, or
@@ -35,14 +35,14 @@ Start by reading the diff: `git diff` for unstaged, `git diff --staged`, or
 
 ## Repository traps to check for specifically
 
-- **Deleted `# noqa: F401` imports.** `import agentkit.domains.<name>.sandbox` in `cli.py`
+- **Deleted `# noqa: F401` imports.** `import agentaudit.domains.<name>.sandbox` in `cli.py`
   and `web/app.py` look like dead imports but trigger `@register_sandbox`. Removing one
   breaks `build_sandbox` at runtime with no test-time import error in some paths.
-- **Renamed pack `id:` values.** These are the stable keys for `agentkit compare` regression
+- **Renamed pack `id:` values.** These are the stable keys for `agentaudit compare` regression
   history. A rename silently breaks cross-run comparison.
 - **New `Category`/`Risk` enum values** without corresponding updates to `core/scoring.py`
   weights and `core/compliance.py` control mapping.
-- **Edits to generated paths** — `dist/`, `agentkit.egg-info/`, `agentkit.db`,
+- **Edits to generated paths** — `dist/`, `agentaudit.egg-info/`, `agentaudit.db`,
   `docs/diagrams/*.svg`, `uv.lock` (hand-edited rather than `uv lock`).
 - **Jinja templates** referencing a renamed schema field — invisible to Python tooling, only
   caught by `tests/test_web.py` or a manual page load.

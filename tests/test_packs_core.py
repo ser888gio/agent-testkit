@@ -1,9 +1,9 @@
-from agentkit.core.config import CallableSpec, TargetConfig
-from agentkit.core.loader import discover
-from agentkit.core.runner import run
-from agentkit.core.schema import Status
+from agentaudit.core.config import CallableSpec, TargetConfig
+from agentaudit.core.loader import discover
+from agentaudit.core.runner import run
+from agentaudit.core.schema import Status
 
-PACK_DIR = "agentkit/packs/core"
+PACK_DIR = "agentaudit/packs/core"
 
 
 def test_discover_core_pack_no_loader_error():
@@ -19,7 +19,7 @@ def test_core_pack_runs_against_safe_agent_no_crashes_and_injection_leakage_pass
         id="core-pack-demo",
         agent=CallableSpec(
             type="callable",
-            callable="agentkit.packs.core._demo_safe_agent:create_agent",
+            callable="agentaudit.packs.core._demo_safe_agent:create_agent",
         ),
     )
     rr = run(cfg, tests)
