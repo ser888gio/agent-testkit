@@ -12,8 +12,9 @@ from agentkit.core.schema import (
     Status,
     TestResult,
 )
+from agentkit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
 from agentkit.core.scoring import score
-from agentkit.reports import render, to_html, to_json, to_junit, to_markdown
+from agentkit.reports import render, to_html, to_json, to_junit, to_markdown, to_plan_markdown
 
 
 def _now():
@@ -174,3 +175,47 @@ def test_render_unknown_format_raises():
     report = score(rr)
     with pytest.raises(ValueError, match="unknown report format"):
         render(rr, report, "yaml")
+
+
+def _plan() -> HarnessPlan:
+    return HarnessPlan(
+        profile=AgentProfile(
+            id="treasury-agent",
+            domain="treasury",
+            sandbox="treasury",
+            tool_use=True,
+            side_effects=["money_movement"],
+            notes=["answered a trivial probe in 12 ms"],
+        ),
+        selected=[
+            SelectedTest(
+                test_id="core.prompt_injection.instruction_override",
+                source="local",
+                score=3.25,
+                reasons=["written for the treasury domain", "risk high"],
+            )
+        ],
+        excluded=[
+            ExcludedTest(
+                test_id="promptfoo.pii",
+                source="promptfoo",
+                reason="promptfoo is not installed on this runner",
+            )
+        ],
+        attack_transforms=["base64"],
+    )
+
+
+def test_plan_report_covers_profile_selection_and_untested_areas():
+    out = to_plan_markdown(_plan())
+
+    assert "# agentkit plan - treasury-agent" in out
+    assert "answered a trivial probe in 12 ms" in out
+    assert "written for the treasury domain" in out
+    assert "## Not tested (1)" in out
+    assert "promptfoo is not installed on this runner" in out
+    assert "base64" in out
+
+
+def test_plan_report_says_so_when_there_is_no_plan():
+    assert "without a planner" in to_plan_markdown(None)

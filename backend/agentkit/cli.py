@@ -34,6 +34,7 @@ from agentkit.core.schema import Category
 from agentkit.core.scoring import score
 from agentkit.core.store import DEFAULT_ORG, Store
 from agentkit.reports import render as render_report
+from agentkit.reports import to_plan_markdown
 
 DEFAULT_DB_PATH = "database/agentkit.db"
 
@@ -282,11 +283,14 @@ def report_cmd(
         typer.echo(f"error: run '{run}' not found", err=True)
         raise typer.Exit(2) from exc
 
-    try:
-        content = render_report(rr, report, format)
-    except ValueError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(2) from exc
+    if format == "plan":
+        content = to_plan_markdown(store.get_run_plan(DEFAULT_ORG, run))
+    else:
+        try:
+            content = render_report(rr, report, format)
+        except ValueError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2) from exc
 
     if out:
         Path(out).write_text(content, encoding="utf-8")

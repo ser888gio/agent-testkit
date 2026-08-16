@@ -217,10 +217,19 @@ def rank(
 
 
 def unclassified_assertions() -> set[str]:
-    """Registry assertions this module has no capability opinion about.
+    """Shipped assertions this module has no capability opinion about.
 
     Anything response-only lands here legitimately; the test asserts the set is
     exactly the response-only assertions, so a new sandbox or tool assertion has
     to be classified before it ships.
+
+    Only assertions defined in `core/assertions.py` count. `REGISTRY` is a
+    process-global that anything can decorate into at runtime, and a caller's
+    own assertion is not this module's to classify.
     """
-    return set(ASSERTION_REGISTRY) - _SANDBOX_ASSERTIONS - _TOOL_ASSERTIONS
+    shipped = {
+        name
+        for name, fn in ASSERTION_REGISTRY.items()
+        if getattr(fn, "__module__", "") == "agentkit.core.assertions"
+    }
+    return shipped - _SANDBOX_ASSERTIONS - _TOOL_ASSERTIONS

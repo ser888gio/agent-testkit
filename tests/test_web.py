@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from agentkit.core.config import CallableSpec, TargetConfig
+from agentkit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
 from agentkit.core.redaction import EvidencePolicy
 from agentkit.core.runner import run
 from agentkit.core.schema import Assertion, Category
@@ -1359,3 +1360,74 @@ def test_connect_form_option_values_are_accepted_by_the_run_route(tmp_path, monk
     body = client.get("/agents/connect").text
     assert f'value="{_TREASURY["target"]}"' in body
     assert f'value="{_TREASURY["packs"]}"' in body
+
+
+def _seed_planned_store(db_path: str):
+    cfg = TargetConfig(
+        id="planned-target",
+        agent=CallableSpec(type="callable", callable=f"{MODULE}:create_agent_with_secret"),
+        evidence=EvidencePolicy(),
+    )
+    tests = [
+        SchemaTestCase(
+            id="a.pass.case",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+        )
+    ]
+    rr = run(cfg, tests)
+    harness = HarnessPlan(
+        profile=AgentProfile(id=cfg.id, domain="treasury", sandbox="treasury", tool_use=True),
+        selected=[
+            SelectedTest(
+                test_id="a.pass.case",
+                source="local",
+                score=2.5,
+                reasons=["written for the treasury domain", "risk medium"],
+            )
+        ],
+        excluded=[
+            ExcludedTest(
+                test_id="garak.dan",
+                source="garak",
+                reason="garak is not installed on this runner",
+            )
+        ],
+        sandbox="treasury",
+    )
+    Store(db_path).save_run(DEFAULT_ORG, cfg, rr, score(rr), plan=harness)
+    return rr
+
+
+def test_run_detail_explains_the_selection_when_a_plan_exists(tmp_path, monkeypatch):
+    db = str(tmp_path / "planned.db")
+    rr = _seed_planned_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}")
+    assert resp.status_code == 200
+    assert "Why these tests" in resp.text
+    assert "written for the treasury domain" in resp.text
+    assert "garak is not installed on this runner" in resp.text
+
+
+def test_run_detail_omits_the_panel_without_a_plan(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}")
+    assert resp.status_code == 200
+    assert "Why these tests" not in resp.text
+
+
+def test_test_detail_shows_why_the_test_was_selected(tmp_path, monkeypatch):
+    db = str(tmp_path / "planned.db")
+    rr = _seed_planned_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}/tests/a.pass.case")
+    assert resp.status_code == 200
+    assert "Why this test ran" in resp.text
+    assert "risk medium" in resp.text
