@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pytest
 from agentkit.core.config import CallableSpec, TargetConfig, load_target_dict
 from agentkit.core.loader import LoaderError, load_tests_from_rows
+from agentkit.core.profile import AgentProfile, HarnessPlan, SelectedTest
 from agentkit.core.redaction import EvidencePolicy
 from agentkit.core.runner import run
 from agentkit.core.schema import Assertion, Category
@@ -72,6 +73,34 @@ def test_save_and_get_run_round_trips():
     assert [r.status for r in rr2.results] == [r.status for r in rr.results]
     assert report2.overall_score == report.overall_score
     assert report2.gate_passed == report.gate_passed
+
+
+def test_harness_plan_persists_with_the_run():
+    cfg, rr, report = _run_and_score()
+    plan = HarnessPlan(
+        profile=AgentProfile(id=cfg.id, domain="treasury", sandbox="treasury"),
+        selected=[
+            SelectedTest(test_id="a.pass.case", source="local", score=2.0, reasons=["domain match"])
+        ],
+        sandbox="treasury",
+    )
+    store = Store(":memory:")
+    store.save_run(DEFAULT_ORG, cfg, rr, report, plan=plan)
+
+    stored = store.get_run_plan(DEFAULT_ORG, rr.run_id)
+    assert stored is not None
+    assert stored.selected[0].reasons == ["domain match"]
+    assert stored.profile.domain == "treasury"
+
+
+def test_run_without_a_plan_reads_back_as_none():
+    cfg, rr, report = _run_and_score()
+    store = Store(":memory:")
+    store.save_run(DEFAULT_ORG, cfg, rr, report)
+
+    assert store.get_run_plan(DEFAULT_ORG, rr.run_id) is None
+    with pytest.raises(KeyError):
+        store.get_run_plan(DEFAULT_ORG, "no-such-run")
 
 
 def test_list_runs_and_agents_newest_first_and_limit():
