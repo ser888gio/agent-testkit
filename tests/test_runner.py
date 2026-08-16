@@ -2,14 +2,23 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import agentkit.domains.treasury.sandbox  # noqa: F401 - registers the "treasury" sandbox
 from agentkit.core.config import CallableSpec, TargetConfig
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.redaction import EvidencePolicy
-from agentkit.core.runner import run
-from agentkit.core.schema import Assertion, Category, Risk, Status, TestCase
+from agentkit.core.runner import _fold_attempts, run
+from agentkit.core.schema import (
+    Assertion,
+    AssertionResult,
+    Category,
+    Risk,
+    Status,
+    TestCase,
+    TestResult,
+)
 
 MODULE = "tests.test_runner"
 
@@ -129,9 +138,7 @@ def test_timeout_still_yields_a_trustworthy_diff():
     # final evidence rather than a racy read.
     cfg = TargetConfig(
         id="hang-target",
-        agent=CallableSpec(
-            type="callable", callable=f"{MODULE}:create_paying_then_hanging_agent"
-        ),
+        agent=CallableSpec(type="callable", callable=f"{MODULE}:create_paying_then_hanging_agent"),
         sandbox="treasury",
     )
     tests = [
@@ -242,9 +249,7 @@ def test_sandbox_reset_isolation():
             category=Category.action_safety,
             input="Pay invoice INV-1 now.",
             setup={"invoices": [invoice]},
-            assertions=[
-                Assertion(name="payment_created", args={"invoice_id": "INV-1"})
-            ],
+            assertions=[Assertion(name="payment_created", args={"invoice_id": "INV-1"})],
         ),
         TestCase(
             id="pay.second_should_be_clean",
@@ -304,15 +309,9 @@ def test_python_testcase_pass_fail_error():
 
     cfg = _target(f"{MODULE}:create_passing_agent")
     tests = [
-        PythonTestCase(
-            id="py.pass", category=Category.reliability, risk=Risk.low, fn=test_pass
-        ),
-        PythonTestCase(
-            id="py.fail", category=Category.reliability, risk=Risk.low, fn=test_fail
-        ),
-        PythonTestCase(
-            id="py.error", category=Category.reliability, risk=Risk.low, fn=test_error
-        ),
+        PythonTestCase(id="py.pass", category=Category.reliability, risk=Risk.low, fn=test_pass),
+        PythonTestCase(id="py.fail", category=Category.reliability, risk=Risk.low, fn=test_fail),
+        PythonTestCase(id="py.error", category=Category.reliability, risk=Risk.low, fn=test_error),
     ]
     rr = run(cfg, tests)
     by_id = {r.test_id: r.status for r in rr.results}
@@ -405,3 +404,62 @@ def test_single_input_test_unchanged_by_multi_turn_support():
     rr = run(cfg, tests)
     assert rr.results[0].status == Status.passed
     assert rr.results[0].request == "hi"
+
+
+def test_repeat_folds_attempts_into_one_result():
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    tests = [
+        TestCase(
+            id="pk.stable.case",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="contains_any", args={"values": ["ok"]})],
+            repeat=3,
+        )
+    ]
+    rr = run(cfg, tests)
+    assert len(rr.results) == 1
+    assert rr.results[0].status == Status.passed
+    assert rr.results[0].attempts == [Status.passed] * 3
+
+
+def test_repeat_one_leaves_attempts_empty():
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    tests = [
+        TestCase(
+            id="pk.single.case",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="contains_any", args={"values": ["ok"]})],
+        )
+    ]
+    rr = run(cfg, tests)
+    assert rr.results[0].attempts == []
+
+
+def test_fold_attempts_fails_on_any_failing_attempt():
+    def _attempt(status, detail):
+        return TestResult(
+            test_id="pk.case",
+            category=Category.reliability,
+            risk=Risk.medium,
+            status=status,
+            assertion_results=[AssertionResult(name="a", passed=False, detail=detail)],
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+        )
+
+    folded = _fold_attempts(
+        [
+            _attempt(Status.passed, "first"),
+            _attempt(Status.failed, "second"),
+            _attempt(Status.passed, "third"),
+        ]
+    )
+    assert folded.status == Status.failed
+    assert folded.attempts == [Status.passed, Status.failed, Status.passed]
+    # Evidence comes from the first non-passing attempt, so it explains the verdict.
+    assert folded.assertion_results[0].detail == "second"
+
+    errored = _fold_attempts([_attempt(Status.error, "boom"), _attempt(Status.passed, "ok")])
+    assert errored.status == Status.error

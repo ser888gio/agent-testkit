@@ -282,6 +282,18 @@ def _run_isolated(
     return result
 
 
+def _repeat_count(test: TestCase | PythonTestCase) -> int:
+    return getattr(test, "repeat", 1)
+
+
+def _fold_attempts(attempts: list[TestResult]) -> TestResult:
+    """pass^k: one result standing for k attempts, passing only if all k passed."""
+    statuses = [a.status for a in attempts]
+    # Report the first non-passing attempt, so the evidence explains the verdict.
+    representative = next((a for a in attempts if a.status is not Status.passed), attempts[-1])
+    return representative.model_copy(update={"attempts": statuses})
+
+
 def run(
     target: TargetConfig,
     tests: list[TestCase | PythonTestCase],
@@ -306,7 +318,9 @@ def run(
     results: list[TestResult] = []
     try:
         for test in tests:
-            results.append(_run_isolated(isolated, test, redactor))
+            repeat = _repeat_count(test)
+            attempts = [_run_isolated(isolated, test, redactor) for _ in range(repeat)]
+            results.append(attempts[0] if repeat == 1 else _fold_attempts(attempts))
     finally:
         isolated.close()
 

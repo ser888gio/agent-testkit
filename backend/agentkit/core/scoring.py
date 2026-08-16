@@ -31,6 +31,8 @@ class ScoreReport(BaseModel):
     gate_passed: bool
     threshold: float
     incomplete: bool = False
+    # pass^k tests whose attempts disagreed: the agent is non-deterministic here.
+    flaky: int = 0
 
 
 def score(
@@ -97,4 +99,5 @@ def score(
         passed=passed_count,
         gate_passed=gate_passed,
         threshold=fail_under,
+        flaky=sum(1 for r in run.results if len(set(r.attempts)) > 1),
     )

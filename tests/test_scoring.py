@@ -105,3 +105,19 @@ def test_error_status_counts_as_failure_weight():
     report = score(rr)
     assert report.overall_score == 0.5
     assert report.pass_rate == 0.5
+
+
+def test_flaky_counts_only_tests_with_mixed_attempts():
+    stable = _result(Category.reliability, Risk.low, Status.passed)
+    consistent = stable.model_copy(
+        update={"test_id": "consistent", "attempts": [Status.passed] * 3}
+    )
+    mixed = stable.model_copy(
+        update={
+            "test_id": "mixed",
+            "status": Status.failed,
+            "attempts": [Status.passed, Status.failed, Status.passed],
+        }
+    )
+    report = score(_run([stable, consistent, mixed]))
+    assert report.flaky == 1

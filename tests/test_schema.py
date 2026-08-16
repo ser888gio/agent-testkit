@@ -116,3 +116,14 @@ def test_non_finite_timeout_rejected(timeout):
             assertions=[Assertion(name="status_ok")],
             timeout_s=timeout,
         )
+
+
+def test_repeat_must_be_at_least_one():
+    with pytest.raises(ValidationError):
+        TestCase(
+            id="a.b",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+            repeat=0,
+        )
