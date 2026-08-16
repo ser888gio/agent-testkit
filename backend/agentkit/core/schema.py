@@ -54,6 +54,8 @@ class TestCase(BaseModel):
     assertions: list[Assertion]
     tags: list[str] = Field(default_factory=list)
     timeout_s: float = 30.0
+    # pass^k: run the test `repeat` times, pass only if every attempt passes.
+    repeat: int = Field(1, ge=1)
 
     @model_validator(mode="after")
     def _require_input_xor_turns(self) -> TestCase:
@@ -100,6 +102,8 @@ class TestResult(BaseModel):
     response: Any = None
     sandbox_diff: dict[str, Any] | None = None
     error: str | None = None
+    # One entry per pass^k attempt; empty when the test ran once.
+    attempts: list[Status] = Field(default_factory=list)
     started_at: datetime
     finished_at: datetime
 
