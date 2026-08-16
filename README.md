@@ -189,9 +189,10 @@ reports into agentkit's schema so you can combine both.
 
 ## Limits
 
-- **Windows: `uv run` is broken** (setuptools can't resolve the multi-root package layout).
-  Use `python -m pytest` / `pip install -e .` directly, or `tools/validate.sh`, which probes
-  for a working runner. CI (Linux) uses `uv run` and passes.
+- **Windows: run pytest as a module, not a console script.** `uv run ... pytest` fails with
+  `uv trampoline failed to canonicalize script path`; `uv run ... python -m pytest` runs the
+  full suite green. `uv run` itself works fine — this is a console-script trampoline issue,
+  not the package layout. `tools/validate.sh` already uses the module form.
 - **No `examples/` directory.** It held only stale `.pyc` cache and was removed. Use the CLI
   commands above — they're the maintained, tested path.
 - **No adaptive/iterative attack loop yet.** Tests run as a fixed, pre-selected set per run;

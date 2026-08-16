@@ -71,9 +71,8 @@ it saves on anything touching `core/`.
 
 ```bash
 bash tools/affected.sh              # what changed, which components, which tests
-bash tools/validate.sh --affected   # lint changed files + run affected tests
-bash tools/validate.sh              # lint changed files + full suite (default)
-bash tools/validate.sh --lint-all   # lint everything (currently red, see below)
+bash tools/validate.sh --affected   # lint the repo + run affected tests
+bash tools/validate.sh              # lint the repo + full suite (default)
 ```
 
 `affected.sh` maps changed files to components and pytest targets by convention
@@ -81,18 +80,19 @@ bash tools/validate.sh --lint-all   # lint everything (currently red, see below)
 suite when a contract file (`schema.py`, `config.py`, `assertions.py`) or build config
 changes. Use `--base <ref>` to scope against a branch point.
 
-The full suite is 174 tests in about 2.5 seconds, so `--affected` is a convenience for tight
-loops, not a necessary optimization. Run the default before finishing.
+The full suite is 493 tests in about 150 seconds — mostly process spawn, since every
+`runner.run` starts a sandbox supervisor plus a nested agent worker. Use `--affected` for
+tight loops and run the default before finishing.
 
 ### Environment caveats
 
-- `uv run` currently fails on Windows (`package directory 'frontend\agentkit\config' does
-  not exist`) — a setuptools multi-root namespace issue, reproducible on a clean checkout.
-  CI on Linux is unaffected. Use `python -m pytest`, or `tools/validate.sh`, which probes
-  for a runner that actually works.
-- The repo has ~15 pre-existing ruff violations and CI does not run ruff. `validate.sh`
-  lints only changed files so this backlog does not mask new problems. Cleaning it up is
-  worthwhile follow-up work.
+- On Windows, invoke pytest as a module rather than a console script: `uv run ... pytest`
+  fails with `uv trampoline failed to canonicalize script path`, while
+  `uv run ... python -m pytest` is green. `uv run` itself works. `tools/validate.sh` already
+  uses the module form.
+- Lint is green and enforced by a CI `lint` job, so `validate.sh` lints the whole repo.
+  `agentkit` is declared first-party for isort in `pyproject.toml` — without it ruff treats
+  the package as third-party and reorders import blocks incorrectly.
 
 ## Hooks
 
