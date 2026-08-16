@@ -223,8 +223,13 @@ def run_cmd(
             max_tests=max_tests,
             attack_transforms=[n.strip() for n in (attack or "").split(",") if n.strip()],
         )
-        tests = apply_plan(harness, tests)
+        tests, unexecuted = apply_plan(harness, tests)
         _print_plan(harness)
+        if unexecuted:
+            typer.echo(
+                f"note: {len(unexecuted)} selected test(s) belong to external tools and are "
+                f"not executed by this run: {', '.join(u.test_id for u in unexecuted)}"
+            )
         if not tests:
             typer.echo("warning: the plan selected no runnable local tests", err=True)
             raise typer.Exit(2)

@@ -1362,7 +1362,7 @@ def test_connect_form_option_values_are_accepted_by_the_run_route(tmp_path, monk
     assert f'value="{_TREASURY["packs"]}"' in body
 
 
-def _seed_planned_store(db_path: str):
+def _seed_planned_store(db_path: str, external: bool = False):
     cfg = TargetConfig(
         id="planned-target",
         agent=CallableSpec(type="callable", callable=f"{MODULE}:create_agent_with_secret"),
@@ -1396,6 +1396,12 @@ def _seed_planned_store(db_path: str):
         ],
         sandbox="treasury",
     )
+    if external:
+        harness.selected.append(
+            SelectedTest(
+                test_id="promptfoo.pii", source="promptfoo", score=2.0, reasons=["risk high"]
+            )
+        )
     Store(db_path).save_run(DEFAULT_ORG, cfg, rr, score(rr), plan=harness)
     return rr
 
@@ -1431,3 +1437,14 @@ def test_test_detail_shows_why_the_test_was_selected(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert "Why this test ran" in resp.text
     assert "risk medium" in resp.text
+
+
+def test_run_detail_flags_external_selections_as_unevidenced(tmp_path, monkeypatch):
+    db = str(tmp_path / "planned.db")
+    rr = _seed_planned_store(db, external=True)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}")
+    assert resp.status_code == 200
+    assert "no evidence for them" in resp.text
+    assert "promptfoo.pii" in resp.text

@@ -219,3 +219,15 @@ def test_plan_report_covers_profile_selection_and_untested_areas():
 
 def test_plan_report_says_so_when_there_is_no_plan():
     assert "without a planner" in to_plan_markdown(None)
+
+
+def test_plan_report_flags_selections_this_run_did_not_execute():
+    plan = _plan()
+    plan.selected.append(
+        SelectedTest(test_id="garak.dan", source="garak", score=2.0, reasons=["risk high"])
+    )
+
+    out = to_plan_markdown(plan)
+
+    assert "executed by an external tool" in out
+    assert "garak.dan" in out

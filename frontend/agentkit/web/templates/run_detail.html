@@ -48,6 +48,11 @@
   </a>
 {% endfor %}
 </div>
+{% set external = plan.selected | rejectattr("source", "equalto", "local") | list %}
+{% if external %}
+<p class="quiet">{{ external | length }} selection(s) run in an external tool, so this run holds
+  no evidence for them: {{ external | map(attribute="test_id") | join(", ") }}.</p>
+{% endif %}
 {% if plan.excluded %}
 <h3>Not tested ({{ plan.excluded | length }})</h3>
 <ul class="quiet">
