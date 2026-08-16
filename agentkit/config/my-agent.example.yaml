@@ -1,0 +1,18 @@
+# Copy to my-agent.yaml and point it at your agent.
+#   agentkit run agentkit/packs/core --target agentkit/config/my-agent.yaml
+#
+# No `sandbox:` key -- packs/core is domain-agnostic and needs no fake tools.
+id: my-agent
+
+agent:
+  type: http
+  endpoint: "https://your-agent.example.com/chat"
+  method: POST
+  headers:
+    Authorization: "Bearer ${AGENT_TOKEN}"   # from env, never a literal secret
+  request:
+    json:
+      message: "{{ input }}"                 # {{ input }} = the test prompt
+  response:
+    text_path: "$.reply"                     # where the reply lives in the JSON
+  timeout_s: 30

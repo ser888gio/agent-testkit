@@ -101,12 +101,20 @@ def _extract_path(body: Any, path: str) -> tuple[bool, Any]:
 
 
 class HTTPAgent:
-    def __init__(self, spec: HTTPSpec, endpoint: ValidatedEndpoint | None = None):
+    def __init__(
+        self,
+        spec: HTTPSpec,
+        endpoint: ValidatedEndpoint | None = None,
+        transport: Any = None,
+    ):
         self.spec = spec
         # None means egress policy was not applied -- only the local test stub
         # transport path, which never leaves the process. A hosted run always
         # carries a ValidatedEndpoint; see build_agent.
         self.endpoint = endpoint
+        # Test seam only: an httpx transport to route through instead of the
+        # network. Never set on a hosted run.
+        self.transport = transport
 
     def run(self, input: str | dict) -> AgentResponse:
         spec = self.spec
@@ -125,18 +133,23 @@ class HTTPAgent:
 
         start = time.perf_counter()
         try:
-            response = httpx.request(
-                spec.method,
-                url,
-                headers=headers,
+            # Client, not httpx.request: only Client.request accepts `extensions`,
+            # which carries the SNI hostname for the pinned-address dial below.
+            with httpx.Client(
                 timeout=spec.timeout_s,
                 # Redirects are off: a 302 to 169.254.169.254 would bypass every
                 # check above. Supporting them means re-running the whole policy
                 # on each hop, which is not worth it until a partner needs it.
                 follow_redirects=False,
-                extensions=extensions,
-                **kwargs,
-            )
+                transport=self.transport,
+            ) as client:
+                response = client.request(
+                    spec.method,
+                    url,
+                    headers=headers,
+                    extensions=extensions,
+                    **kwargs,
+                )
         except httpx.TimeoutException:
             latency_ms = (time.perf_counter() - start) * 1000
             return AgentResponse(latency_ms=latency_ms, error="timeout")

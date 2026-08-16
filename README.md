@@ -47,6 +47,70 @@ agentkit ui                                   # dashboard at http://127.0.0.1:80
 bind requires `AGENTKIT_AUTH_MODE=oidc` with full OIDC config. See
 [`docs/keycloak.md`](docs/keycloak.md).
 
+## Point it at your own agent
+
+The treasury run above is a demo with fake tools. To test *your* agent, pass its URL.
+`agentkit/packs/core` is 14 domain-agnostic tests — prompt injection, data leakage,
+robustness, reliability, latency, response contract — that need no sandbox:
+
+```bash
+agentkit run agentkit/packs/core --endpoint https://your-agent.example.com/chat
+```
+
+```text
+agentkit run - target: your-agent.example.com   (14 tests)
+CATEGORY              PASS  FAIL   ERR  SKIP
+data_leakage             1     1     0     0
+endpoint_contract        3     0     0     0
+performance              1     0     0     0
+prompt_injection         0     2     0     0
+reliability              6     0     0     0
+--------------------------------------------
+Overall (weighted): 62%   Pass rate: 79%   Critical failures: 0
+```
+
+`--endpoint` assumes the common shape: `POST {"input": "..."}` returning `{"text": "..."}`.
+
+### When you need auth headers or a different request shape
+
+Write a target config instead of `--endpoint`:
+
+```bash
+cp agentkit/config/my-agent.example.yaml agentkit/config/my-agent.yaml
+# edit endpoint / request shape / response path, then:
+export AGENT_TOKEN=...
+agentkit run agentkit/packs/core --target agentkit/config/my-agent.yaml
+```
+
+```yaml
+id: my-agent
+agent:
+  type: http
+  endpoint: "https://your-agent.example.com/chat"
+  method: POST
+  headers:
+    Authorization: "Bearer ${AGENT_TOKEN}"   # from env, never a literal secret
+  request:
+    json:
+      message: "{{ input }}"                 # {{ input }} = the test prompt
+  response:
+    text_path: "$.reply"                     # where the reply lives in the JSON
+  timeout_s: 30
+```
+
+Three knobs do the work: `request` is your request body with `{{ input }}` wherever the
+prompt goes, `text_path` is the dotted JSON path to the reply, and `${VAR}` interpolates
+env vars at load time so tokens stay out of the file. Anything under `request` that
+`httpx` accepts (`json`, `params`, `data`, `content`) is passed through.
+
+Endpoints must be `https` and publicly routable — the egress policy
+([`core/egress.py`](backend/agentkit/core/egress.py)) rejects loopback and private ranges
+unless the worker sets `AGENTKIT_EGRESS_ALLOW_LOCAL=1`.
+
+The domain packs (`packs/treasury`, `packs/email`, `packs/agentic`) assert on what the
+agent *did* to fake tools, so they need a matching `sandbox:` and only apply to agents in
+those domains. `packs/core` asserts on what the agent *said*, so it applies to any agent.
+
 ## System overview
 
 ### Infrastructure

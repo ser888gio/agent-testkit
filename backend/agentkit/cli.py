@@ -7,6 +7,7 @@ import os
 from importlib.resources import files
 from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlparse
 
 import typer
 from alembic import command as alembic_command
@@ -22,7 +23,7 @@ import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
 from agentkit.core.adapters import ADAPTERS
 from agentkit.core.attacks import expand
-from agentkit.core.config import ConfigError, load_target
+from agentkit.core.config import ConfigError, load_target, load_target_dict
 from agentkit.core.discovery import discover as discover_profile
 from agentkit.core.loader import LoaderError, discover, filter_tests
 from agentkit.core.planner import apply_plan
@@ -141,7 +142,34 @@ def _print_plan(harness: HarnessPlan) -> None:
         typer.echo(f"            {skipped.test_id}: {skipped.reason}")
 
 
-def _load_target_or_exit(target: str):
+def _load_target_or_exit(target: str | None, endpoint: str | None = None):
+    """Resolve a target from a config file or, for the common case, a bare URL.
+
+    `--endpoint` covers the default shape: POST {"input": ...} -> {"text": ...}.
+    Anything else (auth headers, different field names) needs a config file.
+    """
+    if (target is None) == (endpoint is None):
+        typer.echo("error: pass exactly one of --target or --endpoint", err=True)
+        raise typer.Exit(2)
+
+    if endpoint is not None:
+        try:
+            return load_target_dict(
+                {
+                    "id": urlparse(endpoint).hostname or "endpoint",
+                    "agent": {
+                        "type": "http",
+                        "endpoint": endpoint,
+                        "request": {"json": {"input": "{{ input }}"}},
+                        "response": {"text_path": "$.text"},
+                    },
+                },
+                source="--endpoint",
+            )
+        except ConfigError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2) from exc
+
     try:
         return load_target(target)
     except (ConfigError, FileNotFoundError) as exc:
@@ -160,7 +188,10 @@ def _discover_tests_or_exit(packs_dir: str):
 @app.command("plan")
 def plan_cmd(
     packs_dir: str = typer.Argument(...),
-    target: str = typer.Option(..., "--target"),
+    target: str | None = typer.Option(None, "--target"),
+    endpoint: str | None = typer.Option(
+        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+    ),
     max_tests: int | None = typer.Option(None, "--max-tests", min=1),
     format: str = typer.Option("table", "--format"),
 ) -> None:
@@ -168,7 +199,7 @@ def plan_cmd(
 
     Probing calls the endpoint. Nothing is executed beyond two trivial probes.
     """
-    cfg = _load_target_or_exit(target)
+    cfg = _load_target_or_exit(target, endpoint)
     tests = _discover_tests_or_exit(packs_dir)
     harness = build_plan(
         discover_profile(cfg),
@@ -185,7 +216,10 @@ def plan_cmd(
 @app.command("run")
 def run_cmd(
     packs_dir: str = typer.Argument(...),
-    target: str = typer.Option(..., "--target"),
+    target: str | None = typer.Option(None, "--target"),
+    endpoint: str | None = typer.Option(
+        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+    ),
     db: str | None = typer.Option(None, "--db"),
     fail_under: float = typer.Option(0.0, "--fail-under"),
     block_on_critical: bool = typer.Option(
@@ -204,7 +238,7 @@ def run_cmd(
     max_tests: int | None = typer.Option(None, "--max-tests", min=1),
 ) -> None:
     db = _resolve_db_path(db)
-    cfg = _load_target_or_exit(target)
+    cfg = _load_target_or_exit(target, endpoint)
     tests = _discover_tests_or_exit(packs_dir)
 
     categories = [Category(c) for c in category] if category else None

@@ -1,6 +1,5 @@
 import httpx
 import pytest
-
 from agentkit.core.agent import AgentResponse, CallableAgent, HTTPAgent
 from agentkit.core.config import HTTPSpec, ResponseSpec
 
@@ -55,31 +54,22 @@ def test_contains_any_all_case_insensitive():
     assert not r.contains_any(["approved"])
 
 
-def _http_agent(monkeypatch, handler) -> HTTPAgent:
-    import agentkit.core.agent as agent_mod
-
+def _http_agent(handler) -> HTTPAgent:
     spec = HTTPSpec(
         type="http",
         endpoint="http://test/run",
         request={"json": {"input": "{{ input }}"}},
         response=ResponseSpec(text_path="$.text"),
     )
-
-    def fake_request(method, url, **kwargs):
-        transport = httpx.MockTransport(handler)
-        with httpx.Client(transport=transport) as client:
-            return client.request(method, url, **kwargs)
-
-    monkeypatch.setattr(agent_mod.httpx, "request", fake_request)
-    return HTTPAgent(spec)
+    return HTTPAgent(spec, transport=httpx.MockTransport(handler))
 
 
 @pytest.fixture
-def http_ok(monkeypatch):
+def http_ok():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"text": "ok"})
 
-    return _http_agent(monkeypatch, handler)
+    return _http_agent(handler)
 
 
 def test_http_agent_happy_path(http_ok):
@@ -90,11 +80,11 @@ def test_http_agent_happy_path(http_ok):
 
 
 @pytest.fixture
-def http_500(monkeypatch):
+def http_500():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"detail": "boom"})
 
-    return _http_agent(monkeypatch, handler)
+    return _http_agent(handler)
 
 
 def test_http_agent_500_sets_error(http_500):
@@ -104,11 +94,11 @@ def test_http_agent_500_sets_error(http_500):
 
 
 @pytest.fixture
-def http_timeout(monkeypatch):
+def http_timeout():
     def handler(request: httpx.Request):
         raise httpx.TimeoutException("timed out", request=request)
 
-    return _http_agent(monkeypatch, handler)
+    return _http_agent(handler)
 
 
 def test_http_agent_timeout(http_timeout):
@@ -117,14 +107,56 @@ def test_http_agent_timeout(http_timeout):
 
 
 @pytest.fixture
-def http_missing_path(monkeypatch):
+def http_missing_path():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"other": "value"})
 
-    return _http_agent(monkeypatch, handler)
+    return _http_agent(handler)
 
 
 def test_http_agent_missing_text_path(http_missing_path):
     r = http_missing_path.run("hi")
     assert r.error == "response_path_not_found"
     assert r.raw == {"other": "value"}
+
+
+def test_http_agent_pinned_endpoint_sends_sni_and_host():
+    """A ValidatedEndpoint dials the pinned address with SNI + Host overridden.
+
+    Regression: this path passes `extensions=`, which only Client.request
+    accepts -- the module-level httpx.request() rejected it, erroring every
+    hosted HTTP run.
+    """
+    from agentkit.core.egress import ValidatedEndpoint
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["host"] = request.headers.get("Host")
+        seen["sni"] = request.extensions.get("sni_hostname")
+        return httpx.Response(200, json={"text": "ok"})
+
+    validated = ValidatedEndpoint(
+        url="https://agent.example.com/run",
+        host="agent.example.com",
+        port=443,
+        address="93.184.216.34",
+    )
+    agent = HTTPAgent(
+        HTTPSpec(
+            type="http",
+            endpoint=validated.url,
+            request={"json": {"input": "{{ input }}"}},
+            response=ResponseSpec(text_path="$.text"),
+        ),
+        endpoint=validated,
+        transport=httpx.MockTransport(handler),
+    )
+
+    r = agent.run("hi")
+    assert r.error is None
+    assert r.text == "ok"
+    assert seen["url"] == "https://93.184.216.34/run"
+    assert seen["host"] == "agent.example.com"
+    assert seen["sni"] == "agent.example.com"
