@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from agentkit.core import isolation
+from agentkit.core.adaptive import build_strategy
 from agentkit.core.agent import Agent, AgentResponse
 from agentkit.core.assertions import AssertionContext, evaluate
 from agentkit.core.config import TargetConfig
@@ -95,22 +96,39 @@ def _run_turns(
     agent: Agent | None,
     test: TestCase,
     run_turn: Callable[[Any, float], AgentResponse] | None,
-) -> AgentResponse:
+) -> tuple[AgentResponse, Any]:
     # Single-input tests run one turn; multi-turn tests run each turn in
     # sequence WITHOUT resetting the sandbox between turns, so state (and
     # any poisoned memory) carries across turns like a server-side session.
     # The final turn's response is what assertions run against.
-    turns = test.turns if test.turns else [test.input]
-    for turn in turns:
+    #
+    # Returns the final response plus the turns actually sent, because an
+    # adaptive test's turns are generated here and are the only record of them.
+    def _send(turn: Any) -> AgentResponse:
         if run_turn is None:
             if agent is None:  # pragma: no cover - internal invariant
                 raise ValueError("agent is required without an isolated turn runner")
-            response = _run_with_timeout(agent, turn, test.timeout_s)
-        else:
-            response = run_turn(turn, test.timeout_s)
+            return _run_with_timeout(agent, turn, test.timeout_s)
+        return run_turn(turn, test.timeout_s)
+
+    if test.adaptive is not None:
+        strategy = build_strategy(test.input, test.adaptive)
+        history: list[AgentResponse] = []
+        sent: list[Any] = []
+        while (turn := strategy.next_turn(history)) is not None:
+            sent.append(turn)
+            response = _send(turn)
+            history.append(response)
+            if response.error == "timeout":
+                break
+        return history[-1], sent
+
+    turns = test.turns if test.turns else [test.input]
+    for turn in turns:
+        response = _send(turn)
         if response.error == "timeout":
             break
-    return response
+    return response, (test.turns if test.turns else test.input)
 
 
 def run_one(
@@ -132,7 +150,7 @@ def run_one(
         else:
             before = None
 
-        response = _run_turns(agent, test, run_turn)
+        response, request = _run_turns(agent, test, run_turn)
 
         # An isolated turn runner kills the agent worker before returning a
         # timeout, so the supervisor-owned sandbox is stable.  Direct calls to
@@ -154,7 +172,6 @@ def run_one(
         )
         assertion_results = [evaluate(a, ctx) for a in test.assertions]
         status = _derive_status(response, assertion_results, test)
-        request = test.turns if test.turns else test.input
         request_evidence, response_evidence = _redact_evidence(
             evidence, redactor, request, response
         )
@@ -273,7 +290,10 @@ def _run_isolated(
                 test, test.timeout_s + isolation.GRACE_SECONDS
             )
     else:
-        turns = len(test.turns) if test.turns else 1
+        if test.adaptive is not None:
+            turns = test.adaptive.max_turns
+        else:
+            turns = len(test.turns) if test.turns else 1
         result = isolated.run_test(
             test, turns * test.timeout_s + isolation.GRACE_SECONDS
         )
