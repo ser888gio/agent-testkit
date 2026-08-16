@@ -18,6 +18,7 @@ from agentkit.core.artifacts import artifact_key
 from agentkit.core.config import TargetConfig, load_target_dict
 from agentkit.core.egress import EgressPolicy
 from agentkit.core.loader import LoaderError, load_tests_from_rows
+from agentkit.core.profile import HarnessPlan
 from agentkit.core.redaction import Redactor
 from agentkit.core.schema import RunResult, TestResult
 from agentkit.core.scoring import ScoreReport
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS runs (
     score_json TEXT NOT NULL,
     created_by TEXT,
     created_by_email TEXT,
+    plan_json TEXT,
     UNIQUE (org_id, id),
     FOREIGN KEY (org_id) REFERENCES orgs(id),
     FOREIGN KEY (org_id, agent_id) REFERENCES agents(org_id, id)
@@ -927,8 +929,13 @@ class Store:
         score: ScoreReport,
         created_by: str | None = None,
         created_by_email: str | None = None,
+        plan: HarnessPlan | None = None,
     ) -> None:
         """Persist a run.
+
+        `plan` is the harness plan the run executed, when a planner produced one.
+        It records why each test was selected, so a stored run stays explainable
+        after the fact.
 
         `created_by` is the Keycloak `sub` of whoever launched it, with the
         email denormalized alongside for display. Both are optional because the
@@ -953,8 +960,9 @@ class Store:
             conn.execute(
                 """
                 INSERT INTO runs (id, org_id, agent_id, started_at, finished_at, status,
-                                   summary_json, score_json, created_by, created_by_email)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   summary_json, score_json, created_by, created_by_email,
+                                   plan_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run.run_id,
@@ -967,6 +975,7 @@ class Store:
                     score.model_dump_json(),
                     created_by,
                     created_by_email,
+                    plan.model_dump_json() if plan else None,
                 ),
             )
             rows = []
@@ -1151,6 +1160,16 @@ class Store:
         )
         score_report = ScoreReport.model_validate_json(row["score_json"])
         return run, score_report
+
+    def get_run_plan(self, org_id: str, run_id: str) -> HarnessPlan | None:
+        """The harness plan a run executed, or None for runs launched without a planner."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT plan_json FROM runs WHERE org_id = ? AND id = ?", (org_id, run_id)
+            ).fetchone()
+        if row is None:
+            raise KeyError(run_id)
+        return HarnessPlan.model_validate_json(row["plan_json"]) if row["plan_json"] else None
 
     def pass_fail_matrix(self, org_id: str, agent_id: str) -> Matrix:
         with self._connection() as conn:
