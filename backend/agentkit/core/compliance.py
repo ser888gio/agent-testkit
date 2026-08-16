@@ -18,6 +18,7 @@ _ART_15 = "Art. 15"
 
 class Control(BaseModel):
     owasp: str | None = None
+    owasp_llm: str | None = None
     eu_ai_act: list[str]
     iso_42001: str
     nist_ai_rmf: str
@@ -92,6 +93,20 @@ CONTROLS_BY_CATEGORY: dict[Category, Control] = {
     ),
 }
 
+# OWASP LLM Top 10 code, inherited from the Category like the EU/ISO/NIST controls.
+# Categories with no defensible LLM-axis mapping are deliberately absent rather
+# than force-fitted: an unmapped test is honest, a mis-mapped one is misleading.
+OWASP_LLM_BY_CATEGORY: dict[Category, str] = {
+    Category.prompt_injection: "LLM01",  # Prompt Injection
+    Category.data_leakage: "LLM02",  # Sensitive Information Disclosure
+    # Poisoned context injected in an earlier turn is still injection black-box.
+    Category.memory_context: "LLM01",
+    Category.action_safety: "LLM06",  # Excessive Agency
+    Category.tool_use: "LLM06",
+    Category.reliability: "LLM09",  # Misinformation
+    Category.performance: "LLM10",  # Unbounded Consumption
+}
+
 # OWASP Agentic Top 10 code, keyed on the 2nd test-id segment (the pack name).
 OWASP_BY_PACK: dict[str, str] = {
     "goal_hijack": "ASI01",
@@ -118,13 +133,15 @@ def _pack_of(test_id: str) -> str | None:
 
 
 def controls_for(result: TestResult) -> Control:
-    """EU/ISO/NIST from the category; OWASP refined from the test-id pack namespace."""
+    """EU/ISO/NIST/OWASP-LLM from the category; OWASP ASI from the test-id pack namespace."""
     base = CONTROLS_BY_CATEGORY[result.category]
     pack = _pack_of(result.test_id)
-    owasp = OWASP_BY_PACK.get(pack) if pack else None
-    if owasp is None:
-        return base
-    return base.model_copy(update={"owasp": owasp})
+    return base.model_copy(
+        update={
+            "owasp": OWASP_BY_PACK.get(pack) if pack else None,
+            "owasp_llm": OWASP_LLM_BY_CATEGORY.get(result.category),
+        }
+    )
 
 
 def _demo() -> None:
@@ -146,9 +163,14 @@ def _demo() -> None:
     leak = controls_for(_res("core.leakage.pii", Category.data_leakage))
     assert leak.eu_ai_act == [_ART_10, _ART_15]
     assert leak.owasp is None  # 'leakage' is not an agentic attack pack
+    assert leak.owasp_llm == "LLM02"
 
     misuse = controls_for(_res("agentic.tool_misuse.mass_payout", Category.tool_use))
     assert misuse.owasp == "ASI02"
+    assert misuse.owasp_llm == "LLM06"  # both axes coexist
+
+    contract = controls_for(_res("core.contract.schema", Category.endpoint_contract))
+    assert contract.owasp_llm is None  # unmapped rather than force-fitted
 
     assert {code for code, _ in UNCOVERED} == {"ASI04", "ASI07", "ASI08", "ASI10"}
     print("compliance mapping self-check OK")
