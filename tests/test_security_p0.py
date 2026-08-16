@@ -9,6 +9,8 @@ from __future__ import annotations
 import time
 
 import pytest
+from fastapi.testclient import TestClient
+
 from agentkit.core.agent import AgentResponse
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.redaction import EvidencePolicy, RedactionConfig, Redactor
@@ -24,7 +26,6 @@ from agentkit.core.schema import (
 from agentkit.core.schema import (
     TestCase as SchemaTestCase,
 )
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
@@ -381,9 +382,8 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
     """
     import os
 
-    from agentkit.core.store import Store
-
     from agentkit import worker as worker_module
+    from agentkit.core.store import Store
 
     monkeypatch.setenv("PARTNER_TOKEN", SECRET)
     seen: list[str] = []

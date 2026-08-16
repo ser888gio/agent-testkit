@@ -16,10 +16,11 @@ from types import SimpleNamespace
 
 import jwt
 import pytest
-from agentkit.web import auth
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
+
+from agentkit.web import auth
 
 ISSUER = "https://keycloak.test/realms/agentkit"
 AUDIENCE = "agentkit-api"

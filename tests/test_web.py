@@ -1,6 +1,9 @@
 from pathlib import Path
 
 import pytest
+from fastapi.staticfiles import StaticFiles
+from fastapi.testclient import TestClient
+
 from agentkit.core.config import CallableSpec, TargetConfig
 from agentkit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
 from agentkit.core.redaction import EvidencePolicy
@@ -9,8 +12,6 @@ from agentkit.core.schema import Assertion, Category
 from agentkit.core.schema import TestCase as SchemaTestCase
 from agentkit.core.scoring import score
 from agentkit.core.store import DEFAULT_ORG, Store
-from fastapi.staticfiles import StaticFiles
-from fastapi.testclient import TestClient
 
 MODULE = "tests.test_web"
 

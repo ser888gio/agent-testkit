@@ -1,4 +1,5 @@
 import pytest
+
 from agentkit.core.assertions import REGISTRY
 from agentkit.core.catalog import build_catalog, entry_from_test, rank, unclassified_assertions
 from agentkit.core.profile import AgentProfile

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+
 from agentkit.core.config import ConfigError, load_target, load_target_dict
 
 TREASURY_CALLABLE_YAML = "agentkit/config/treasury-agent.yaml"

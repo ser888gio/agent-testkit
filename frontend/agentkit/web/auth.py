@@ -15,10 +15,11 @@ from urllib import error, parse
 from urllib import request as urlrequest
 
 import jwt
-from agentkit.core.store import DEFAULT_ORG
 from fastapi import Depends, HTTPException, Request
 from jwt import PyJWKClient
 from jwt import exceptions as jwt_exceptions
+
+from agentkit.core.store import DEFAULT_ORG
 
 _LOG = logging.getLogger(__name__)
 _ALGORITHMS = ["RS256"]

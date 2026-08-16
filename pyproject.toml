@@ -83,5 +83,10 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
+[tool.ruff.lint.isort]
+# The package lives under backend/ and frontend/, not beside pyproject.toml, so ruff cannot
+# infer it as first-party and would sort `agentkit` in with third-party imports.
+known-first-party = ["agentkit"]
+
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["typer.Option", "fastapi.Depends"]
