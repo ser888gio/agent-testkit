@@ -1,4 +1,5 @@
 import pytest
+
 from agentkit.core.adaptive import CRESCENDO_LADDER, CrescendoStrategy, build_strategy
 from agentkit.core.agent import AgentResponse
 from agentkit.core.config import CallableSpec, TargetConfig

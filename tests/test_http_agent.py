@@ -1,10 +1,10 @@
 import httpx
 import pytest
-from agentkit.core.agent import CallableAgent, HTTPAgent
-from agentkit.core.config import load_target
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from agentkit.core.agent import CallableAgent, HTTPAgent
+from agentkit.core.config import load_target
 from agentkit.packs.core._demo_safe_agent import _safe_reply, create_agent
 
 INPUTS = [

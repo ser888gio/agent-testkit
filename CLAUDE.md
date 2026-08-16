@@ -169,10 +169,10 @@ All commands below were executed successfully in this repository.
 There is **no type-checker configured** in this repository — do not run or document one.
 There is no separate integration/e2e runner either: `tests/test_http_agent.py`,
 `tests/test_web.py`, and `tests/test_cli.py` are the integration-level coverage and run
-inside the same pytest suite. Note that `examples/` currently contains **no scripts** (only
-stale `__pycache__`), even though `README.md` still documents `run_treasury.py`,
-`run_email.py`, and `stub_endpoint.py`. Treat those README commands as broken until the
-scripts are restored, and never cite an `examples/` file without checking it exists.
+inside the same pytest suite. There is **no `examples/` directory** — it held only stale
+`__pycache__` and was removed. The `agentkit run ...` commands below are the maintained,
+tested way to exercise the tool by hand; do not reintroduce example scripts without also
+wiring them into CI, which is how the previous ones rotted unnoticed.
 
 Product commands (exercising agentkit itself, useful for manual verification):
 

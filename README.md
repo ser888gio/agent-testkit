@@ -192,15 +192,13 @@ reports into agentkit's schema so you can combine both.
 - **Windows: `uv run` is broken** (setuptools can't resolve the multi-root package layout).
   Use `python -m pytest` / `pip install -e .` directly, or `tools/validate.sh`, which probes
   for a working runner. CI (Linux) uses `uv run` and passes.
-- **`examples/` scripts are currently missing** (only stale `.pyc` cache remains). Use the
-  CLI commands above — they're the maintained path.
+- **No `examples/` directory.** It held only stale `.pyc` cache and was removed. Use the CLI
+  commands above — they're the maintained, tested path.
 - **No adaptive/iterative attack loop yet.** Tests run as a fixed, pre-selected set per run;
   branching into deeper multi-turn probes based on prior responses is on the roadmap below,
   not implemented.
 - **Two demo verticals.** Treasury and email are real, working examples, not a general
   library of agent domains — adding a new one means writing a `Sandbox` subclass.
-- **Repo-wide lint is currently red** from pre-existing violations; `tools/validate.sh` lints
-  changed files only.
 
 ## Roadmap: adaptive assurance platform
 

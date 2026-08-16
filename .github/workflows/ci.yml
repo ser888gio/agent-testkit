@@ -42,6 +42,29 @@ jobs:
       - name: Run tests
         run: uv run --frozen --extra dev pytest
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run ruff
+        run: uv run --frozen --extra dev ruff check .
+
   package:
     name: Build package
     runs-on: ubuntu-latest
@@ -64,7 +87,7 @@ jobs:
   required:
     name: Required
     if: ${{ always() }}
-    needs: [tests, package]
+    needs: [tests, lint, package]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -72,7 +95,9 @@ jobs:
       - name: Verify required jobs passed
         env:
           TESTS_RESULT: ${{ needs.tests.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
         run: |
           test "$TESTS_RESULT" = "success"
+          test "$LINT_RESULT" = "success"
           test "$PACKAGE_RESULT" = "success"

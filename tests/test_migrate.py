@@ -6,10 +6,11 @@ from pathlib import Path
 
 import pytest
 import yaml
-from agentkit.cli import _alembic_config, app
-from agentkit.core.store import Store
 from alembic import command as alembic_command
 from typer.testing import CliRunner
+
+from agentkit.cli import _alembic_config, app
+from agentkit.core.store import Store
 
 runner = CliRunner()
 

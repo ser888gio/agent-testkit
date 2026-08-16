@@ -3,6 +3,7 @@ import codecs
 import json
 
 import pytest
+
 from agentkit.core.attacks import TRANSFORMS, apply_attack, expand, split_variant
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.schema import AdaptiveSpec, Assertion, Category, Risk, TestCase

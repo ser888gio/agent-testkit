@@ -2,6 +2,8 @@ import math
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
+
 from agentkit.core.schema import (
     Assertion,
     AssertionResult,
@@ -12,7 +14,6 @@ from agentkit.core.schema import (
     TestCase,
     TestResult,
 )
-from pydantic import ValidationError
 
 
 def _now():
