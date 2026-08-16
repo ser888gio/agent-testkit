@@ -79,6 +79,22 @@ def test_mixed_pack_statuses():
     assert by_id["c.skip.case"] == Status.skipped
 
 
+def test_on_test_fires_once_per_test_in_order():
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    tests = [
+        TestCase(
+            id=f"progress.case.{n}",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+        )
+        for n in range(3)
+    ]
+    seen: list[tuple[int, str]] = []
+    run(cfg, tests, on_test=lambda i, t: seen.append((i, t.id)))
+    assert seen == [(0, "progress.case.0"), (1, "progress.case.1"), (2, "progress.case.2")]
+
+
 def test_erroring_agent_yields_error_status():
     def _boom(input):
         raise RuntimeError("agent exploded")

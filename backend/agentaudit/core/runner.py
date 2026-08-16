@@ -320,6 +320,7 @@ def run(
     *,
     redactor: Redactor | None = None,
     endpoint: ValidatedEndpoint | None = None,
+    on_test: Callable[[int, TestCase | PythonTestCase], None] | None = None,
 ) -> RunResult:
     """`endpoint` carries the egress decision made at run start.
 
@@ -337,7 +338,9 @@ def run(
     started = _now()
     results: list[TestResult] = []
     try:
-        for test in tests:
+        for index, test in enumerate(tests):
+            if on_test is not None:
+                on_test(index, test)
             repeat = _repeat_count(test)
             attempts = [_run_isolated(isolated, test, redactor) for _ in range(repeat)]
             results.append(attempts[0] if repeat == 1 else _fold_attempts(attempts))
