@@ -46,7 +46,44 @@ Worker-side environment, deployment-owned. Never derived from target config.
   credentials. Provision each `env://VAR` on the worker, not on the web service.
 - Workers belong in a network segment with no route to the control-plane
   database or the cloud metadata endpoint. The allowlist is defense in depth,
-  not a substitute for that.
+  not a substitute for that. That segment now exists — see "Worker container
+  isolation" below.
+
+## Worker container isolation
+
+The `worker` service in `docker-compose.yml` is the only process that dials an
+untrusted third-party endpoint, so the container is treated as the isolation
+boundary rather than a deployment convenience.
+
+- **Network.** `worker` is alone on the `egress` network; every other service
+  (`agentkit`, `keycloak`, `keycloak-db`, `migrate`) stays on `default`. The
+  worker therefore has no TCP route to the control plane. Verify after any
+  compose edit: no other service may join `egress`.
+- **Database access is a file, not a route.** The worker reaches SQLite through
+  the shared `agentkit-data` volume. This is what lets it be network-isolated
+  and still persist runs — there is no DB server to be routable to. If the store
+  ever moves to a networked database, this property is lost and the worker needs
+  a write-through API instead of a socket to it.
+- **Filesystem/process.** `read_only: true` with a `/tmp` tmpfs, `cap_drop: ALL`,
+  `no-new-privileges`, plus `pids_limit`/`mem_limit` as container-level backstops
+  to the per-run ceilings in `core/isolation.py`.
+- **Secrets.** Provision each target's `secret_ref` (`env://VAR`) on `worker`,
+  not on `agentkit`. The web service never needs a partner credential.
+
+### Known gaps — do not describe these as closed
+
+- **Link-local / cloud metadata (`169.254.169.254`) is not blocked by compose.**
+  No network driver blocks it portably. `core/egress.py` rejects it at the app
+  layer; an OS-level guarantee requires a host firewall rule on the deployment
+  host. This is deployment-operator responsibility.
+- **An agent can still reach `isolation.py`'s module globals** via
+  `sandbox.__class__` on the RPC proxy. Python resolves class-level dunders
+  without calling `__getattr__`, so no guard there can intercept it; the proxy
+  refuses only dunders that would be *forwarded* to the supervisor. Pinned by
+  `tests/test_isolation.py::test_proxy_class_dunders_are_a_known_isolation_gap`.
+  The container boundary is what makes this survivable: escalation buys a
+  scratch container, not the host. Closing it needs a proxy with no reachable
+  attributes, which is a design change, not another check.
 
 Originally planned as a hand-rolled raw-SQL runner (no Alembic) — the user overrode that
 decision during implementation. See the amendment at the end of `docs/plan.md` for why.
