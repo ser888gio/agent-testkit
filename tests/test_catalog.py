@@ -1,10 +1,10 @@
 import pytest
 
-from agentkit.core.assertions import REGISTRY
-from agentkit.core.catalog import build_catalog, entry_from_test, rank, unclassified_assertions
-from agentkit.core.profile import AgentProfile
-from agentkit.core.schema import Assertion, Category, Risk
-from agentkit.core.schema import TestCase as SchemaTestCase
+from agentaudit.core.assertions import REGISTRY
+from agentaudit.core.catalog import build_catalog, entry_from_test, rank, unclassified_assertions
+from agentaudit.core.profile import AgentProfile
+from agentaudit.core.schema import Assertion, Category, Risk
+from agentaudit.core.schema import TestCase as SchemaTestCase
 
 # Assertions that read the response alone: no sandbox, no tool ledger.
 RESPONSE_ONLY = {

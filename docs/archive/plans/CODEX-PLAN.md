@@ -2,7 +2,7 @@
 
 ## Summary
 
-Develop Agentkit as three connected products:
+Develop Agentaudit as three connected products:
 
 1. A technical agent-security scanner.
 2. An EU compliance-readiness and evidence manager.
@@ -10,7 +10,7 @@ Develop Agentkit as three connected products:
 
 It must never automatically label a system “EU compliant,” “certified,” or “CE approved.” Final conformity and legal conclusions remain with the provider, deployer, qualified assessor, or notified body where applicable.
 
-As of 15 July 2026, Regulation (EU) 2024/1689 remains the binding baseline. The Digital Omnibus was signed on 8 July but is still awaiting Official Journal publication, so Agentkit must display both the binding and pending timelines without merging them. [AI Act](https://eur-lex.europa.eu/eli/reg/2024/1689/oj), [Digital Omnibus status](https://oeil.europarl.europa.eu/oeil/en/procedure-file?reference=2025%2F0359%28COD%29).
+As of 15 July 2026, Regulation (EU) 2024/1689 remains the binding baseline. The Digital Omnibus was signed on 8 July but is still awaiting Official Journal publication, so Agentaudit must display both the binding and pending timelines without merging them. [AI Act](https://eur-lex.europa.eu/eli/reg/2024/1689/oj), [Digital Omnibus status](https://oeil.europarl.europa.eu/oeil/en/procedure-file?reference=2025%2F0359%28COD%29).
 
 The legal catalog will cover:
 
@@ -68,9 +68,9 @@ Expose `/api/v1` resources for systems and versions, assessments, registered tar
 
 The repository at `f2c0718` has 141 passing tests, but the current tests do not cover several security boundaries:
 
-- The unauthenticated [web run route](/C:/Users/nicas/Desktop/agent-testkti/agentkit/web/app.py:135) accepts target and pack paths that can lead to in-process Python execution.
-- The [runner timeout](/C:/Users/nicas/Desktop/agent-testkti/agentkit/core/runner.py:30) returns while the timed-out thread continues acting; result errors, assertion details and sandbox diffs also bypass complete redaction.
-- [Scoring](/C:/Users/nicas/Desktop/agent-testkti/agentkit/core/scoring.py:35) defaults to zero and treats empty/all-skipped runs as perfect passes.
+- The unauthenticated [web run route](/C:/Users/nicas/Desktop/agent-testkti/agentaudit/web/app.py:135) accepts target and pack paths that can lead to in-process Python execution.
+- The [runner timeout](/C:/Users/nicas/Desktop/agent-testkti/agentaudit/core/runner.py:30) returns while the timed-out thread continues acting; result errors, assertion details and sandbox diffs also bypass complete redaction.
+- [Scoring](/C:/Users/nicas/Desktop/agent-testkti/agentaudit/core/scoring.py:35) defaults to zero and treats empty/all-skipped runs as perfect passes.
 - HTTP side-effect tests can inspect a disconnected fake sandbox and falsely conclude that no real-world action occurred.
 - Current prompt-injection and leakage probes are small substring checks and are trivially bypassed.
 - Built wheels omit templates, static assets, YAML packs and configurations.
@@ -97,7 +97,7 @@ Implement before any public or compliance-labelled release:
 5. Implement a restricted decision-table DSL for applicability; ambiguity returns human review. Do not use an LLM or `eval` for authoritative classification.
 6. Build the system questionnaire covering intended purpose, EU roles, branding/substantial modification, sector, affected people, legal effects, public-authority use, data categories, children, model/GPAI relationship, tools, memory and external connectors.
 7. Seed the AI Act requirements above, with GDPR separate and CRA/NIS2 conditional.
-8. Allow customers to attach a snapshot from the Commission’s official Compliance Checker; do not scrape it or imply that Agentkit replaces it. [Official AI Act Service Desk](https://digital-strategy.ec.europa.eu/en/news/commission-launches-ai-act-service-desk-and-single-information-platform-support-ai-act).
+8. Allow customers to attach a snapshot from the Commission’s official Compliance Checker; do not scrape it or imply that Agentaudit replaces it. [Official AI Act Service Desk](https://digital-strategy.ec.europa.eu/en/news/commission-launches-ai-act-service-desk-and-single-information-platform-support-ai-act).
 
 ### P2 — Implement the customer-hosted runner and evidence protocol
 
@@ -118,7 +118,7 @@ Implement before any public or compliance-labelled release:
 3. Use managed OIDC Authorization Code with PKCE, secure server sessions, CSRF protection and roles `org_admin`, `assessment_owner`, `runner_operator`, `assessor`, `viewer`.
 4. Encrypt object storage, isolate tenant prefixes, malware-scan documentary uploads and exclude evidence payloads from application logs.
 5. Add immutable state-transition audit events, rate/concurrency limits, retention/deletion jobs, backup/restore and key rotation.
-6. Keep the existing `agentkit run`, report and comparison commands as “technical local mode”; add runner enrollment, bundle verification and dossier-export commands.
+6. Keep the existing `agentaudit run`, report and comparison commands as “technical local mode”; add runner enrollment, bundle verification and dossier-export commands.
 
 ### P4 — Add EU-relevant attack packs
 
@@ -139,8 +139,8 @@ Every `AttackScenario` declares prerequisites, black/gray-box mode, fixtures, sa
 3. Add reviewer separation, comments, remediation owners and expiring waivers requiring approval.
 4. Export signed JSON/PDF readiness dossiers containing scope, source versions, applicability rationale, control matrix, evidence hashes, assurance levels, technical findings, documentary gaps, exclusions, waivers and unresolved questions.
 5. Generate draft Annex IV, QMS, risk-register, FRIA and DPIA inputs, but never automatically issue a declaration of conformity, CE marking or certificate.
-6. Run an internal DPIA for Agentkit, document subprocessors, no-training commitments, retention/deletion and EU data residency.
-7. Perform a CRA applicability review for Agentkit itself and implement secure-development lifecycle, vulnerability disclosure, SBOM and reporting readiness; CRA Article 14 reporting begins 11 September 2026 where applicable. [CRA summary](https://digital-strategy.ec.europa.eu/en/policies/cra-summary).
+6. Run an internal DPIA for Agentaudit, document subprocessors, no-training commitments, retention/deletion and EU data residency.
+7. Perform a CRA applicability review for Agentaudit itself and implement secure-development lifecycle, vulnerability disclosure, SBOM and reporting readiness; CRA Article 14 reporting begins 11 September 2026 where applicable. [CRA summary](https://digital-strategy.ec.europa.eu/en/policies/cra-summary).
 8. Pilot first with non-high-risk enterprise agents, then one Annex III case with qualified EU legal/assessment review.
 
 ## Verification and Release Gates

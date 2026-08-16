@@ -24,7 +24,7 @@ this repo already covers part of the work, use it and say so.
 4. **Interface implications** — does this touch `core/schema.py`, `core/config.py`, the
    assertion `REGISTRY`, or the `Sandbox` ABC? Those are high-blast-radius contracts; list
    every consumer, including YAML packs and Jinja templates that reference names as strings
-5. **Data / migration implications** — `agentkit.db` is a gitignored developer artifact with
+5. **Data / migration implications** — `agentaudit.db` is a gitignored developer artifact with
    no migration system; if `store.py`'s schema changes, the plan is "delete the local db",
    not a migration
 6. **Risks** — what could regress, and the repo invariant most at risk (runner never raises,

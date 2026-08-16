@@ -1,12 +1,12 @@
 # Compliance layer
 
-agentkit reframes black-box test results as **EU AI Act readiness evidence**. It maps every
+agentaudit reframes black-box test results as **EU AI Act readiness evidence**. It maps every
 test to regulatory controls, groups pass/fail into obligations, and renders a report GRC
 teams can attach to a risk-management file.
 
-## What agentkit does NOT certify
+## What agentaudit does NOT certify
 
-agentkit produces **technical readiness evidence for the risk-management file — not a
+agentaudit produces **technical readiness evidence for the risk-management file — not a
 compliance, CE, or conformity determination**. The legal conclusion stays with the
 provider, deployer, or qualified assessor. A green gate means the tested invariants held,
 not that the system is "EU compliant".
@@ -17,7 +17,7 @@ are **not** merged into the binding timeline.
 
 ## Control mapping
 
-`agentkit/core/compliance.py` is pure data + one lookup — no rules engine, no LLM, no
+`agentaudit/core/compliance.py` is pure data + one lookup — no rules engine, no LLM, no
 `eval`.
 
 - **EU / ISO 42001 / NIST** controls are inherited from a test's `Category` alone
@@ -30,7 +30,7 @@ are **not** merged into the binding timeline.
 
 ## Attack packs → obligations
 
-Packs live in `agentkit/packs/agentic/` and reuse the treasury/email sandboxes and existing
+Packs live in `agentaudit/packs/agentic/` and reuse the treasury/email sandboxes and existing
 assertions (no new assertions, sandboxes, or dependencies).
 
 | Pack | ASI | Category | EU article | Proves |
@@ -63,9 +63,9 @@ turns:
 ## Rendering
 
 ```bash
-agentkit report --run <id> --format compliance        # Markdown
-agentkit report --run <id> --format compliance-json   # machine-readable for GRC
-agentkit run agentkit/packs/agentic --target <cfg> --compliance   # inline summary
+agentaudit report --run <id> --format compliance        # Markdown
+agentaudit report --run <id> --format compliance-json   # machine-readable for GRC
+agentaudit run agentaudit/packs/agentic --target <cfg> --compliance   # inline summary
 ```
 
 The report groups results by EU AI Act article and by OWASP ASI, lists failing test ids,

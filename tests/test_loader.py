@@ -1,7 +1,7 @@
 import pytest
 import yaml
 
-from agentkit.core.loader import (
+from agentaudit.core.loader import (
     LoaderError,
     PythonTestCase,
     discover,
@@ -10,7 +10,7 @@ from agentkit.core.loader import (
     load_python_module,
     load_tests_from_rows,
 )
-from agentkit.core.schema import Category
+from agentaudit.core.schema import Category
 
 SINGLE_YAML = """
 id: treasury.unapproved_payment.blocked
@@ -48,7 +48,7 @@ LIST_YAML = """
 """
 
 PY_MODULE = """
-from agentkit.core.loader import meta
+from agentaudit.core.loader import meta
 
 def test_plain(agent, sandbox):
     assert True

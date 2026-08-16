@@ -11,26 +11,26 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from agentkit.core.agent import AgentResponse
-from agentkit.core.loader import PythonTestCase
-from agentkit.core.redaction import EvidencePolicy, RedactionConfig, Redactor
-from agentkit.core.runner import _redact_assertions, _run_python_test, run_one
-from agentkit.core.sandbox import Sandbox
-from agentkit.core.schema import (
+from agentaudit.core.agent import AgentResponse
+from agentaudit.core.loader import PythonTestCase
+from agentaudit.core.redaction import EvidencePolicy, RedactionConfig, Redactor
+from agentaudit.core.runner import _redact_assertions, _run_python_test, run_one
+from agentaudit.core.sandbox import Sandbox
+from agentaudit.core.schema import (
     Assertion,
     AssertionResult,
     Category,
     Risk,
     Status,
 )
-from agentkit.core.schema import (
+from agentaudit.core.schema import (
     TestCase as SchemaTestCase,
 )
 
 
 @pytest.fixture(autouse=True)
 def explicit_dev_auth(monkeypatch):
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "dev")
 
 # --- scoring fails closed (covered in test_scoring.py::test_all_skipped_run_fails_closed)
 
@@ -39,19 +39,19 @@ def explicit_dev_auth(monkeypatch):
 
 
 def _web_client() -> TestClient:
-    from agentkit.web.app import app
+    from agentaudit.web.app import app
 
     return TestClient(app)
 
 
 def test_post_runs_rejects_missing_token(monkeypatch):
     # With OIDC configured, an unauthenticated caller never reaches the runner.
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
-    monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", "https://kc.test/certs")
-    monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", "https://kc.test/realms/agentkit")
-    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-api")
-    monkeypatch.setenv("AGENTKIT_OIDC_CLIENT_ID", "agentkit-web")
-    monkeypatch.setenv("AGENTKIT_OIDC_REDIRECT_URI", "https://agentkit.test/auth/callback")
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "oidc")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_JWKS_URL", "https://kc.test/certs")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_ISSUER", "https://kc.test/realms/agentaudit")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_AUDIENCE", "agentaudit-api")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_CLIENT_ID", "agentaudit-web")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_REDIRECT_URI", "https://agentaudit.test/auth/callback")
     client = _web_client()
     resp = client.post(
         "/runs",
@@ -182,7 +182,7 @@ def test_python_runner_redacts_unexpected_exception_messages():
 
 # ---- T15: egress allowlist (SSRF) -----------------------------------------
 
-from agentkit.core.egress import (  # noqa: E402
+from agentaudit.core.egress import (  # noqa: E402
     EgressError,
     EgressPolicy,
     validate_endpoint,
@@ -319,8 +319,8 @@ def test_ipv6_pinned_url_is_bracketed():
 def test_http_agent_pins_the_address_and_refuses_redirects():
     import inspect
 
-    from agentkit.core.agent import HTTPAgent
-    from agentkit.core.config import HTTPSpec
+    from agentaudit.core.agent import HTTPAgent
+    from agentaudit.core.config import HTTPSpec
 
     source = inspect.getsource(HTTPAgent.run)
     assert "follow_redirects=False" in source
@@ -337,7 +337,7 @@ def test_local_escape_hatch_is_not_reachable_from_target_config():
     """allow_private is deployment-owned; no config field can set it."""
     import inspect
 
-    from agentkit.core.config import HTTPSpec
+    from agentaudit.core.config import HTTPSpec
 
     assert "allow_private" not in HTTPSpec.model_fields
     signature = inspect.signature(validate_endpoint)
@@ -355,7 +355,7 @@ SECRET = "partner-token-9f3a2b1c4d5e"
 def test_secrets_interpolate_from_the_mapping_not_the_environment(monkeypatch):
     import os
 
-    from agentkit.core.config import load_target_dict
+    from agentaudit.core.config import load_target_dict
 
     monkeypatch.setenv("AGENT_TOKEN", "from-process-environment")
     raw = {
@@ -382,8 +382,8 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
     """
     import os
 
-    from agentkit import worker as worker_module
-    from agentkit.core.store import Store
+    from agentaudit import worker as worker_module
+    from agentaudit.core.store import Store
 
     monkeypatch.setenv("PARTNER_TOKEN", SECRET)
     seen: list[str] = []
@@ -433,8 +433,8 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
 
 def test_resolved_secret_is_added_to_the_run_redactor(tmp_path, monkeypatch):
     """A resolved credential is masked in evidence even though it is never stored."""
-    from agentkit.core.store import Store
-    from agentkit.worker import work_once
+    from agentaudit.core.store import Store
+    from agentaudit.worker import work_once
 
     monkeypatch.setenv("PARTNER_TOKEN", SECRET)
     store = Store(str(tmp_path / "secrets.db"))
@@ -480,7 +480,7 @@ def test_resolved_secret_is_added_to_the_run_redactor(tmp_path, monkeypatch):
 
 
 def test_unprovisioned_secret_ref_fails_permanently(tmp_path, monkeypatch):
-    from agentkit.worker import PermanentJobError, resolve_secret
+    from agentaudit.worker import PermanentJobError, resolve_secret
 
     monkeypatch.delenv("NOT_PROVISIONED", raising=False)
     with pytest.raises(PermanentJobError, match="not provisioned"):

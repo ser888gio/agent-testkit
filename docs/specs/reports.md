@@ -1,6 +1,6 @@
 # feat/reports — Spec
 
-**Task 17 · Depends on: 12 · Files:** `agentkit/reports/{__init__.py,json.py,junit.py,html.py,md.py}`,
+**Task 17 · Depends on: 12 · Files:** `agentaudit/reports/{__init__.py,json.py,junit.py,html.py,md.py}`,
 `tests/test_reports.py`
 
 ## Goal
@@ -17,7 +17,7 @@ def render(run, score, fmt: Literal["json","junit","html","md"]) -> str
 
 ## Format contracts
 - **JSON**: `{"run": <RunResult>, "score": <ScoreReport>}` — exact model dumps, stable keys.
-- **JUnit XML**: one `<testsuite name="agentkit" tests= failures= errors= skipped= time=>`;
+- **JUnit XML**: one `<testsuite name="agentaudit" tests= failures= errors= skipped= time=>`;
   one `<testcase classname="{category}" name="{test_id}" time="{latency_s}">` each;
   `failed` → `<failure message="{first failing assertion detail}"/>`;
   `error` → `<error message="{error}"/>`; `skipped` → `<skipped/>`. Must parse with a standard

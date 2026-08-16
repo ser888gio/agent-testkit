@@ -1,8 +1,8 @@
-# agentkit — EU AI-Act Compliance Layer + Agent-Attack Packs
+# agentaudit — EU AI-Act Compliance Layer + Agent-Attack Packs
 
 ## Context
 
-agentkit is a black-box tester for AI agents: it runs YAML **test packs** against an
+agentaudit is a black-box tester for AI agents: it runs YAML **test packs** against an
 agent target, asserts on sandbox side-effects, scores runs risk-weighted, and gates CI.
 It ships treasury + email verticals and a domain-neutral core pack.
 
@@ -84,7 +84,7 @@ flowchart TD
 - Sandbox reset stays per-test (between tests), so no cross-test state leak. Agent statefulness
   is the agent's own concern — sequential calls model a server-side session.
 
-### 2. Agent-attack packs — `agentkit/packs/agentic/`
+### 2. Agent-attack packs — `agentaudit/packs/agentic/`
 
 One folder per scenario; **reuse treasury/email sandboxes and existing assertions only**:
 
@@ -111,7 +111,7 @@ Test ids use the pack namespace so the compliance layer can map OWASP codes, e.g
 ASI04/07/08/10 are **not** black-box testable through one endpoint — no packs; surfaced as
 documented gaps by the report (§4).
 
-### 3. Compliance mapping — `agentkit/core/compliance.py`
+### 3. Compliance mapping — `agentaudit/core/compliance.py`
 
 Pure data + lookup, no framework:
 
@@ -129,7 +129,7 @@ Pure data + lookup, no framework:
 - `controls_for(result: TestResult) -> Control` (EU/ISO/NIST from category; `owasp` refined
   from `test_id`). One dict lookup + one function — deliberately not a rules engine.
 
-### 4. Compliance report — `agentkit/reports/compliance.py`
+### 4. Compliance report — `agentaudit/reports/compliance.py`
 
 Same `(run, score) -> str` interface as `reports/md.py`:
 
@@ -152,28 +152,28 @@ Same `(run, score) -> str` interface as `reports/md.py`:
 ### 6. Docs — `docs/specs/compliance.md`
 
 Control-mapping table, what each pack proves, the multi-turn `turns:` field, and an explicit
-**"what agentkit does NOT certify"** disclaimer (technical evidence for the risk-management
+**"what agentaudit does NOT certify"** disclaimer (technical evidence for the risk-management
 file, not a CE mark or legal conformity).
 
 ## Files to add / change
 
-- **Add**: `agentkit/core/compliance.py`, `agentkit/reports/compliance.py`,
-  `agentkit/packs/agentic/{tool_misuse,memory_poisoning,goal_hijack,privilege_abuse,human_oversight,code_execution}/*.yaml`,
+- **Add**: `agentaudit/core/compliance.py`, `agentaudit/reports/compliance.py`,
+  `agentaudit/packs/agentic/{tool_misuse,memory_poisoning,goal_hijack,privilege_abuse,human_oversight,code_execution}/*.yaml`,
   `docs/specs/compliance.md`, `tests/test_compliance.py`.
-- **Edit**: `agentkit/core/schema.py` (turns), `agentkit/core/loader.py` (input-xor-turns),
-  `agentkit/core/runner.py` (multi-turn loop), `agentkit/reports/__init__.py` (register),
-  `agentkit/cli.py` (`run --compliance`), `README.md`.
+- **Edit**: `agentaudit/core/schema.py` (turns), `agentaudit/core/loader.py` (input-xor-turns),
+  `agentaudit/core/runner.py` (multi-turn loop), `agentaudit/reports/__init__.py` (register),
+  `agentaudit/cli.py` (`run --compliance`), `README.md`.
 - **No new assertions**, no new sandbox, no new dependency.
 
 ## Verification
 
-1. `agentkit run agentkit/packs/agentic --target agentkit/config/treasury-agent.yaml` —
+1. `agentaudit run agentaudit/packs/agentic --target agentaudit/config/treasury-agent.yaml` —
    packs discover/run; the **safe** demo treasury agent passes (side-effect invariants hold),
    `code_execution` reports `skipped`.
 2. Prove the tests bite: a pytest target built from a reckless/stateful-vulnerable callable
    (mirroring `tests/test_packs_domain.py:_reckless_factory`; the memory-poisoning variant
    trusts turn-1 claims) **fails** `tool_misuse`/`memory_poisoning`/`goal_hijack`.
-3. `agentkit report --run <id> --format compliance` — renders the EU-article-grouped report
+3. `agentaudit report --run <id> --format compliance` — renders the EU-article-grouped report
    with correct pass/fail rollup, ISO/NIST columns, and ASI04/07/08/10 under "Not tested".
 4. `tests/test_compliance.py`: `controls_for` maps a `data_leakage` result → Art. 10/15 and a
    `agentic.tool_misuse.*` `tool_use` fail → ASI02; the report marks ASI04/07/08/10 as

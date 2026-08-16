@@ -14,7 +14,7 @@ down_revision = "0002"
 branch_labels = None
 depends_on = None
 
-# Keep in sync with backend/agentkit/core/store.py:_SCHEMA.
+# Keep in sync with backend/agentaudit/core/store.py:_SCHEMA.
 TABLES = (
     """
     CREATE TABLE IF NOT EXISTS targets (

@@ -1,7 +1,7 @@
 # feat/web-ui — Spec
 
-**Task 18 · Depends on: 13,12 · Files:** `agentkit/web/app.py`,
-`agentkit/web/templates/*.html`, `agentkit/web/static/*`, `tests/test_web.py`
+**Task 18 · Depends on: 13,12 · Files:** `agentaudit/web/app.py`,
+`agentaudit/web/templates/*.html`, `agentaudit/web/static/*`, `tests/test_web.py`
 
 ## Goal
 A FastAPI + Jinja/HTMX dashboard (no JS build) over the `Store`, read-only for the MVP plus a

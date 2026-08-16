@@ -3,7 +3,7 @@ requires = ["setuptools>=83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentkit"
+name = "agentaudit"
 version = "0.1.0"
 description = "Black-box testing kit for AI agents: endpoint + sandbox side-effect assertions, agentic attack packs, EU AI Act compliance reports."
 readme = "README.md"
@@ -31,47 +31,47 @@ dev = [
 ]
 
 [project.scripts]
-agentkit = "agentkit.cli:app"
+agentaudit = "agentaudit.cli:app"
 
 [tool.setuptools]
 include-package-data = false
 packages = [
-    "agentkit",
-    "agentkit.config",
-    "agentkit.packs",
-    "agentkit.packs.core",
-    "agentkit.core",
-    "agentkit.domains",
-    "agentkit.domains.email",
-    "agentkit.domains.treasury",
-    "agentkit.reports",
-    "agentkit.web",
-    "agentkit.migrations",
-    "agentkit.migrations.versions",
+    "agentaudit",
+    "agentaudit.config",
+    "agentaudit.packs",
+    "agentaudit.packs.core",
+    "agentaudit.core",
+    "agentaudit.domains",
+    "agentaudit.domains.email",
+    "agentaudit.domains.treasury",
+    "agentaudit.reports",
+    "agentaudit.web",
+    "agentaudit.migrations",
+    "agentaudit.migrations.versions",
 ]
 
 [tool.setuptools.package-dir]
-agentkit = "backend/agentkit"
-"agentkit.config" = "agentkit/config"
-"agentkit.packs" = "agentkit/packs"
-"agentkit.packs.core" = "agentkit/packs/core"
-"agentkit.core" = "backend/agentkit/core"
-"agentkit.domains" = "backend/agentkit/domains"
-"agentkit.domains.email" = "backend/agentkit/domains/email"
-"agentkit.domains.treasury" = "backend/agentkit/domains/treasury"
-"agentkit.reports" = "backend/agentkit/reports"
-"agentkit.web" = "frontend/agentkit/web"
-"agentkit.migrations" = "infra/alembic"
-"agentkit.migrations.versions" = "infra/alembic/versions"
+agentaudit = "backend/agentaudit"
+"agentaudit.config" = "agentaudit/config"
+"agentaudit.packs" = "agentaudit/packs"
+"agentaudit.packs.core" = "agentaudit/packs/core"
+"agentaudit.core" = "backend/agentaudit/core"
+"agentaudit.domains" = "backend/agentaudit/domains"
+"agentaudit.domains.email" = "backend/agentaudit/domains/email"
+"agentaudit.domains.treasury" = "backend/agentaudit/domains/treasury"
+"agentaudit.reports" = "backend/agentaudit/reports"
+"agentaudit.web" = "frontend/agentaudit/web"
+"agentaudit.migrations" = "infra/alembic"
+"agentaudit.migrations.versions" = "infra/alembic/versions"
 
 [tool.setuptools.package-data]
-"agentkit.config" = ["*.yaml"]
-"agentkit.packs" = ["**/*.yaml"]
-"agentkit.web" = [
+"agentaudit.config" = ["*.yaml"]
+"agentaudit.packs" = ["**/*.yaml"]
+"agentaudit.web" = [
     "static/*",
     "templates/*",
 ]
-"agentkit.migrations" = ["script.py.mako"]
+"agentaudit.migrations" = ["script.py.mako"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -85,8 +85,8 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.ruff.lint.isort]
 # The package lives under backend/ and frontend/, not beside pyproject.toml, so ruff cannot
-# infer it as first-party and would sort `agentkit` in with third-party imports.
-known-first-party = ["agentkit"]
+# infer it as first-party and would sort `agentaudit` in with third-party imports.
+known-first-party = ["agentaudit"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["typer.Option", "fastapi.Depends"]

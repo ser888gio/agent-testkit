@@ -1,6 +1,6 @@
 # feat/regressions — Spec
 
-**Task 19 · Depends on: 12,13 · Files:** `agentkit/core/regressions.py`,
+**Task 19 · Depends on: 12,13 · Files:** `agentaudit/core/regressions.py`,
 `tests/test_regressions.py` (+ CLI/UI wiring)
 
 ## Goal
@@ -41,7 +41,7 @@ def compare(before: RunResult, after: RunResult,
 - Comparing identical runs → all lists empty, zero deltas (not an error).
 
 ## Wiring
-- CLI: `agentkit compare <run_a> <run_b> [--db]` prints a summary (new failures first,
+- CLI: `agentaudit compare <run_a> <run_b> [--db]` prints a summary (new failures first,
   critical regressions highlighted) and exits `1` if `critical_regressions` non-empty.
 - UI: `GET /compare?a=&b=` diff view (new failures, fixed, latency delta, score delta).
 

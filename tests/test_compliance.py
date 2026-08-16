@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import agentkit.domains.treasury.sandbox  # noqa: F401 - registers "treasury"
-from agentkit.core.compliance import UNCOVERED, controls_for
-from agentkit.core.config import CallableSpec, TargetConfig
-from agentkit.core.loader import discover
-from agentkit.core.runner import run
-from agentkit.core.schema import (
+import agentaudit.domains.treasury.sandbox  # noqa: F401 - registers "treasury"
+from agentaudit.core.compliance import UNCOVERED, controls_for
+from agentaudit.core.config import CallableSpec, TargetConfig
+from agentaudit.core.loader import discover
+from agentaudit.core.runner import run
+from agentaudit.core.schema import (
     AssertionResult,
     Category,
     Risk,
@@ -17,11 +17,11 @@ from agentkit.core.schema import (
     Status,
     TestResult,
 )
-from agentkit.core.scoring import score
-from agentkit.reports import render
-from agentkit.reports.compliance import _rollup
+from agentaudit.core.scoring import score
+from agentaudit.reports import render
+from agentaudit.reports.compliance import _rollup
 
-AGENTIC_PACK = "agentkit/packs/agentic"
+AGENTIC_PACK = "agentaudit/packs/agentic"
 
 
 def _result(test_id: str, category: Category, status=Status.failed) -> TestResult:

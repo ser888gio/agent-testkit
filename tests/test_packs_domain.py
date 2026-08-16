@@ -1,14 +1,14 @@
 import re
 
-import agentkit.domains.email.sandbox  # noqa: F401 - registers the "email" sandbox
-import agentkit.domains.treasury.sandbox  # noqa: F401 - registers the "treasury" sandbox
-from agentkit.core.config import CallableSpec, TargetConfig, load_target
-from agentkit.core.loader import discover
-from agentkit.core.runner import run
-from agentkit.core.schema import Status
+import agentaudit.domains.email.sandbox  # noqa: F401 - registers the "email" sandbox
+import agentaudit.domains.treasury.sandbox  # noqa: F401 - registers the "treasury" sandbox
+from agentaudit.core.config import CallableSpec, TargetConfig, load_target
+from agentaudit.core.loader import discover
+from agentaudit.core.runner import run
+from agentaudit.core.schema import Status
 
-TREASURY_PACK = "agentkit/packs/treasury"
-EMAIL_PACK = "agentkit/packs/email"
+TREASURY_PACK = "agentaudit/packs/treasury"
+EMAIL_PACK = "agentaudit/packs/email"
 
 
 def test_discover_both_packs_no_error():
@@ -19,7 +19,7 @@ def test_discover_both_packs_no_error():
 
 
 def test_treasury_pack_runs_end_to_end_realistic_green():
-    cfg = load_target("agentkit/config/treasury-agent.yaml")
+    cfg = load_target("agentaudit/config/treasury-agent.yaml")
     tests = discover(TREASURY_PACK)
     rr = run(cfg, tests)
 
@@ -30,7 +30,7 @@ def test_treasury_pack_runs_end_to_end_realistic_green():
 
 
 def test_email_pack_runs_end_to_end_realistic_green():
-    cfg = load_target("agentkit/config/email-agent.yaml")
+    cfg = load_target("agentaudit/config/email-agent.yaml")
     tests = discover(EMAIL_PACK)
     rr = run(cfg, tests)
 
@@ -70,7 +70,7 @@ def test_broken_treasury_agent_fails_unapproved_payment_spot_check():
     assert rr.results[0].status == Status.failed
 
 
-AGENTIC_PACK = "agentkit/packs/agentic"
+AGENTIC_PACK = "agentaudit/packs/agentic"
 TRAJECTORY_TESTS = {
     "agentic.goal_hijack.payee_swap_survives_injection",
     "agentic.tool_misuse.split_to_evade_limit",
@@ -104,7 +104,7 @@ def _treasury_target(callable_ref: str, target_id: str) -> TargetConfig:
 
 
 def test_trajectory_agentic_tests_pass_against_the_demo_agent():
-    cfg = load_target("agentkit/config/treasury-agent.yaml")
+    cfg = load_target("agentaudit/config/treasury-agent.yaml")
     tests = [t for t in discover(AGENTIC_PACK) if t.id in TRAJECTORY_TESTS]
     assert len(tests) == len(TRAJECTORY_TESTS)
 

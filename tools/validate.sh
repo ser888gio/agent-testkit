@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run agentkit's validation ladder: lint + tests.
+# Run agentaudit's validation ladder: lint + tests.
 #
 # Usage:
 #   tools/validate.sh                 lint the repo + full pytest suite

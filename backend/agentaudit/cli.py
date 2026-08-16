@@ -1,0 +1,474 @@
+"""agentaudit CLI: run, report, ui."""
+
+from __future__ import annotations
+
+import json
+import os
+from importlib.resources import files
+from ipaddress import ip_address
+from pathlib import Path
+from urllib.parse import urlparse
+
+import typer
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine
+
+# Eagerly import built-in domains so their sandboxes are registered before
+# `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
+# "feat/runner" section, for why this matters).
+import agentaudit.domains.email.sandbox  # noqa: F401
+import agentaudit.domains.treasury.sandbox  # noqa: F401
+from agentaudit.core.adapters import ADAPTERS
+from agentaudit.core.attacks import expand
+from agentaudit.core.config import ConfigError, load_target, load_target_dict
+from agentaudit.core.discovery import discover as discover_profile
+from agentaudit.core.loader import LoaderError, discover, filter_tests
+from agentaudit.core.planner import apply_plan
+from agentaudit.core.planner import plan as build_plan
+from agentaudit.core.profile import HarnessPlan
+from agentaudit.core.regressions import compare
+from agentaudit.core.runner import run as run_tests
+from agentaudit.core.schema import Category
+from agentaudit.core.scoring import score
+from agentaudit.core.store import DEFAULT_ORG, Store
+from agentaudit.reports import render as render_report
+from agentaudit.reports import to_plan_markdown
+
+DEFAULT_DB_PATH = "database/agentaudit.db"
+
+
+def _resolve_db_path(db: str | None) -> str:
+    return db or os.environ.get("AGENTAUDIT_DB", DEFAULT_DB_PATH)
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ip_address(host.strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
+def _alembic_config(db_path: Path) -> AlembicConfig:
+    cfg = AlembicConfig()
+    try:
+        migration_package = files("agentaudit.migrations")
+    except ModuleNotFoundError:
+        migration_package = Path(__file__).resolve().parents[2] / "infra" / "alembic"
+    cfg.set_main_option("script_location", str(migration_package))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+    return cfg
+
+
+def _pending_migrations(cfg: AlembicConfig) -> list[tuple[str, str]]:
+    scripts = ScriptDirectory.from_config(cfg)
+    engine = create_engine(cfg.get_main_option("sqlalchemy.url"))
+    try:
+        with engine.connect() as connection:
+            current_heads = MigrationContext.configure(connection).get_current_heads()
+    finally:
+        engine.dispose()
+
+    pending = list(scripts.iterate_revisions(scripts.get_heads(), current_heads))
+    return [(revision.revision, revision.doc or "") for revision in reversed(pending)]
+
+app = typer.Typer(no_args_is_help=True)
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo("agentaudit 0.1.0")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False, "--version", callback=_version_callback, is_eager=True
+    ),
+) -> None:
+    pass
+
+
+def _print_table(rr, report) -> None:
+    typer.echo(f"agentaudit run - target: {rr.agent_name}   ({len(rr.results)} tests)")
+    by_cat: dict[str, dict[str, int]] = {}
+    for r in rr.results:
+        counts = by_cat.setdefault(
+            r.category.value, {"pass": 0, "fail": 0, "err": 0, "skip": 0}
+        )
+        counts[
+            {"passed": "pass", "failed": "fail", "error": "err", "skipped": "skip"}[
+                r.status.value
+            ]
+        ] += 1
+
+    typer.echo(f"{'CATEGORY':<20}{'PASS':>6}{'FAIL':>6}{'ERR':>6}{'SKIP':>6}")
+    for cat, counts in sorted(by_cat.items()):
+        typer.echo(
+            f"{cat:<20}{counts['pass']:>6}{counts['fail']:>6}{counts['err']:>6}{counts['skip']:>6}"
+        )
+    typer.echo("-" * 44)
+    typer.echo(
+        f"Overall (weighted): {report.overall_score * 100:.0f}%   "
+        f"Pass rate: {report.pass_rate * 100:.0f}%   "
+        f"Critical failures: {report.critical_failures}"
+    )
+    typer.echo(f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}")
+
+
+def _print_plan(harness: HarnessPlan) -> None:
+    profile = harness.profile
+    typer.echo(f"agentaudit plan - target: {profile.id}")
+    typer.echo(
+        f"  profile: domain={profile.domain} interface={profile.interface} "
+        f"risk={profile.risk_level.value} multi_turn={profile.multi_turn} "
+        f"tool_use={profile.tool_use}"
+    )
+    for note in profile.notes:
+        typer.echo(f"    - {note}")
+
+    typer.echo(f"  selected ({len(harness.selected)}):")
+    for choice in harness.selected:
+        typer.echo(f"    {choice.score:>6.2f}  {choice.test_id}  [{choice.source}]")
+        typer.echo(f"            why: {'; '.join(choice.reasons)}")
+
+    typer.echo(f"  not tested ({len(harness.excluded)}):")
+    for skipped in harness.excluded:
+        typer.echo(f"            {skipped.test_id}: {skipped.reason}")
+
+
+def _load_target_or_exit(target: str | None, endpoint: str | None = None):
+    """Resolve a target from a config file or, for the common case, a bare URL.
+
+    `--endpoint` covers the default shape: POST {"input": ...} -> {"text": ...}.
+    Anything else (auth headers, different field names) needs a config file.
+    """
+    if (target is None) == (endpoint is None):
+        typer.echo("error: pass exactly one of --target or --endpoint", err=True)
+        raise typer.Exit(2)
+
+    if endpoint is not None:
+        try:
+            return load_target_dict(
+                {
+                    "id": urlparse(endpoint).hostname or "endpoint",
+                    "agent": {
+                        "type": "http",
+                        "endpoint": endpoint,
+                        "request": {"json": {"input": "{{ input }}"}},
+                        "response": {"text_path": "$.text"},
+                    },
+                },
+                source="--endpoint",
+            )
+        except ConfigError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2) from exc
+
+    try:
+        return load_target(target)
+    except (ConfigError, FileNotFoundError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+
+def _discover_tests_or_exit(packs_dir: str):
+    try:
+        return discover(packs_dir)
+    except LoaderError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+
+@app.command("plan")
+def plan_cmd(
+    packs_dir: str = typer.Argument(...),
+    target: str | None = typer.Option(None, "--target"),
+    endpoint: str | None = typer.Option(
+        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+    ),
+    max_tests: int | None = typer.Option(None, "--max-tests", min=1),
+    format: str = typer.Option("table", "--format"),
+) -> None:
+    """Probe the target, rank the catalog against it, and print the plan.
+
+    Probing calls the endpoint. Nothing is executed beyond two trivial probes.
+    """
+    cfg = _load_target_or_exit(target, endpoint)
+    tests = _discover_tests_or_exit(packs_dir)
+    harness = build_plan(
+        discover_profile(cfg),
+        tests,
+        adapters=list(ADAPTERS.values()),
+        max_tests=max_tests,
+    )
+    if format == "json":
+        typer.echo(harness.model_dump_json(indent=2))
+    else:
+        _print_plan(harness)
+
+
+@app.command("run")
+def run_cmd(
+    packs_dir: str = typer.Argument(...),
+    target: str | None = typer.Option(None, "--target"),
+    endpoint: str | None = typer.Option(
+        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+    ),
+    db: str | None = typer.Option(None, "--db"),
+    fail_under: float = typer.Option(0.0, "--fail-under"),
+    block_on_critical: bool = typer.Option(
+        True, "--block-on-critical/--no-block-on-critical"
+    ),
+    tag: list[str] = typer.Option([], "--tag"),
+    category: list[str] = typer.Option([], "--category"),
+    format: str = typer.Option("table", "--format"),
+    compliance: bool = typer.Option(False, "--compliance"),
+    attack: str | None = typer.Option(
+        None, "--attack", help="Comma-separated attack transforms to expand each test through."
+    ),
+    use_plan: bool = typer.Option(
+        False, "--plan", help="Profile the target first and run only the tests it justifies."
+    ),
+    max_tests: int | None = typer.Option(None, "--max-tests", min=1),
+) -> None:
+    db = _resolve_db_path(db)
+    cfg = _load_target_or_exit(target, endpoint)
+    tests = _discover_tests_or_exit(packs_dir)
+
+    categories = [Category(c) for c in category] if category else None
+    tests = filter_tests(tests, tags=tag or None, categories=categories)
+
+    if not tests:
+        typer.echo("warning: no tests discovered", err=True)
+        raise typer.Exit(2)
+
+    harness = None
+    if use_plan:
+        harness = build_plan(
+            discover_profile(cfg),
+            tests,
+            adapters=list(ADAPTERS.values()),
+            max_tests=max_tests,
+            attack_transforms=[n.strip() for n in (attack or "").split(",") if n.strip()],
+        )
+        tests, unexecuted = apply_plan(harness, tests)
+        _print_plan(harness)
+        if unexecuted:
+            typer.echo(
+                f"note: {len(unexecuted)} selected test(s) belong to external tools and are "
+                f"not executed by this run: {', '.join(u.test_id for u in unexecuted)}"
+            )
+        if not tests:
+            typer.echo("warning: the plan selected no runnable local tests", err=True)
+            raise typer.Exit(2)
+    elif max_tests is not None:
+        typer.echo("error: --max-tests only applies with --plan", err=True)
+        raise typer.Exit(2)
+
+    if attack:
+        try:
+            tests = expand(tests, [n.strip() for n in attack.split(",") if n.strip()])
+        except ValueError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2) from exc
+
+    rr = run_tests(cfg, tests)
+    report = score(rr, fail_under=fail_under, block_on_critical=block_on_critical)
+
+    store = Store(db)
+    store.save_run(DEFAULT_ORG, cfg, rr, report, plan=harness)
+
+    if format == "json":
+        typer.echo(
+            json.dumps(
+                {
+                    "run_id": rr.run_id,
+                    "agent_name": rr.agent_name,
+                    "overall_score": report.overall_score,
+                    "pass_rate": report.pass_rate,
+                    "critical_failures": report.critical_failures,
+                    "gate_passed": report.gate_passed,
+                    "threshold": report.threshold,
+                }
+            )
+        )
+    else:
+        _print_table(rr, report)
+
+    if compliance:
+        typer.echo("")
+        typer.echo(render_report(rr, report, "compliance"))
+
+    raise typer.Exit(0 if report.gate_passed else 1)
+
+
+@app.command("report")
+def report_cmd(
+    run: str = typer.Option(..., "--run"),
+    format: str = typer.Option("json", "--format"),
+    out: str | None = typer.Option(None, "--out"),
+    db: str | None = typer.Option(None, "--db"),
+) -> None:
+    store = Store(_resolve_db_path(db))
+    try:
+        rr, report = store.get_run(DEFAULT_ORG, run)
+    except KeyError as exc:
+        typer.echo(f"error: run '{run}' not found", err=True)
+        raise typer.Exit(2) from exc
+
+    if format == "plan":
+        content = to_plan_markdown(store.get_run_plan(DEFAULT_ORG, run))
+    else:
+        try:
+            content = render_report(rr, report, format)
+        except ValueError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2) from exc
+
+    if out:
+        Path(out).write_text(content, encoding="utf-8")
+    else:
+        typer.echo(content)
+
+
+@app.command("compare")
+def compare_cmd(
+    run_a: str = typer.Argument(...),
+    run_b: str = typer.Argument(...),
+    db: str | None = typer.Option(None, "--db"),
+) -> None:
+    store = Store(_resolve_db_path(db))
+    try:
+        before, before_score = store.get_run(DEFAULT_ORG, run_a)
+        after, after_score = store.get_run(DEFAULT_ORG, run_b)
+    except KeyError as exc:
+        typer.echo(f"error: run {exc} not found", err=True)
+        raise typer.Exit(2) from exc
+
+    diff = compare(before, after, before_score, after_score)
+
+    typer.echo(f"agentaudit compare - {run_a[:8]} -> {run_b[:8]}")
+    if diff.critical_regressions:
+        typer.echo(f"CRITICAL REGRESSIONS: {', '.join(diff.critical_regressions)}")
+    typer.echo(
+        f"Newly failing ({len(diff.newly_failing)}): {', '.join(diff.newly_failing)}"
+    )
+    typer.echo(
+        f"Newly passing ({len(diff.newly_passing)}): {', '.join(diff.newly_passing)}"
+    )
+    typer.echo(f"Added: {', '.join(diff.added)}")
+    typer.echo(f"Removed: {', '.join(diff.removed)}")
+    typer.echo(
+        f"Score delta - overall: {diff.score_delta['overall']:+.2%}  "
+        f"pass_rate: {diff.score_delta['pass_rate']:+.2%}"
+    )
+
+    raise typer.Exit(1 if diff.critical_regressions else 0)
+
+
+@app.command("migrate")
+def migrate_cmd(
+    db: str | None = typer.Option(None, "--db"),
+    status_only: bool = typer.Option(False, "--status"),
+) -> None:
+    db_path = Path(_resolve_db_path(db))
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg = _alembic_config(db_path)
+    if status_only:
+        pending = _pending_migrations(cfg)
+        if not pending:
+            typer.echo("up to date")
+            return
+        for revision, name in pending:
+            typer.echo(f"pending {revision}: {name}")
+    else:
+        alembic_command.upgrade(cfg, "head")
+
+
+@app.command("purge")
+def purge_cmd(
+    db: str | None = typer.Option(None, "--db"),
+    keep_days: int | None = typer.Option(None, "--keep-days", min=0),
+    keep_last: int | None = typer.Option(None, "--keep-last", min=0),
+) -> None:
+    """Delete runs older than --keep-days and/or beyond the newest --keep-last per agent."""
+    if keep_days is None and keep_last is None:
+        typer.echo("nothing to do: pass --keep-days and/or --keep-last", err=True)
+        raise typer.Exit(2)
+    store = Store(_resolve_db_path(db))
+    deleted, blob_paths = store.purge_runs(keep_days=keep_days, keep_last=keep_last)
+    artifacts_root = Path(os.environ.get("AGENTAUDIT_ARTIFACTS_DIR", "database/artifacts"))
+    removed_blobs = 0
+    for rel in blob_paths:
+        blob = (artifacts_root / rel).resolve()
+        # Rows are written by save_artifact with relative keys; anything that
+        # escapes the root is corrupt data, not a delete instruction.
+        if blob.is_relative_to(artifacts_root.resolve()) and blob.is_file():
+            blob.unlink()
+            removed_blobs += 1
+    typer.echo(f"purged {deleted} runs, {removed_blobs} artifact blobs")
+
+
+@app.command("worker")
+def worker_cmd(
+    db: str | None = typer.Option(None, "--db"),
+    poll_seconds: float = typer.Option(1.0, "--poll-seconds"),
+    lease_seconds: int = typer.Option(120, "--lease-seconds"),
+    max_per_org: int = typer.Option(2, "--max-per-org"),
+) -> None:
+    """Run the job worker until interrupted. Same image as `ui`, different command."""
+    from agentaudit.worker import main as worker_main
+
+    worker_main(
+        _resolve_db_path(db),
+        poll_seconds=poll_seconds,
+        lease_seconds=lease_seconds,
+        max_per_org=max_per_org,
+    )
+
+
+@app.command("ui")
+def ui_cmd(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+    db: str | None = typer.Option(None, "--db"),
+) -> None:
+    try:
+        import uvicorn
+
+        mode = os.environ.get("AGENTAUDIT_AUTH_MODE", "").strip().lower()
+        if not mode:
+            if not _is_loopback_host(host):
+                typer.echo(
+                    "error: public UI binding requires AGENTAUDIT_AUTH_MODE=oidc",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            os.environ["AGENTAUDIT_AUTH_MODE"] = "dev"
+        elif mode == "dev" and not _is_loopback_host(host):
+            typer.echo("error: dev authentication is loopback-only", err=True)
+            raise typer.Exit(1)
+
+        os.environ["AGENTAUDIT_DB"] = _resolve_db_path(db)
+        import agentaudit.web.app as web_app
+
+        web_app.auth_enabled()
+    except ModuleNotFoundError as exc:
+        typer.echo(f"error: web UI is not available yet: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    except RuntimeError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"agentaudit ui running at http://{host}:{port}")
+    uvicorn.run("agentaudit.web.app:app", host=host, port=port)
+
+
+if __name__ == "__main__":
+    app()

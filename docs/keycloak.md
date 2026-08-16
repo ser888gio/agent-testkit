@@ -1,6 +1,6 @@
 # Identity and local Keycloak
 
-Phase 2 uses Keycloak for identity and organization membership. AgentKit remains
+Phase 2 uses Keycloak for identity and organization membership. AgentAudit remains
 responsible for application authorization: `viewer` is read-only and `admin` may launch
 runs and author tests.
 
@@ -20,7 +20,7 @@ Compose keeps browser-facing issuer/authorization URLs on `localhost:8080` while
 
 Both human and service-account access tokens contain:
 
-- `aud: agentkit-api`
+- `aud: agentaudit-api`
 - one scalar `org_id`
 - a coarse realm role (`admin` or `viewer`)
 
@@ -29,24 +29,24 @@ The example user starts as a viewer. Grant `admin` only when mutation access is 
 To smoke-test the service account without using a human password grant:
 
 ```bash
-export AGENTKIT_CI_ACME_SECRET='the value placed in infra/.env'
+export AGENTAUDIT_CI_ACME_SECRET='the value placed in infra/.env'
 TOKEN=$(curl --fail --silent --show-error \
-  -X POST http://localhost:8080/realms/agentkit/protocol/openid-connect/token \
+  -X POST http://localhost:8080/realms/agentaudit/protocol/openid-connect/token \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode grant_type=client_credentials \
-  --data-urlencode client_id=agentkit-ci-acme \
-  --data-urlencode client_secret="$AGENTKIT_CI_ACME_SECRET" \
+  --data-urlencode client_id=agentaudit-ci-acme \
+  --data-urlencode client_secret="$AGENTAUDIT_CI_ACME_SECRET" \
   | python -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
 TOKEN="$TOKEN" python -c 'import base64,json,os; p=os.environ["TOKEN"].split(".")[1]; print(json.loads(base64.urlsafe_b64decode(p+"="*(-len(p)%4))))'
 ```
 
-The decoded payload must contain `org_id: acme`, `agentkit-api` in `aud`, and `admin` in
-`realm_access.roles`. This decoding command only inspects the smoke-test token; AgentKit itself
+The decoded payload must contain `org_id: acme`, `agentaudit-api` in `aud`, and `admin` in
+`realm_access.roles`. This decoding command only inspects the smoke-test token; AgentAudit itself
 always verifies the signature and registered claims.
 
 ## Realm lifecycle
 
-`infra/keycloak/agentkit-realm.json` is bootstrap configuration. Keycloak intentionally
+`infra/keycloak/agentaudit-realm.json` is bootstrap configuration. Keycloak intentionally
 skips startup import when the realm already exists, so changing the JSON does not reconcile
 an existing Keycloak database. For local development, recreate the Keycloak database volume
 when you intentionally want a clean import. For hosted environments, apply reviewed realm

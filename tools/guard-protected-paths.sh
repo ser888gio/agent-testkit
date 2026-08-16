@@ -29,10 +29,10 @@ deny() {
 
 case "$norm" in
   */dist/*|dist/*)                       deny "uv build" ;;
-  *agentkit.egg-info/*)                  deny "pip install -e ." ;;
+  *agentaudit.egg-info/*)                  deny "pip install -e ." ;;
   */.venv/*|.venv/*)                     deny "uv sync --extra dev" ;;
   *uv.lock)                              deny "uv lock (or uv add <pkg>)" ;;
-  *agentkit.db)                          deny "delete the file; the next 'agentkit run' recreates it" ;;
+  *agentaudit.db)                          deny "delete the file; the next 'agentaudit run' recreates it" ;;
   */__pycache__/*)                       deny "delete the directory; Python recreates it" ;;
   *.pyc)                                 deny "delete the file; Python recreates it" ;;
   */docs/diagrams/*.svg|docs/diagrams/*.svg)

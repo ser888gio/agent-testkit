@@ -1,6 +1,6 @@
 # feat/config — Spec
 
-**Task 3 · Depends on: 1,2 · Files:** `agentkit/core/config.py`, `agentkit/config/*.yaml`,
+**Task 3 · Depends on: 1,2 · Files:** `agentaudit/core/config.py`, `agentaudit/config/*.yaml`,
 `tests/test_config.py`
 
 ## Goal
@@ -41,7 +41,7 @@ Callable target:
 id: treasury-demo
 agent:
   type: callable
-  callable: agentkit.domains.treasury.agent:create_agent
+  callable: agentaudit.domains.treasury.agent:create_agent
 sandbox: treasury
 evidence:
   store_request: true
@@ -85,7 +85,7 @@ sandbox: treasury
 
 ## Examples
 ```python
-cfg = load_target("agentkit/config/treasury-agent.yaml")
+cfg = load_target("agentaudit/config/treasury-agent.yaml")
 cfg.agent.type            # "callable"
 cfg.evidence.store_request # True
 ```

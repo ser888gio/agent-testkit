@@ -1,6 +1,6 @@
 # feat/agent-adapter — Spec
 
-**Task 4 · Depends on: 1,3 · Files:** `agentkit/core/agent.py`, `tests/test_agent.py`
+**Task 4 · Depends on: 1,3 · Files:** `agentaudit/core/agent.py`, `tests/test_agent.py`
 
 ## Goal
 One normalized interface the runner + assertions code against, regardless of how the agent

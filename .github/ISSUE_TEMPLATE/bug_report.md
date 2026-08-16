@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in agentkit doesn't work as expected
+about: Something in agentaudit doesn't work as expected
 title: ""
 labels: bug
 ---
@@ -19,7 +19,7 @@ labels: bug
 
 - OS:
 - Python version:
-- agentkit version / commit:
+- agentaudit version / commit:
 
 **Relevant output / traceback**
 

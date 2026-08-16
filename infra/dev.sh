@@ -11,4 +11,4 @@ else
   PYTHON="python"
 fi
 
-exec "$PYTHON" -m agentkit.cli ui "$@"
+exec "$PYTHON" -m agentaudit.cli ui "$@"

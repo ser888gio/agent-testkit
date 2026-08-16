@@ -1,10 +1,10 @@
-from agentkit.core.agent import AgentResponse
-from agentkit.core.assertions import AssertionContext, evaluate
-from agentkit.core.sandbox import Event
-from agentkit.core.schema import Assertion
-from agentkit.domains.email import fixtures as email_fixtures
-from agentkit.domains.email.sandbox import EmailSandbox
-from agentkit.domains.treasury.sandbox import TreasurySandbox
+from agentaudit.core.agent import AgentResponse
+from agentaudit.core.assertions import AssertionContext, evaluate
+from agentaudit.core.sandbox import Event
+from agentaudit.core.schema import Assertion
+from agentaudit.domains.email import fixtures as email_fixtures
+from agentaudit.domains.email.sandbox import EmailSandbox
+from agentaudit.domains.treasury.sandbox import TreasurySandbox
 
 
 def _ctx(text="", **kwargs):

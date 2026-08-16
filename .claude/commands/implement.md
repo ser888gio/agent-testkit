@@ -18,7 +18,7 @@ do not start editing from a bare description.
   fixing it.
 - **Validate after each logical change**, narrowest first:
   `python -m pytest tests/test_<module>.py -k <name>`.
-- **Never edit generated paths** — `dist/`, `agentkit.egg-info/`, `agentkit.db`,
+- **Never edit generated paths** — `dist/`, `agentaudit.egg-info/`, `agentaudit.db`,
   `uv.lock` (use `uv lock`), `docs/diagrams/*.svg` (re-render from `.d2`).
 - **Respect the invariants:** the runner never raises; redaction runs before evidence is
   stored and again in `store.py`; no raw request/response logging; `core` imports nothing

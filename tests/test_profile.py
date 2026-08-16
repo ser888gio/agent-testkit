@@ -1,12 +1,12 @@
-from agentkit.core.profile import (
+from agentaudit.core.profile import (
     AgentProfile,
     ExcludedTest,
     HarnessPlan,
     SelectedTest,
     StopConditions,
 )
-from agentkit.core.profile import TestCatalogEntry as CatalogEntry
-from agentkit.core.schema import Category, Risk
+from agentaudit.core.profile import TestCatalogEntry as CatalogEntry
+from agentaudit.core.schema import Category, Risk
 
 
 def test_profile_capabilities_reflect_what_the_agent_supports():

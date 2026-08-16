@@ -3,17 +3,17 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentkit.core.config import ConfigError, load_target, load_target_dict
+from agentaudit.core.config import ConfigError, load_target, load_target_dict
 
-TREASURY_CALLABLE_YAML = "agentkit/config/treasury-agent.yaml"
-TREASURY_HTTP_YAML = "agentkit/config/treasury-http.yaml"
+TREASURY_CALLABLE_YAML = "agentaudit/config/treasury-agent.yaml"
+TREASURY_HTTP_YAML = "agentaudit/config/treasury-http.yaml"
 
 
 def test_load_callable_target():
     cfg = load_target(TREASURY_CALLABLE_YAML)
     assert cfg.id == "treasury-demo"
     assert cfg.agent.type == "callable"
-    assert cfg.agent.callable == "agentkit.domains.treasury.agent:create_agent"
+    assert cfg.agent.callable == "agentaudit.domains.treasury.agent:create_agent"
     assert cfg.sandbox == "treasury"
     assert cfg.evidence.store_request is True
 
@@ -57,7 +57,7 @@ def test_unknown_sandbox_raises(tmp_path):
         load_target(bad)
 
 
-@pytest.mark.parametrize("path", sorted(Path("agentkit/config").glob("*.yaml")))
+@pytest.mark.parametrize("path", sorted(Path("agentaudit/config").glob("*.yaml")))
 def test_file_and_dict_loaders_match_for_all_shipped_configs(path, monkeypatch):
     monkeypatch.setenv("AGENT_TOKEN", "test-token")
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))

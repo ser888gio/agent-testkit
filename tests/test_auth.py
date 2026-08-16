@@ -1,4 +1,4 @@
-"""JWT principal resolution (`agentkit.web.auth`).
+"""JWT principal resolution (`agentaudit.web.auth`).
 
 Tokens are signed with a keypair generated in-process; no Keycloak is started.
 Every negative case must be a 401 -- an assertion that a bad token yields *some*
@@ -20,12 +20,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 
-from agentkit.web import auth
+from agentaudit.web import auth
 
-ISSUER = "https://keycloak.test/realms/agentkit"
-AUDIENCE = "agentkit-api"
-CLIENT_ID = "agentkit-web"
-JWKS_URL = "https://keycloak.test/realms/agentkit/protocol/openid-connect/certs"
+ISSUER = "https://keycloak.test/realms/agentaudit"
+AUDIENCE = "agentaudit-api"
+CLIENT_ID = "agentaudit-web"
+JWKS_URL = "https://keycloak.test/realms/agentaudit/protocol/openid-connect/certs"
 
 _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -56,12 +56,12 @@ def _request(token: str | None) -> SimpleNamespace:
 
 @pytest.fixture
 def oidc(monkeypatch):
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
-    monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", JWKS_URL)
-    monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", ISSUER)
-    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", AUDIENCE)
-    monkeypatch.setenv("AGENTKIT_OIDC_CLIENT_ID", CLIENT_ID)
-    monkeypatch.setenv("AGENTKIT_OIDC_REDIRECT_URI", "https://agentkit.test/auth/callback")
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "oidc")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_JWKS_URL", JWKS_URL)
+    monkeypatch.setenv("AGENTAUDIT_OIDC_ISSUER", ISSUER)
+    monkeypatch.setenv("AGENTAUDIT_OIDC_AUDIENCE", AUDIENCE)
+    monkeypatch.setenv("AGENTAUDIT_OIDC_CLIENT_ID", CLIENT_ID)
+    monkeypatch.setenv("AGENTAUDIT_OIDC_REDIRECT_URI", "https://agentaudit.test/auth/callback")
     # Stand in for the network-backed key set. `.uri` must match so `_client`
     # reuses the stub rather than constructing a real PyJWKClient.
     stub = SimpleNamespace(
@@ -98,7 +98,7 @@ def test_expired_token_is_401(oidc):
 
 
 def test_wrong_issuer_is_401(oidc):
-    _expect_401(_request(_token(iss="https://evil.test/realms/agentkit")))
+    _expect_401(_request(_token(iss="https://evil.test/realms/agentaudit")))
 
 
 def test_wrong_audience_is_401(oidc):
@@ -171,7 +171,7 @@ def test_org_id_query_parameter_is_ignored(oidc):
 
 
 def test_unconfigured_fails_closed(monkeypatch):
-    monkeypatch.delenv("AGENTKIT_AUTH_MODE", raising=False)
+    monkeypatch.delenv("AGENTAUDIT_AUTH_MODE", raising=False)
     with pytest.raises(auth.AuthConfigError):
         auth.auth_enabled()
     with pytest.raises(auth.AuthConfigError):
@@ -179,17 +179,17 @@ def test_unconfigured_fails_closed(monkeypatch):
 
 
 def test_explicit_dev_mode_uses_local_principal(monkeypatch):
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "dev")
     assert not auth.auth_enabled()
     assert auth.current_principal(_request(None)) == auth.DEV_PRINCIPAL
 
 
 def test_partial_config_raises_instead_of_falling_back(monkeypatch):
     """A typo'd variable must not silently disable authentication."""
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
-    monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", ISSUER)
-    monkeypatch.delenv("AGENTKIT_OIDC_JWKS_URL", raising=False)
-    monkeypatch.delenv("AGENTKIT_OIDC_AUDIENCE", raising=False)
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "oidc")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_ISSUER", ISSUER)
+    monkeypatch.delenv("AGENTAUDIT_OIDC_JWKS_URL", raising=False)
+    monkeypatch.delenv("AGENTAUDIT_OIDC_AUDIENCE", raising=False)
     with pytest.raises(auth.AuthConfigError):
         auth.auth_enabled()
     with pytest.raises(auth.AuthConfigError):

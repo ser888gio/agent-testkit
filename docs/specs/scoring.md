@@ -1,6 +1,6 @@
 # feat/scoring — Spec
 
-**Task 12 · Depends on: 1,11 · Files:** `agentkit/core/scoring.py`, `tests/test_scoring.py`
+**Task 12 · Depends on: 1,11 · Files:** `agentaudit/core/scoring.py`, `tests/test_scoring.py`
 
 ## Goal
 Turn a `RunResult` into scores a dashboard and CI gate can act on — not just pass/fail.

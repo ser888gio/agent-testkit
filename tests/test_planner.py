@@ -1,8 +1,8 @@
-from agentkit.core.adapters import ExternalEvalAdapter
-from agentkit.core.planner import apply_plan, plan
-from agentkit.core.profile import AgentProfile, TestCatalogEntry
-from agentkit.core.schema import Assertion, Category, Risk
-from agentkit.core.schema import TestCase as SchemaTestCase
+from agentaudit.core.adapters import ExternalEvalAdapter
+from agentaudit.core.planner import apply_plan, plan
+from agentaudit.core.profile import AgentProfile, TestCatalogEntry
+from agentaudit.core.schema import Assertion, Category, Risk
+from agentaudit.core.schema import TestCase as SchemaTestCase
 
 
 class _StubAdapter(ExternalEvalAdapter):

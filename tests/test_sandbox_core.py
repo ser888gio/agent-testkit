@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentkit.core.sandbox import (
+from agentaudit.core.sandbox import (
     SANDBOXES,
     Sandbox,
     build_sandbox,

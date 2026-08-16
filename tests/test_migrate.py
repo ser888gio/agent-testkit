@@ -9,8 +9,8 @@ import yaml
 from alembic import command as alembic_command
 from typer.testing import CliRunner
 
-from agentkit.cli import _alembic_config, app
-from agentkit.core.store import Store
+from agentaudit.cli import _alembic_config, app
+from agentaudit.core.store import Store
 
 runner = CliRunner()
 
@@ -284,27 +284,27 @@ def test_cli_migrate_status_reports_up_to_date(tmp_path):
     assert result.output.strip() == "up to date"
 
 
-def test_cli_migrate_uses_agentkit_db_when_db_option_is_omitted(tmp_path, monkeypatch):
+def test_cli_migrate_uses_agentaudit_db_when_db_option_is_omitted(tmp_path, monkeypatch):
     env_db = tmp_path / "from-env.db"
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENTKIT_DB", str(env_db))
+    monkeypatch.setenv("AGENTAUDIT_DB", str(env_db))
 
     result = runner.invoke(app, ["migrate"])
 
     assert result.exit_code == 0, result.output
     assert _current_revision(str(env_db)) == HEAD
-    assert not (tmp_path / "database" / "agentkit.db").exists()
+    assert not (tmp_path / "database" / "agentaudit.db").exists()
 
 
 def test_compose_runs_migrations_before_starting_the_ui():
     compose = yaml.safe_load(Path("infra/docker-compose.yml").read_text(encoding="utf-8"))
 
     assert compose["services"]["migrate"]["command"] == [
-        "agentkit",
+        "agentaudit",
         "migrate",
         "--db",
-        "/data/agentkit.db",
+        "/data/agentaudit.db",
     ]
-    assert compose["services"]["agentkit"]["depends_on"]["migrate"] == {
+    assert compose["services"]["agentaudit"]["depends_on"]["migrate"] == {
         "condition": "service_completed_successfully"
     }
