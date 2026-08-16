@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 import pytest
-
+from agentkit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
 from agentkit.core.schema import (
     AssertionResult,
     Category,
@@ -12,7 +12,6 @@ from agentkit.core.schema import (
     Status,
     TestResult,
 )
-from agentkit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
 from agentkit.core.scoring import score
 from agentkit.reports import render, to_html, to_json, to_junit, to_markdown, to_plan_markdown
 

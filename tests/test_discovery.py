@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 from agentkit.core.config import CallableSpec, HTTPSpec, TargetConfig
 from agentkit.core.discovery import (
     ECHO_PROBE,
+    MEMORY_PHRASE,
     MEMORY_PROBE,
-    MEMORY_TOKEN,
     PROBES,
     discover,
     profile_from_config,
@@ -60,7 +60,7 @@ def _fake_runner(statuses: dict[str, Status], latency: float | None = 12.0):
 def test_probes_are_cheap_and_only_two():
     assert [p.id for p in PROBES] == [ECHO_PROBE, MEMORY_PROBE]
     assert all(p.timeout_s <= 15 for p in PROBES)
-    assert MEMORY_TOKEN in PROBES[1].turns[0]
+    assert MEMORY_PHRASE in PROBES[1].turns[0]
 
 
 def test_offline_profile_reads_the_target_config():
