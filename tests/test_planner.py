@@ -77,19 +77,21 @@ def test_an_installed_adapter_competes_with_local_tests():
     assert sources["garak.probe"] == "garak"
 
 
-def test_apply_plan_returns_local_tests_in_plan_order():
+def test_apply_plan_separates_runnable_tests_from_external_selections():
     tests = [_test_case("a.b.low", risk=Risk.low), _test_case("a.b.crit", risk=Risk.critical)]
     harness = plan(
         AgentProfile(id="t"), tests, adapters=[_StubAdapter("garak", installed=True)]
     )
 
-    ordered = apply_plan(harness, tests)
+    ordered, unexecuted = apply_plan(harness, tests)
 
-    # Adapter selections have no local test object and are dropped here.
     assert [t.id for t in ordered] == [
         test_id for test_id in harness.selected_ids() if test_id.startswith("a.b.")
     ]
     assert ordered[0].id == "a.b.crit"
+    # An adapter selection is reported, never silently dropped: a plan claiming
+    # coverage next to a run with no evidence for it is worse than no plan.
+    assert [u.test_id for u in unexecuted] == ["garak.probe"]
 
 
 def test_planning_is_reproducible_for_the_same_profile_and_catalog():

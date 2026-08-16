@@ -16,7 +16,13 @@ from typing import Any
 
 from agentkit.core.adapters import ExternalEvalAdapter
 from agentkit.core.catalog import build_catalog, rank
-from agentkit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, StopConditions
+from agentkit.core.profile import (
+    AgentProfile,
+    ExcludedTest,
+    HarnessPlan,
+    SelectedTest,
+    StopConditions,
+)
 
 
 def plan(
@@ -56,12 +62,15 @@ def plan(
     )
 
 
-def apply_plan(harness: HarnessPlan, tests: Iterable[Any]) -> list[Any]:
-    """The discovered tests the plan selected, in the plan's order.
+def apply_plan(harness: HarnessPlan, tests: Iterable[Any]) -> tuple[list[Any], list[SelectedTest]]:
+    """Split the plan into (runnable local tests, selections nothing here executes).
 
-    Adapter-backed selections have no local test object and are skipped here;
-    they are executed by their own adapter, which is why the plan records the
-    source alongside every id.
+    Adapter-backed selections have no local test object: agentkit ranks them and
+    generates the tool's invocation, but the tool itself is run out of band. The
+    caller must surface the second list. A plan that claims a test was selected,
+    next to a run with no evidence for it, reads as coverage that does not exist.
     """
     by_id = {test.id: test for test in tests}
-    return [by_id[test_id] for test_id in harness.selected_ids() if test_id in by_id]
+    runnable = [by_id[choice.test_id] for choice in harness.selected if choice.test_id in by_id]
+    unexecuted = [choice for choice in harness.selected if choice.test_id not in by_id]
+    return runnable, unexecuted

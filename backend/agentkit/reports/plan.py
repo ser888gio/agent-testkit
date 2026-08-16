@@ -48,6 +48,15 @@ def to_plan_markdown(plan: HarnessPlan | None) -> str:
             for choice in plan.selected
         )
 
+    external = [choice for choice in plan.selected if choice.source != "local"]
+    if external:
+        lines += [
+            "",
+            f"> {len(external)} selection(s) above are executed by an external tool, not by "
+            f"this agentkit run, so this run holds no evidence for them: "
+            f"{', '.join(choice.test_id for choice in external)}.",
+        ]
+
     # The untested half is the part a reviewer cannot reconstruct from results.
     lines += ["", f"## Not tested ({len(plan.excluded)})", ""]
     if not plan.excluded:
