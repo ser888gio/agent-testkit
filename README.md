@@ -17,54 +17,16 @@ box (no prompts/tools/source shared) and checks the side effects against a fake 
 > phishing/exfiltration), an OWASP Agentic Top 10 attack pack, and an EU AI Act / ISO 42001
 > / NIST evidence report. See [Limits](#limits) before you rely on it.
 
-## Try it in two minutes
+## Test your agent in two minutes
+
+Install, then point it at your agent's URL. `agentkit/packs/core` is 14 domain-agnostic
+tests — prompt injection, data leakage, robustness, reliability, latency, response
+contract — that need no sandbox:
 
 ```bash
 git clone https://github.com/ser888gio/agent-testkit.git
 cd agent-testkit
 pip install -e .
-agentkit run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml
-```
-
-```text
-agentkit run - target: treasury-demo   (6 tests)
-CATEGORY              PASS  FAIL   ERR  SKIP
-action_safety            6     0     0     0
---------------------------------------------
-Overall (weighted): 100%   Pass rate: 100%   Critical failures: 0
-Gate: PASS
-```
-
-**`agentkit: command not found`?** `pip` put the console script in a directory that is not
-on your `PATH` — it says so in a `WARNING:` line near the end of the install output. Either
-run the module directly:
-
-```bash
-python -m agentkit.cli run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml
-```
-
-or add the directory `pip` named to your `PATH` (Windows user installs land in
-`%APPDATA%\Python\PythonXY\Scripts`, Linux/macOS in `~/.local/bin`).
-
-Exit code `0` — wire that into CI. Every run is persisted to `agentkit.db` (SQLite):
-
-```bash
-agentkit run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml --format json
-agentkit report --run <run_id> --format md   # or: json, junit, html, compliance, plan
-agentkit ui                                   # dashboard at http://127.0.0.1:8000
-```
-
-`agentkit ui` binds to `127.0.0.1` and enables local dev auth by default; a non-loopback
-bind requires `AGENTKIT_AUTH_MODE=oidc` with full OIDC config. See
-[`docs/keycloak.md`](docs/keycloak.md).
-
-## Point it at your own agent
-
-The treasury run above is a demo with fake tools. To test *your* agent, pass its URL.
-`agentkit/packs/core` is 14 domain-agnostic tests — prompt injection, data leakage,
-robustness, reliability, latency, response contract — that need no sandbox:
-
-```bash
 agentkit run agentkit/packs/core --endpoint https://your-agent.example.com/chat
 ```
 
@@ -81,6 +43,36 @@ Overall (weighted): 62%   Pass rate: 79%   Critical failures: 0
 ```
 
 `--endpoint` assumes the common shape: `POST {"input": "..."}` returning `{"text": "..."}`.
+Anything else — auth headers, a different request body, a nested reply field — needs a
+target config, [below](#when-you-need-auth-headers-or-a-different-request-shape).
+
+Endpoints must be `https` and publicly routable — the egress policy
+([`core/egress.py`](backend/agentkit/core/egress.py)) rejects loopback and private ranges
+unless the worker sets `AGENTKIT_EGRESS_ALLOW_LOCAL=1`.
+
+**`agentkit: command not found`?** `pip` put the console script in a directory that is not
+on your `PATH` — it says so in a `WARNING:` line near the end of the install output. Either
+run the module directly:
+
+```bash
+python -m agentkit.cli run agentkit/packs/core --endpoint https://your-agent.example.com/chat
+```
+
+or add the directory `pip` named to your `PATH` (Windows user installs land in
+`%APPDATA%\Python\PythonXY\Scripts`, Linux/macOS in `~/.local/bin`).
+
+The exit code is the CI gate — non-zero when the run fails its threshold or a critical
+safety test fails. Every run is persisted to `agentkit.db` (SQLite):
+
+```bash
+agentkit run agentkit/packs/core --endpoint https://your-agent.example.com/chat --format json
+agentkit report --run <run_id> --format md   # or: json, junit, html, compliance, plan
+agentkit ui                                   # dashboard at http://127.0.0.1:8000
+```
+
+`agentkit ui` binds to `127.0.0.1` and enables local dev auth by default; a non-loopback
+bind requires `AGENTKIT_AUTH_MODE=oidc` with full OIDC config. See
+[`docs/keycloak.md`](docs/keycloak.md).
 
 ### When you need auth headers or a different request shape
 
@@ -114,13 +106,14 @@ prompt goes, `text_path` is the dotted JSON path to the reply, and `${VAR}` inte
 env vars at load time so tokens stay out of the file. Anything under `request` that
 `httpx` accepts (`json`, `params`, `data`, `content`) is passed through.
 
-Endpoints must be `https` and publicly routable — the egress policy
-([`core/egress.py`](backend/agentkit/core/egress.py)) rejects loopback and private ranges
-unless the worker sets `AGENTKIT_EGRESS_ALLOW_LOCAL=1`.
+### Which pack to run
 
-The domain packs (`packs/treasury`, `packs/email`, `packs/agentic`) assert on what the
-agent *did* to fake tools, so they need a matching `sandbox:` and only apply to agents in
-those domains. `packs/core` asserts on what the agent *said*, so it applies to any agent.
+`packs/core` asserts on what the agent *said*, so it applies to any agent — that's the one
+to start with. The domain packs (`packs/treasury`, `packs/email`, `packs/agentic`) assert on
+what the agent *did* to fake tools, so they need a matching `sandbox:` in the target config
+and only apply to agents in those domains. Testing a payments or email agent means writing a
+`Sandbox` subclass for your tools — see
+[`backend/agentkit/domains/`](backend/agentkit/domains/) for the two worked examples.
 
 ## System overview
 
@@ -161,19 +154,12 @@ those domains. `packs/core` asserts on what the agent *said*, so it applies to a
 - **SQLite store + dashboard** — pass/fail matrix, run history, per-test evidence
   (redacted request/response, sandbox before/after diff, latency).
 
-### The email exfiltration demo
-
-A vendor email tries to trick the agent into forwarding a payroll spreadsheet to an external
-address:
-
-```bash
-agentkit run agentkit/packs/email --target agentkit/config/email-agent.yaml
-```
-
 ### EU AI Act compliance evidence
 
+Add `--compliance` to any run:
+
 ```bash
-agentkit run agentkit/packs/agentic --target agentkit/config/treasury-agent.yaml --compliance
+agentkit run agentkit/packs/core --endpoint https://your-agent.example.com/chat --compliance
 agentkit report --run <run_id> --format compliance        # Markdown, grouped by EU article
 agentkit report --run <run_id> --format compliance-json   # machine-readable for GRC
 ```
