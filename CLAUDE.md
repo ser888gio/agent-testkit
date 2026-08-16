@@ -151,13 +151,15 @@ All commands below were executed successfully in this repository.
 
 **Known environment issues — read before picking a command:**
 
-- **`uv run` is broken locally on Windows.** It fails with
-  `package directory 'frontend\agentkit\config' does not exist` — setuptools cannot resolve
-  the multi-root namespace layout on this platform. This reproduces on a clean checkout, so
-  it is not caused by local changes. CI (Linux) runs `uv run --frozen --extra dev pytest`
-  and passes. Locally, use `python -m pytest`. `tools/validate.sh` probes for a working
-  runner automatically, so prefer it over calling the tools directly.
+- **On Windows, call pytest as a module, not as a console script.** `uv run --frozen --extra
+  dev pytest` fails with `uv trampoline failed to canonicalize script path`; the equivalent
+  `uv run --frozen --extra dev python -m pytest` runs the full suite green. This is a
+  console-script trampoline issue, not the multi-root package layout — `uv run` itself works
+  fine here, and `uv run ... ruff` works as a script too. CI (Linux) runs the console-script
+  form and passes.
 - **`.venv/Scripts/python.exe` has pytest but not ruff.** Bare `python` has both.
+  `tools/validate.sh` probes for a runner that provides both, so prefer it over calling the
+  tools directly.
 - **Repo-wide lint currently fails** (~15 pre-existing ruff violations, mostly import
   sorting, in files including `backend/agentkit/cli.py`). CI does not run ruff, which is how
   they accumulated. `tools/validate.sh` therefore lints **changed files only**; use

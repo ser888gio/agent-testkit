@@ -39,14 +39,13 @@ done
 
 # Pick a python runner that actually works here.
 #
-# CI uses `uv run --extra dev`. That currently fails on Windows with
-# "package directory 'frontend\agentkit\config' does not exist" (setuptools cannot resolve
-# the multi-root namespace package layout), so probe uv before committing to it and fall
-# back to the local venv or bare python.
+# Every candidate below is invoked as `<runner> -m <tool>`, never as a bare console script:
+# on Windows `uv run ... pytest` dies with "uv trampoline failed to canonicalize script
+# path" while `uv run ... python -m pytest` is green.
 # Candidates in preference order. Not every environment has every tool: the local .venv
 # here has pytest but no ruff, so prefer a candidate that provides BOTH before settling.
 candidates=()
-command -v uv >/dev/null 2>&1                 && candidates+=("uv run --extra dev")
+command -v uv >/dev/null 2>&1                 && candidates+=("uv run --extra dev python -m")
 [[ -x ".venv/Scripts/python.exe" ]]           && candidates+=(".venv/Scripts/python.exe -m")
 [[ -x ".venv/bin/python" ]]                   && candidates+=(".venv/bin/python -m")
 command -v python >/dev/null 2>&1             && candidates+=("python -m")
