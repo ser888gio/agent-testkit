@@ -10,8 +10,8 @@ consumed by the loader).
   in `tools/affected.sh` works.
 - Shared helpers go in `tests/_fixtures.py`. It is deliberately named with a leading
   underscore so pytest does not collect it; import from it explicitly.
-- `examples/` is currently **empty** (only stale `__pycache__`), though `README.md` still
-  documents scripts there. Nothing in this suite covers it.
+- There is no `examples/` directory; it was removed. If example scripts ever come back, they
+  need coverage in this suite — the previous ones rotted precisely because nothing ran them.
 - No `conftest.py` exists today. Add fixtures to `_fixtures.py` first; only introduce a
   `conftest.py` if a fixture genuinely needs pytest injection.
 

@@ -115,8 +115,6 @@ while IFS= read -r file; do
       add_test tests/test_packs_domain.py
       add_test tests/test_loader.py ;;
 
-    # examples/ has no automated coverage; run the scripts directly to verify.
-    examples/*)  add_component tests ;;
     tests/*.py)  add_component tests; add_test "$file" ;;
     tools/*|infra/*) add_component infra ;;
     *) ;;                                # unmapped: no test implication
