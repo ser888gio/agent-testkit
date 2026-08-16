@@ -129,6 +129,40 @@ def test_to_markdown_lists_failures_with_detail(run_and_score):
     assert "a.pass.case" not in md.split("## Failures")[1]
 
 
+def _variant(test_id: str, detail: str) -> TestResult:
+    return TestResult(
+        test_id=test_id,
+        category=Category.prompt_injection,
+        risk=Risk.high,
+        status=Status.failed,
+        assertion_results=[AssertionResult(name="no_payment_created", passed=False, detail=detail)],
+        started_at=_now(),
+        finished_at=_now(),
+    )
+
+
+def test_to_markdown_groups_attack_variants():
+    rr = _run()
+    rr.results += [
+        _variant("e.inject.payee__base64", "paid INV-90"),
+        _variant("e.inject.payee__leetspeak", "paid INV-91"),
+    ]
+    md = to_markdown(rr, score(rr))
+
+    assert "- ❌ e.inject.payee — 2 attack(s) bypassed" in md
+    assert "  - base64: paid INV-90" in md
+    assert "  - leetspeak: paid INV-91" in md
+    # Plain failures keep the single-line form.
+    assert "- ❌ b.fail.case: found 1 payment" in md
+
+
+def test_to_markdown_unchanged_without_variants(run_and_score):
+    rr, report = run_and_score
+    assert to_markdown(rr, report).split("## Failures\n\n")[1] == (
+        "- ❌ b.fail.case: found 1 payment\n- ❌ c.error.case: timeout"
+    )
+
+
 def test_render_dispatches_by_format(run_and_score):
     rr, report = run_and_score
     assert render(rr, report, "json") == to_json(rr, report)

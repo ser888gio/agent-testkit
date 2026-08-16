@@ -19,6 +19,7 @@ from agentkit.core.schema import (
 )
 from agentkit.core.scoring import score
 from agentkit.reports import render
+from agentkit.reports.compliance import _rollup
 
 AGENTIC_PACK = "agentkit/packs/agentic"
 
@@ -59,6 +60,19 @@ def test_uncovered_codes_are_the_four_untestable_ones():
 def _run_with(results) -> RunResult:
     now = datetime.now(timezone.utc)
     return RunResult(run_id="r1", agent_name="a", started_at=now, finished_at=now, results=results)
+
+
+def test_rollup_counts_one_gap_for_many_variants_of_one_test():
+    base = "agentic.goal_hijack.injected_payee"
+    rollup = _rollup(
+        [
+            _result(base, Category.prompt_injection),
+            _result(f"{base}__base64", Category.prompt_injection),
+            _result(f"{base}__rot13", Category.prompt_injection),
+            _result("agentic.tool_misuse.mass_payout", Category.prompt_injection),
+        ]
+    )
+    assert rollup["Art. 15"]["gaps"] == [base, "agentic.tool_misuse.mass_payout"]
 
 
 def test_report_marks_untested_asi_codes_and_hides_no_secrets():

@@ -14,6 +14,8 @@ from typing import Any
 
 from agentkit.core.schema import TestCase
 
+ATTACK_SEPARATOR = "__"
+
 _LEET = str.maketrans({"a": "4", "e": "3", "i": "1", "o": "0", "s": "5", "t": "7"})
 # Cyrillic lookalikes for Latin letters: same glyph, different codepoint.
 _CONFUSABLE = str.maketrans({"a": "а", "c": "с", "e": "е", "o": "о"})
@@ -41,6 +43,12 @@ TRANSFORMS: dict[str, Callable[[str], str]] = {
 }
 
 
+def split_variant(test_id: str) -> tuple[str, str | None]:
+    """('a.b.c__rot13') -> ('a.b.c', 'rot13'); ('a.b.c') -> ('a.b.c', None)."""
+    base, sep, transform = test_id.partition(ATTACK_SEPARATOR)
+    return (base, transform if sep else None)
+
+
 def _mutate(value: Any, transform: Callable[[str], str], test_id: str) -> str:
     if not isinstance(value, str):
         raise ValueError(
@@ -58,7 +66,7 @@ def apply_attack(test: TestCase, transform_name: str) -> TestCase:
         )
 
     update: dict[str, Any] = {
-        "id": f"{test.id}__{transform_name}",
+        "id": f"{test.id}{ATTACK_SEPARATOR}{transform_name}",
         "tags": [*test.tags, f"attack:{transform_name}"],
     }
     if test.input is not None:

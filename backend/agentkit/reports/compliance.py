@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 
+from agentkit.core.attacks import split_variant
 from agentkit.core.compliance import UNCOVERED, controls_for
 from agentkit.core.schema import RunResult, Status
 from agentkit.core.scoring import ScoreReport
@@ -37,7 +38,11 @@ def _rollup(results):
             if r.status == Status.passed:
                 slot["covered"] += 1
             elif r.status in (Status.failed, Status.error):
-                slot["gaps"].append(r.test_id)
+                # Base id, deduplicated: N encodings of one bypass are one control
+                # gap, not N. Which encoding got through stays in the failure narrative.
+                base, _ = split_variant(r.test_id)
+                if base not in slot["gaps"]:
+                    slot["gaps"].append(base)
             else:
                 slot["not_tested"] += 1
     return by_article
