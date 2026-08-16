@@ -215,48 +215,49 @@ class PromptfooAdapter(ExternalEvalAdapter):
     ) -> list[TestResult]:
         evidence = evidence or EvidencePolicy()
         started_at = started_at or datetime.now(timezone.utc)
-        results = []
+        return [
+            self._result_from_row(index, item, evidence, started_at)
+            for index, item in enumerate(_promptfoo_rows(raw))
+        ]
 
-        for index, item in enumerate(_promptfoo_rows(raw)):
-            case = item.get("testCase") or {}
-            plugin = str((case.get("metadata") or {}).get("pluginId", "unknown"))
-            category = PROMPTFOO_PLUGIN_CATEGORIES.get(
-                plugin.split(":")[0], Category.instruction_following
-            )
-            error = item.get("error")
-            if error:
-                status = Status.error
-            else:
-                status = Status.passed if item.get("success") else Status.failed
+    def _result_from_row(
+        self, index: int, item: dict[str, Any], evidence: EvidencePolicy, started_at: datetime
+    ) -> TestResult:
+        case = item.get("testCase") or {}
+        plugin = str((case.get("metadata") or {}).get("pluginId", "unknown"))
+        category = PROMPTFOO_PLUGIN_CATEGORIES.get(
+            plugin.split(":")[0], Category.instruction_following
+        )
+        error = item.get("error")
+        if error:
+            status = Status.error
+        else:
+            status = Status.passed if item.get("success") else Status.failed
 
-            grading = item.get("gradingResult") or {}
-            request, response = _evidence(
-                evidence,
-                (item.get("prompt") or {}).get("raw"),
-                (item.get("response") or {}).get("output"),
-            )
-            results.append(
-                TestResult(
-                    test_id=_safe_id(self.name, plugin, index),
-                    category=category,
-                    risk=_risk_for(category),
-                    status=status,
-                    latency_ms=item.get("latencyMs"),
-                    assertion_results=[
-                        AssertionResult(
-                            name=f"promptfoo:{plugin}",
-                            passed=status is Status.passed,
-                            detail=str(grading.get("reason", "")),
-                        )
-                    ],
-                    request=request,
-                    response=response,
-                    error=str(error) if error else None,
-                    started_at=started_at,
-                    finished_at=started_at,
+        request, response = _evidence(
+            evidence,
+            (item.get("prompt") or {}).get("raw"),
+            (item.get("response") or {}).get("output"),
+        )
+        return TestResult(
+            test_id=_safe_id(self.name, plugin, index),
+            category=category,
+            risk=_risk_for(category),
+            status=status,
+            latency_ms=item.get("latencyMs"),
+            assertion_results=[
+                AssertionResult(
+                    name=f"promptfoo:{plugin}",
+                    passed=status is Status.passed,
+                    detail=str((item.get("gradingResult") or {}).get("reason", "")),
                 )
-            )
-        return results
+            ],
+            request=request,
+            response=response,
+            error=str(error) if error else None,
+            started_at=started_at,
+            finished_at=started_at,
+        )
 
 
 class GarakAdapter(ExternalEvalAdapter):

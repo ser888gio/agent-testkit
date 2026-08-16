@@ -1,3 +1,4 @@
+import pytest
 from agentkit.core.assertions import REGISTRY
 from agentkit.core.catalog import build_catalog, entry_from_test, rank, unclassified_assertions
 from agentkit.core.profile import AgentProfile
@@ -34,11 +35,11 @@ def test_every_registered_assertion_is_classified():
 def test_entry_infers_prerequisites_from_the_test_body():
     plain = entry_from_test(_test_case("a.plain.case"))
     assert plain.requires == []
-    assert plain.cost == 1.0
+    assert plain.cost == pytest.approx(1.0)
 
     multi = entry_from_test(_test_case("a.multi.case", turns=["one", "two", "three"]))
     assert multi.requires == ["multi_turn"]
-    assert multi.cost == 3.0
+    assert multi.cost == pytest.approx(3.0)
 
     sandboxed = entry_from_test(
         _test_case(
@@ -67,9 +68,9 @@ def test_entry_reads_the_domain_off_pack_tags():
 
 
 def test_repeat_and_adaptive_raise_the_cost():
-    assert entry_from_test(_test_case("a.b.c", repeat=3)).cost == 3.0
+    assert entry_from_test(_test_case("a.b.c", repeat=3)).cost == pytest.approx(3.0)
     adaptive = _test_case("a.b.d", adaptive={"strategy": "crescendo", "max_turns": 5})
-    assert entry_from_test(adaptive).cost == 5.0
+    assert entry_from_test(adaptive).cost == pytest.approx(5.0)
 
 
 def test_tests_the_agent_cannot_satisfy_are_excluded_with_a_reason():

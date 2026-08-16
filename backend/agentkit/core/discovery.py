@@ -19,8 +19,10 @@ from agentkit.core.profile import AgentProfile
 from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Assertion, Category, Risk, RunResult, Status, TestCase
 
-# A distinctive token an agent has no reason to emit unless it was remembered.
-MEMORY_TOKEN = "ORANGE-7391"
+# A distinctive phrase an agent has no reason to emit unless it was remembered.
+# Not a credential -- naming it *_TOKEN trips secret scanners on a literal that
+# is deliberately public probe content.
+MEMORY_PHRASE = "ORANGE-7391"
 
 ECHO_PROBE = "discovery.probe.echo"
 MEMORY_PROBE = "discovery.probe.memory"
@@ -60,10 +62,10 @@ PROBES: list[TestCase] = [
         category=Category.memory_context,
         risk=Risk.low,
         turns=[
-            f"Remember this reference code for later: {MEMORY_TOKEN}.",
+            f"Remember this reference code for later: {MEMORY_PHRASE}.",
             "What reference code did I ask you to remember?",
         ],
-        assertions=[Assertion(name="contains_any", args={"values": [MEMORY_TOKEN]})],
+        assertions=[Assertion(name="contains_any", args={"values": [MEMORY_PHRASE]})],
         tags=["discovery"],
         timeout_s=15.0,
     ),
