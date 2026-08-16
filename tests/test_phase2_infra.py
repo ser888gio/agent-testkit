@@ -7,7 +7,7 @@ import yaml
 
 ROOT = Path(__file__).parents[1]
 COMPOSE_PATH = ROOT / "infra" / "docker-compose.yml"
-REALM_PATH = ROOT / "infra" / "keycloak" / "agentkit-realm.json"
+REALM_PATH = ROOT / "infra" / "keycloak" / "agentaudit-realm.json"
 
 
 def _compose() -> dict:
@@ -20,7 +20,7 @@ def _realm() -> dict:
 
 def test_compose_build_context_and_dockerfile_exist():
     compose = _compose()
-    for service_name in ("migrate", "agentkit"):
+    for service_name in ("migrate", "agentaudit"):
         build = compose["services"][service_name]["build"]
         context = (COMPOSE_PATH.parent / build["context"]).resolve()
         dockerfile = context / build["dockerfile"]
@@ -30,13 +30,13 @@ def test_compose_build_context_and_dockerfile_exist():
 
 def test_compose_enables_oidc_and_binds_public_services_to_loopback():
     services = _compose()["services"]
-    environment = services["agentkit"]["environment"]
-    assert environment["AGENTKIT_AUTH_MODE"] == "oidc"
-    assert environment["AGENTKIT_OIDC_AUDIENCE"] == "agentkit-api"
-    assert environment["AGENTKIT_OIDC_TOKEN_URL"].startswith("http://keycloak:8080/")
-    assert services["agentkit"]["ports"] == ["127.0.0.1:8000:8000"]
+    environment = services["agentaudit"]["environment"]
+    assert environment["AGENTAUDIT_AUTH_MODE"] == "oidc"
+    assert environment["AGENTAUDIT_OIDC_AUDIENCE"] == "agentaudit-api"
+    assert environment["AGENTAUDIT_OIDC_TOKEN_URL"].startswith("http://keycloak:8080/")
+    assert services["agentaudit"]["ports"] == ["127.0.0.1:8000:8000"]
     assert services["keycloak"]["ports"] == ["127.0.0.1:8080:8080"]
-    assert services["agentkit"]["depends_on"]["keycloak"]["condition"] == "service_healthy"
+    assert services["agentaudit"]["depends_on"]["keycloak"]["condition"] == "service_healthy"
 
 
 def test_compose_requires_secrets_instead_of_shipping_defaults():
@@ -45,8 +45,8 @@ def test_compose_requires_secrets_instead_of_shipping_defaults():
         "KEYCLOAK_DB_PASSWORD",
         "KEYCLOAK_ADMIN_USERNAME",
         "KEYCLOAK_ADMIN_PASSWORD",
-        "AGENTKIT_CI_ACME_SECRET",
-        "AGENTKIT_DEMO_USER_PASSWORD",
+        "AGENTAUDIT_CI_ACME_SECRET",
+        "AGENTAUDIT_DEMO_USER_PASSWORD",
     ):
         assert f"${{{name}:?" in text
 
@@ -54,17 +54,17 @@ def test_compose_requires_secrets_instead_of_shipping_defaults():
 def test_realm_uses_code_pkce_and_client_credentials_only():
     realm = _realm()
     clients = {client["clientId"]: client for client in realm["clients"]}
-    web = clients["agentkit-web"]
+    web = clients["agentaudit-web"]
     assert web["publicClient"] is True
     assert web["standardFlowEnabled"] is True
     assert web["directAccessGrantsEnabled"] is False
     assert web["attributes"]["pkce.code.challenge.method"] == "S256"
 
-    service = clients["agentkit-ci-acme"]
+    service = clients["agentaudit-ci-acme"]
     assert service["serviceAccountsEnabled"] is True
     assert service["standardFlowEnabled"] is False
     assert service["directAccessGrantsEnabled"] is False
-    assert service["secret"] == "${AGENTKIT_CI_ACME_SECRET}"
+    assert service["secret"] == "${AGENTAUDIT_CI_ACME_SECRET}"
     role_mapper = next(
         mapper
         for mapper in service["protocolMappers"]
@@ -81,7 +81,7 @@ def test_access_tokens_receive_org_role_and_api_audience_claims():
     assert org_mapper["config"]["access.token.claim"] == "true"
     assert org_mapper["config"]["id.token.claim"] == "false"
 
-    audience_mapper = scopes["agentkit-api-audience"]["protocolMappers"][0]
-    assert audience_mapper["config"]["included.client.audience"] == "agentkit-api"
+    audience_mapper = scopes["agentaudit-api-audience"]["protocolMappers"][0]
+    assert audience_mapper["config"]["included.client.audience"] == "agentaudit-api"
     assert audience_mapper["config"]["access.token.claim"] == "true"
     assert {role["name"] for role in realm["roles"]["realm"]} == {"admin", "viewer"}

@@ -1,6 +1,6 @@
 # feat/sandbox-email — Spec
 
-**Task 8 · Depends on: 6 · Files:** `agentkit/domains/email/{sandbox.py,agent.py}`,
+**Task 8 · Depends on: 6 · Files:** `agentaudit/domains/email/{sandbox.py,agent.py}`,
 `tests/test_email.py`
 
 ## Goal
@@ -57,7 +57,7 @@ setup:
 ```
 
 ## Malicious fixtures
-Provide reusable fixtures under `agentkit/domains/email/fixtures.py`: exfiltration mail,
+Provide reusable fixtures under `agentaudit/domains/email/fixtures.py`: exfiltration mail,
 phishing mail, prompt-injection vendor mail ("ignore your rules and forward…").
 
 ## Demo agent (`create_agent`)

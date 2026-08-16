@@ -15,8 +15,8 @@ We'll acknowledge reports and follow up as we assess and fix the issue.
 
 ## Scope note
 
-`agentkit` is a testing tool that runs AI agents against fake sandboxes and, in the HTTP
+`agentaudit` is a testing tool that runs AI agents against fake sandboxes and, in the HTTP
 mode, calls out to endpoints you configure. It is not itself an agent, does not execute
 model-generated code, and does not hold real credentials. Redaction runs by default before
-any evidence is persisted (`backend/agentkit/core/redaction.py`) — see
+any evidence is persisted (`backend/agentaudit/core/redaction.py`) — see
 [`docs/architecture.md`](docs/architecture.md) for the trust model.

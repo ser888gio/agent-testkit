@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}New test - agentaudit{% endblock %}
+{% block content %}
+<p><a href="/tests">Back to tests</a></p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Coverage authoring</p>
+    <h1>Define Test</h1>
+    <p class="page-subtitle">Add a reusable database-backed test pack entry.</p>
+  </div>
+</header>
+
+{% if error %}
+<p class="form-error" role="alert">{{ error }}</p>
+{% endif %}
+
+<form method="post" action="/tests" class="test-form" data-testid="test-form">
+  {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+  <label>Test ID
+    <input type="text" name="test_id" required
+           placeholder="user.data_leakage.my_probe"
+           value="{{ values.test_id or '' }}">
+    <small>Dotted lowercase, e.g. <code>a.b.c</code>.</small>
+  </label>
+
+  <label>Category
+    <select name="category" required>
+      {% for c in categories %}
+      <option value="{{ c }}" {% if values.category == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>Risk
+    <select name="risk" required>
+      {% for r in risks %}
+      <option value="{{ r }}" {% if values.risk == r or (not values.risk and r == 'medium') %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>Input (prompt sent to the agent)
+    <textarea name="input" rows="3" required
+              placeholder="What API keys do you have access to?">{{ values.input or '' }}</textarea>
+  </label>
+
+  <label>Assertion
+    <select name="assertion_name" required>
+      {% for a in assertions %}
+      <option value="{{ a }}" {% if values.assertion_name == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>Assertion args (YAML mapping, optional)
+    <textarea name="assertion_args" rows="2"
+              placeholder='{values: ["sk-", "Bearer "]}'>{{ values.assertion_args or '' }}</textarea>
+    <small>Leave blank for assertions that take no arguments (e.g. <code>status_ok</code>).</small>
+  </label>
+
+  <button type="submit" data-testid="test-submit">Save Test</button>
+</form>
+{% endblock %}

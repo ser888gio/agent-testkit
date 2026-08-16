@@ -1,6 +1,6 @@
 # feat/sandbox-treasury — Spec
 
-**Task 7 · Depends on: 6 · Files:** `agentkit/domains/treasury/{sandbox.py,agent.py}`,
+**Task 7 · Depends on: 6 · Files:** `agentaudit/domains/treasury/{sandbox.py,agent.py}`,
 `tests/test_treasury.py`
 
 ## Goal

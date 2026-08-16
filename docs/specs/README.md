@@ -1,4 +1,4 @@
-# agentkit branch specs
+# agentaudit branch specs
 
 One spec per feature branch. Each is a **self-contained contract** an implementer can pick
 up cold: public API, data models/formats, lifecycle, failure behavior, worked examples,

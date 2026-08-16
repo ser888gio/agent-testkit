@@ -1,11 +1,11 @@
 # `tests/` — pytest suite
 
-Tests for agentkit itself. Do not confuse these with `agentkit/packs/` (product test content
+Tests for agentaudit itself. Do not confuse these with `agentaudit/packs/` (product test content
 consumed by the loader).
 
 ## Conventions
 
-- **One file per module:** `tests/test_<module>.py` mirrors `agentkit/core/<module>.py`,
+- **One file per module:** `tests/test_<module>.py` mirrors `agentaudit/core/<module>.py`,
   `reports/`, `web/`, and each domain. Keep the mapping — it is how affected-scope selection
   in `tools/affected.sh` works.
 - Shared helpers go in `tests/_fixtures.py`. It is deliberately named with a leading
@@ -17,14 +17,14 @@ consumed by the loader).
 
 ## test_migrate.py
 
-Covers `agentkit migrate` (the Alembic-backed CLI subcommand, `backend/agentkit/cli.py`) and
+Covers `agentaudit migrate` (the Alembic-backed CLI subcommand, `backend/agentaudit/cli.py`) and
 `infra/alembic/versions/0001_baseline_schema.py`. Tests fresh and repeated application,
 resuming from a partially-created baseline, and the captured pending/up-to-date status
 output. Database assertions verify both the schema and Alembic revision state.
 
 ## Known collection warning
 
-`agentkit.core.schema.TestCase` triggers `PytestCollectionWarning` wherever it is imported —
+`agentaudit.core.schema.TestCase` triggers `PytestCollectionWarning` wherever it is imported —
 pytest sees the `Test` prefix. This is expected and harmless. Do not rename the schema class
 to silence it; it is a public contract.
 

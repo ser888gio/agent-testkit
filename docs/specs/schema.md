@@ -1,6 +1,6 @@
 # feat/schema — Spec
 
-**Task 1 · Depends on: 0 · Files:** `agentkit/core/schema.py`, `tests/test_schema.py`
+**Task 1 · Depends on: 0 · Files:** `agentaudit/core/schema.py`, `tests/test_schema.py`
 
 ## Goal
 The Pydantic v2 models every other module imports: test definition + result + run.
@@ -82,4 +82,4 @@ TestCase.model_validate_json(tc.model_dump_json()) == tc   # lossless
 - Empty `assertions` rejected; `timeout_s = 0` rejected.
 
 ## Done when
-`pytest tests/test_schema.py` green; models importable as `from agentkit.core.schema import …`.
+`pytest tests/test_schema.py` green; models importable as `from agentaudit.core.schema import …`.

@@ -4,21 +4,21 @@ import pytest
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
-from agentkit.core.config import CallableSpec, TargetConfig
-from agentkit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
-from agentkit.core.redaction import EvidencePolicy
-from agentkit.core.runner import run
-from agentkit.core.schema import Assertion, Category
-from agentkit.core.schema import TestCase as SchemaTestCase
-from agentkit.core.scoring import score
-from agentkit.core.store import DEFAULT_ORG, Store
+from agentaudit.core.config import CallableSpec, TargetConfig
+from agentaudit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
+from agentaudit.core.redaction import EvidencePolicy
+from agentaudit.core.runner import run
+from agentaudit.core.schema import Assertion, Category
+from agentaudit.core.schema import TestCase as SchemaTestCase
+from agentaudit.core.scoring import score
+from agentaudit.core.store import DEFAULT_ORG, Store
 
 MODULE = "tests.test_web"
 
 
 @pytest.fixture(autouse=True)
 def explicit_dev_auth(monkeypatch):
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "dev")
 
 
 def _agent_with_secret(input: str) -> str:
@@ -83,8 +83,8 @@ def _seed_passing_store(db_path: str):
 
 
 def _client(db_path: str, monkeypatch) -> TestClient:
-    monkeypatch.setenv("AGENTKIT_DB", db_path)
-    from agentkit.web.app import app
+    monkeypatch.setenv("AGENTAUDIT_DB", db_path)
+    from agentaudit.web.app import app
 
     return TestClient(app)
 
@@ -109,7 +109,7 @@ def test_dashboard_shows_run_and_critical_count(tmp_path, monkeypatch):
 
 def test_dashboard_empty_state(tmp_path, monkeypatch):
     db = str(tmp_path / "empty.db")
-    from agentkit.core.store import Store as _Store
+    from agentaudit.core.store import Store as _Store
 
     _Store(db)  # create empty db
     client = _client(db, monkeypatch)
@@ -241,7 +241,7 @@ def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
     assert "Run Inputs" in resp.text
     assert "Security" in resp.text
     assert db in resp.text
-    assert "AGENTKIT_OIDC" not in resp.text
+    assert "AGENTAUDIT_OIDC" not in resp.text
     assert (
         'href="/settings" data-testid="nav-settings" '
         'class="active" aria-current="page"' in resp.text
@@ -279,13 +279,13 @@ def test_tests_page_filters_by_status(tmp_path, monkeypatch):
 
 def test_tests_page_empty_state(tmp_path, monkeypatch):
     db = str(tmp_path / "empty.db")
-    from agentkit.core.store import Store as _Store
+    from agentaudit.core.store import Store as _Store
 
     _Store(db)
     # The library lists shipped packs too, so "empty" means no packs either.
     empty_packs = tmp_path / "packs"
     empty_packs.mkdir()
-    monkeypatch.setenv("AGENTKIT_PACKS", str(empty_packs))
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(empty_packs))
     client = _client(db, monkeypatch)
 
     resp = client.get("/tests")
@@ -309,7 +309,7 @@ def test_create_test_stores_db_row(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     packs = tmp_path / "packs"
-    monkeypatch.setenv("AGENTKIT_PACKS", str(packs))
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(packs))
     client = _client(db, monkeypatch)
 
     resp = client.post(
@@ -332,7 +332,7 @@ def test_create_test_stores_db_row(tmp_path, monkeypatch):
     rows = Store(db).get_pack_tests(DEFAULT_ORG, "user")
     assert len(rows) == 1
     # round-trips through the real loader
-    from agentkit.core.loader import load_tests_from_rows
+    from agentaudit.core.loader import load_tests_from_rows
 
     cases = load_tests_from_rows(rows)
     assert cases[0].id == "user.data_leakage.probe"
@@ -342,7 +342,7 @@ def test_create_test_stores_db_row(tmp_path, monkeypatch):
 def test_create_test_rejects_bad_id(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
-    monkeypatch.setenv("AGENTKIT_PACKS", str(tmp_path / "packs"))
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(tmp_path / "packs"))
     client = _client(db, monkeypatch)
 
     resp = client.post(
@@ -366,7 +366,7 @@ def test_create_test_rejects_duplicate(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     packs = tmp_path / "packs"
-    monkeypatch.setenv("AGENTKIT_PACKS", str(packs))
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(packs))
     client = _client(db, monkeypatch)
 
     payload = {
@@ -399,7 +399,7 @@ def _create_test_payload(**overrides):
 def test_create_test_rejects_malformed_yaml_args(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
-    monkeypatch.setenv("AGENTKIT_PACKS", str(tmp_path / "packs"))
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(tmp_path / "packs"))
     client = _client(db, monkeypatch)
 
     resp = client.post(
@@ -413,7 +413,7 @@ def test_create_test_rejects_malformed_yaml_args(tmp_path, monkeypatch):
 def test_create_test_rejects_non_mapping_args(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
-    monkeypatch.setenv("AGENTKIT_PACKS", str(tmp_path / "packs"))
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(tmp_path / "packs"))
     client = _client(db, monkeypatch)
 
     resp = client.post(
@@ -427,7 +427,7 @@ def test_create_test_rejects_non_mapping_args(tmp_path, monkeypatch):
 def test_create_test_rejects_unknown_assertion(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
-    monkeypatch.setenv("AGENTKIT_PACKS", str(tmp_path / "packs"))
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(tmp_path / "packs"))
     client = _client(db, monkeypatch)
 
     resp = client.post(
@@ -456,7 +456,7 @@ def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
 
 def test_agents_page_empty_state_links_add_agent(tmp_path, monkeypatch):
     db = str(tmp_path / "empty.db")
-    from agentkit.core.store import Store as _Store
+    from agentaudit.core.store import Store as _Store
 
     _Store(db)
     client = _client(db, monkeypatch)
@@ -480,7 +480,7 @@ def test_connect_agent_page_lists_configs_and_packs(tmp_path, monkeypatch):
     assert "Connect an agent" in resp.text
     assert "config/treasury-agent.yaml" in resp.text
     assert "packs/core" in resp.text
-    assert "agentkit run" in resp.text
+    assert "agentaudit run" in resp.text
 
 
 def test_agent_detail_links_matrix_tests_to_latest_run(tmp_path, monkeypatch):
@@ -662,7 +662,7 @@ def test_status_route_returns_json_for_safe_polling(tmp_path, monkeypatch):
 
 
 def test_poll_helper_avoids_html_injection_sink():
-    import agentkit.web as web_pkg
+    import agentaudit.web as web_pkg
 
     path = Path(web_pkg.__file__).resolve().parent / "static" / "poll.js"
     js = path.read_text(encoding="utf-8")
@@ -680,17 +680,17 @@ def test_poll_helper_avoids_html_injection_sink():
 
 def _oidc_env(monkeypatch):
     """Turn on auth without standing up Keycloak; no token will ever verify."""
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
-    monkeypatch.setenv("AGENTKIT_OIDC_JWKS_URL", "https://kc.test/certs")
-    monkeypatch.setenv("AGENTKIT_OIDC_ISSUER", "https://kc.test/realms/agentkit")
-    monkeypatch.setenv("AGENTKIT_OIDC_AUDIENCE", "agentkit-api")
-    monkeypatch.setenv("AGENTKIT_OIDC_CLIENT_ID", "agentkit-web")
-    monkeypatch.setenv("AGENTKIT_OIDC_REDIRECT_URI", "https://agentkit.test/auth/callback")
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "oidc")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_JWKS_URL", "https://kc.test/certs")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_ISSUER", "https://kc.test/realms/agentaudit")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_AUDIENCE", "agentaudit-api")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_CLIENT_ID", "agentaudit-web")
+    monkeypatch.setenv("AGENTAUDIT_OIDC_REDIRECT_URI", "https://agentaudit.test/auth/callback")
 
 
 def _concrete_paths() -> list[tuple[str, str]]:
     """Every app route, with path params filled in. Static mount excluded."""
-    from agentkit.web.app import app
+    from agentaudit.web.app import app
 
     out = []
     for route in app.routes:
@@ -714,9 +714,9 @@ def _concrete_paths() -> list[tuple[str, str]]:
 
 def test_every_route_requires_a_token(tmp_path, monkeypatch):
     """A new route that forgets `current_principal` fails here."""
-    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "web.db"))
+    monkeypatch.setenv("AGENTAUDIT_DB", str(tmp_path / "web.db"))
     _oidc_env(monkeypatch)
-    from agentkit.web.app import app
+    from agentaudit.web.app import app
 
     client = TestClient(app)
     paths = _concrete_paths()
@@ -733,9 +733,9 @@ def test_every_route_requires_a_token(tmp_path, monkeypatch):
 
 
 def test_browser_request_starts_code_pkce_login(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "web.db"))
+    monkeypatch.setenv("AGENTAUDIT_DB", str(tmp_path / "web.db"))
     _oidc_env(monkeypatch)
-    from agentkit.web.app import app
+    from agentaudit.web.app import app
 
     client = TestClient(app)
     response = client.get("/runs", follow_redirects=False)
@@ -745,18 +745,18 @@ def test_browser_request_starts_code_pkce_login(tmp_path, monkeypatch):
     login = client.get(response.headers["location"], follow_redirects=False)
     assert login.status_code == 302
     assert login.headers["location"].startswith(
-        "https://kc.test/realms/agentkit/protocol/openid-connect/auth?"
+        "https://kc.test/realms/agentaudit/protocol/openid-connect/auth?"
     )
     assert "code_challenge_method=S256" in login.headers["location"]
-    assert "agentkit_login_state=" in login.headers["set-cookie"]
+    assert "agentaudit_login_state=" in login.headers["set-cookie"]
 
 
 def test_viewer_cannot_create_test(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     Store(db)
-    monkeypatch.setenv("AGENTKIT_DB", db)
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
         DEFAULT_ORG, "viewer", "viewer@example.test", frozenset({"viewer"})
@@ -782,9 +782,9 @@ def test_viewer_cannot_create_test(tmp_path, monkeypatch):
 def test_session_mutation_requires_csrf_token(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     Store(db)
-    monkeypatch.setenv("AGENTKIT_DB", db)
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
         DEFAULT_ORG,
@@ -815,9 +815,9 @@ def test_session_mutation_requires_csrf_token(tmp_path, monkeypatch):
 def test_session_mutation_accepts_matching_csrf_token(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     Store(db)
-    monkeypatch.setenv("AGENTKIT_DB", db)
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
         DEFAULT_ORG,
@@ -851,10 +851,10 @@ def test_run_of_another_org_is_404_not_403(tmp_path, monkeypatch):
     """Org B must not learn that org A's run id exists."""
     db = str(tmp_path / "web.db")
     _cfg, rr, _report = _seed_store(db)
-    monkeypatch.setenv("AGENTKIT_DB", db)
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
 
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     client = TestClient(web_app.app)
     # The run was seeded under DEFAULT_ORG; the dev principal is that org.
@@ -873,10 +873,10 @@ def test_run_of_another_org_is_404_not_403(tmp_path, monkeypatch):
 def test_runs_of_another_org_are_not_listed(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
-    monkeypatch.setenv("AGENTKIT_DB", db)
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
 
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     client = TestClient(web_app.app)
     assert "web-target" in client.get("/runs").text
@@ -894,7 +894,7 @@ def test_runs_of_another_org_are_not_listed(tmp_path, monkeypatch):
 def _seed_attributed_store(db: str) -> str:
     """One CLI-launched run (no principal) plus one launched by a human."""
     cfg, _rr, _report = _seed_store(db)
-    from agentkit.core.runner import run as run_tests
+    from agentaudit.core.runner import run as run_tests
 
     rr2 = run_tests(cfg, [])
     Store(db).save_run(
@@ -915,8 +915,8 @@ def test_run_records_who_launched_it(tmp_path):
 def test_runs_page_shows_who_launched_each_run(tmp_path, monkeypatch):
     db = str(tmp_path / "attr.db")
     _seed_attributed_store(db)
-    monkeypatch.setenv("AGENTKIT_DB", db)
-    from agentkit.web.app import app
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
+    from agentaudit.web.app import app
 
     body = TestClient(app).get("/runs").text
     assert "launcher@acme.test" in body
@@ -939,11 +939,11 @@ def test_authored_test_is_invisible_to_another_org(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     packs = tmp_path / "packs"
-    monkeypatch.setenv("AGENTKIT_PACKS", str(packs))
-    monkeypatch.setenv("AGENTKIT_DB", db)
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(packs))
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
 
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     client = TestClient(web_app.app)
     payload = {
@@ -976,7 +976,7 @@ def test_authored_test_is_invisible_to_another_org(tmp_path, monkeypatch):
 
 def test_no_code_path_writes_to_packs_user_dir():
     """The filesystem write is gone, not merely bypassed."""
-    source = Path("frontend/agentkit/web/app.py").read_text(encoding="utf-8")
+    source = Path("frontend/agentaudit/web/app.py").read_text(encoding="utf-8")
     assert "write_text" not in source
     assert "mkdir" not in source
 
@@ -984,8 +984,8 @@ def test_no_code_path_writes_to_packs_user_dir():
 def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     Store(db)
-    monkeypatch.setenv("AGENTKIT_DB", db)
-    from agentkit.web.app import app
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
+    from agentaudit.web.app import app
 
     client = TestClient(app)
     client.post(
@@ -1008,8 +1008,8 @@ def test_authored_duplicate_ids_from_different_packs_remain_distinct(tmp_path, m
     # Isolate the merge logic from the shipped packs the library also lists.
     empty_packs = tmp_path / "packs"
     empty_packs.mkdir()
-    monkeypatch.setenv("AGENTKIT_PACKS", str(empty_packs))
-    from agentkit.web.app import _test_rows
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(empty_packs))
+    from agentaudit.web.app import _test_rows
 
     class FakeStore:
         def list_authored_tests(self, _org_id):
@@ -1044,7 +1044,7 @@ def test_store_is_constructed_once_across_many_requests(tmp_path, monkeypatch):
     _seed_store(db)
     client = _client(db, monkeypatch)
 
-    import agentkit.web.app as web_app
+    import agentaudit.web.app as web_app
 
     client.get("/runs")  # warm up
     built = 0
@@ -1066,7 +1066,7 @@ def test_store_is_reused_across_requests(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     client = _client(db, monkeypatch)
-    from agentkit.web.app import get_store
+    from agentaudit.web.app import get_store
 
     client.get("/runs")
     first = get_store()
@@ -1075,8 +1075,8 @@ def test_store_is_reused_across_requests(tmp_path, monkeypatch):
 
 
 def test_app_lifespan_can_restart_after_closing_store(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENTKIT_DB", str(tmp_path / "restart.db"))
-    from agentkit.web.app import app
+    monkeypatch.setenv("AGENTAUDIT_DB", str(tmp_path / "restart.db"))
+    from agentaudit.web.app import app
 
     with TestClient(app) as first_client:
         assert first_client.get("/runs").status_code == 200
@@ -1093,7 +1093,7 @@ def test_store_serves_concurrent_threads(tmp_path):
     store = Store(db)
 
     def read_and_write(n: int) -> int:
-        from agentkit.core.runner import run as run_tests
+        from agentaudit.core.runner import run as run_tests
 
         rr = run_tests(cfg, [])
         store.save_run(DEFAULT_ORG, cfg, rr, score(rr))
@@ -1109,8 +1109,8 @@ def test_store_serves_concurrent_threads(tmp_path):
 # ---- T13: async submission -----------------------------------------------
 
 _TREASURY = {
-    "target": "agentkit/config/treasury-agent.yaml",
-    "packs": "agentkit/packs/treasury",
+    "target": "agentaudit/config/treasury-agent.yaml",
+    "packs": "agentaudit/packs/treasury",
 }
 
 
@@ -1142,8 +1142,8 @@ def test_post_runs_rejects_browser_session_without_csrf(tmp_path, monkeypatch):
     """The form carries a csrf_token; a session POST without one must not run."""
     client = _client(str(tmp_path / "web.db"), monkeypatch)
 
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     web_app.app.dependency_overrides[web_app.current_principal] = lambda: Principal(
         DEFAULT_ORG,
@@ -1210,7 +1210,7 @@ def test_job_status_reports_queued_running_and_done(tmp_path, monkeypatch):
     store.claim_job("w1", lease_seconds=-1)
     assert client.get(f"/jobs/{job_id}/status").json()["state"] == "running"
 
-    from agentkit.worker import work_once
+    from agentaudit.worker import work_once
 
     # w1 "died"; its lease has already expired, so the job comes back.
     assert store.reclaim_jobs(max_attempts=99) == 1
@@ -1231,8 +1231,8 @@ def test_job_of_another_org_is_404(tmp_path, monkeypatch):
     )
     job_id = resp.headers["location"].rsplit("/", 1)[-1]
 
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     web_app.app.dependency_overrides[web_app.current_principal] = (
         lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
@@ -1247,8 +1247,8 @@ def test_job_of_another_org_is_404(tmp_path, monkeypatch):
 def test_run_status_is_always_terminal(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _cfg, rr, _report = _seed_store(db)
-    monkeypatch.setenv("AGENTKIT_DB", db)
-    from agentkit.web import app as web_app
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
+    from agentaudit.web import app as web_app
 
     body = TestClient(web_app.app).get(
         f"/runs/{rr.run_id}/status", headers={"Accept": "application/json"}
@@ -1272,7 +1272,7 @@ def _seed_artifact(tmp_path, monkeypatch, org: str = DEFAULT_ORG, body: bytes = 
     blob = root / path
     blob.parent.mkdir(parents=True, exist_ok=True)
     blob.write_bytes(body)
-    monkeypatch.setenv("AGENTKIT_ARTIFACTS_DIR", str(root))
+    monkeypatch.setenv("AGENTAUDIT_ARTIFACTS_DIR", str(root))
     return db, rr.run_id, body
 
 
@@ -1289,8 +1289,8 @@ def test_artifact_is_served_to_its_own_org(tmp_path, monkeypatch):
 def test_artifact_of_another_org_is_404(tmp_path, monkeypatch):
     db, _run_id, _body = _seed_artifact(tmp_path, monkeypatch)
     client = _client(db, monkeypatch)
-    from agentkit.web import app as web_app
-    from agentkit.web.auth import Principal
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
 
     web_app.app.dependency_overrides[web_app.current_principal] = (
         lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
@@ -1314,7 +1314,7 @@ def test_missing_blob_is_404_not_a_server_error(tmp_path, monkeypatch):
 
 def test_artifacts_are_not_exposed_by_a_static_mount(tmp_path, monkeypatch):
     _seed_artifact(tmp_path, monkeypatch)
-    from agentkit.web.app import app as web_app
+    from agentaudit.web.app import app as web_app
 
     mounts = [r for r in web_app.routes if isinstance(getattr(r, "app", None), StaticFiles)]
 
@@ -1326,7 +1326,7 @@ def test_artifacts_are_not_exposed_by_a_static_mount(tmp_path, monkeypatch):
 def test_settings_page_shows_redaction_egress_and_access(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
-    monkeypatch.delenv("AGENTKIT_EGRESS_ALLOW_LOCAL", raising=False)
+    monkeypatch.delenv("AGENTAUDIT_EGRESS_ALLOW_LOCAL", raising=False)
     client = _client(db, monkeypatch)
 
     body = client.get("/settings").text

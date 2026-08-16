@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
-from agentkit.core.agent import AgentResponse, CallableAgent, HTTPAgent
-from agentkit.core.config import HTTPSpec, ResponseSpec
+from agentaudit.core.agent import AgentResponse, CallableAgent, HTTPAgent
+from agentaudit.core.config import HTTPSpec, ResponseSpec
 
 
 def test_callable_agent_normalizes_str():
@@ -128,7 +128,7 @@ def test_http_agent_pinned_endpoint_sends_sni_and_host():
     accepts -- the module-level httpx.request() rejected it, erroring every
     hosted HTTP run.
     """
-    from agentkit.core.egress import ValidatedEndpoint
+    from agentaudit.core.egress import ValidatedEndpoint
 
     seen = {}
 

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_components.html" import empty_state %}
+{% block title %}Connect agent - agentaudit{% endblock %}
+{% block content %}
+<p><a href="/">Back to home</a></p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Agent setup</p>
+    <h1>Connect an agent</h1>
+    <p class="page-subtitle">Choose a target config and a test pack, then start the run. Results appear on Home when it finishes.</p>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Run configuration</h2>
+      <p>Target configs come from <code>agentaudit/config</code>, packs from <code>agentaudit/packs</code>.</p>
+    </div>
+  </div>
+  {% if targets and pack_roots %}
+  <form method="post" action="/runs" class="test-form" data-testid="connect-form">
+    {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+    <label>Target config
+      <select name="target" required>
+        {% for target in targets %}
+        <option value="{{ target }}" {% if target == default_target %}selected{% endif %}>{{ target }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>Test pack
+      <select name="packs" required>
+        {% for pack in pack_roots %}
+        <option value="{{ pack }}" {% if pack == default_pack %}selected{% endif %}>{{ pack }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button type="submit" data-testid="connect-submit">Run Tests</button>
+  </form>
+  {% else %}
+  {{ empty_state("Connection inputs missing", "Add a target config and at least one pack before running an agent.") }}
+  {% endif %}
+</section>
+{% endblock %}

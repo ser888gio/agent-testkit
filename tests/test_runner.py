@@ -5,12 +5,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import agentkit.domains.treasury.sandbox  # noqa: F401 - registers the "treasury" sandbox
-from agentkit.core.config import CallableSpec, TargetConfig
-from agentkit.core.loader import PythonTestCase
-from agentkit.core.redaction import EvidencePolicy
-from agentkit.core.runner import _fold_attempts, run
-from agentkit.core.schema import (
+import agentaudit.domains.treasury.sandbox  # noqa: F401 - registers the "treasury" sandbox
+from agentaudit.core.config import CallableSpec, TargetConfig
+from agentaudit.core.loader import PythonTestCase
+from agentaudit.core.redaction import EvidencePolicy
+from agentaudit.core.runner import _fold_attempts, run
+from agentaudit.core.schema import (
     Assertion,
     AssertionResult,
     Category,
@@ -232,7 +232,7 @@ def test_sandbox_reset_isolation():
     cfg = TargetConfig(
         id="treasury-target",
         agent=CallableSpec(
-            type="callable", callable="agentkit.domains.treasury.agent:create_agent"
+            type="callable", callable="agentaudit.domains.treasury.agent:create_agent"
         ),
         sandbox="treasury",
     )

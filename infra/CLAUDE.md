@@ -8,13 +8,13 @@ the split package roots plus `infra/alembic/` so the installed wheel contains mi
 Alembic-managed, raw SQL only — no ORM models, no SQLAlchemy `Table`/`Base` definitions
 anywhere in this repo. `env.py` sets `target_metadata` implicitly to none; every revision's
 `upgrade()`/`downgrade()` calls `op.execute("...")` with hand-written SQL, matching
-`backend/agentkit/core/store.py`'s existing plain-`sqlite3` style. `store.py` remains the only
+`backend/agentaudit/core/store.py`'s existing plain-`sqlite3` style. `store.py` remains the only
 runtime DB access point — Alembic only evolves the schema it reads/writes, it does not become
 a second way to touch the database.
 
 - Config: root `alembic.ini` → `script_location = infra/alembic`. `sqlalchemy.url` in that
   file is a placeholder; the real target is set per-invocation by
-  `backend/agentkit/cli.py:_alembic_config` from the `agentkit migrate --db <path>` flag.
+  `backend/agentaudit/cli.py:_alembic_config` from the `agentaudit migrate --db <path>` flag.
 - Revisions live in `infra/alembic/versions/`, named `NNNN_description.py` with explicit
   `revision = "NNNN"` (not Alembic's default random hex) so ordering reads the same as the
   filename. `0001_baseline_schema.py` is the first — it mirrors the schema `Store` already
@@ -23,11 +23,11 @@ a second way to touch the database.
 - New revision: `alembic revision -m "<name>"` from the repo root (picks up `alembic.ini`
   automatically), then hand-write `upgrade()`/`downgrade()` following `0001`'s pattern. Or
   copy `0001_baseline_schema.py` and bump the revision id/`down_revision` by hand.
-- Apply: `agentkit migrate --db <path>`. Status: `agentkit migrate --db <path> --status`
+- Apply: `agentaudit migrate --db <path>`. Status: `agentaudit migrate --db <path> --status`
   (lists pending revisions in application order, or prints `up to date`).
 - Docker Compose implements the explicit deploy step with a one-shot `migrate` service; the UI
-  depends on its successful completion. CLI database options fall back to `AGENTKIT_DB`, so the
-  Compose `/data/agentkit.db` volume is used unless `--db` explicitly overrides it.
+  depends on its successful completion. CLI database options fall back to `AGENTAUDIT_DB`, so the
+  Compose `/data/agentaudit.db` volume is used unless `--db` explicitly overrides it.
 - Migrations are forward-only in production — applied at deploy time by explicit command,
   never implicitly on app startup, so two replicas booting together can't race.
 
@@ -35,9 +35,9 @@ a second way to touch the database.
 
 Worker-side environment, deployment-owned. Never derived from target config.
 
-- `AGENTKIT_EGRESS_ALLOW_LOCAL=1` relaxes the https requirement and the
+- `AGENTAUDIT_EGRESS_ALLOW_LOCAL=1` relaxes the https requirement and the
   public-address check so a worker can reach a loopback stub. It exists for
-  local development against `agentkit/config/treasury-http.yaml` and must not be
+  local development against `agentaudit/config/treasury-http.yaml` and must not be
   set on any partner-facing deployment. The per-target host allowlist still
   applies in this mode.
 - Secrets reach a run as an explicit interpolation mapping resolved from the
@@ -56,11 +56,11 @@ untrusted third-party endpoint, so the container is treated as the isolation
 boundary rather than a deployment convenience.
 
 - **Network.** `worker` is alone on the `egress` network; every other service
-  (`agentkit`, `keycloak`, `keycloak-db`, `migrate`) stays on `default`. The
+  (`agentaudit`, `keycloak`, `keycloak-db`, `migrate`) stays on `default`. The
   worker therefore has no TCP route to the control plane. Verify after any
   compose edit: no other service may join `egress`.
 - **Database access is a file, not a route.** The worker reaches SQLite through
-  the shared `agentkit-data` volume. This is what lets it be network-isolated
+  the shared `agentaudit-data` volume. This is what lets it be network-isolated
   and still persist runs — there is no DB server to be routable to. If the store
   ever moves to a networked database, this property is lost and the worker needs
   a write-through API instead of a socket to it.
@@ -68,7 +68,7 @@ boundary rather than a deployment convenience.
   `no-new-privileges`, plus `pids_limit`/`mem_limit` as container-level backstops
   to the per-run ceilings in `core/isolation.py`.
 - **Secrets.** Provision each target's `secret_ref` (`env://VAR`) on `worker`,
-  not on `agentkit`. The web service never needs a partner credential.
+  not on `agentaudit`. The web service never needs a partner credential.
 
 ### Known gaps — do not describe these as closed
 

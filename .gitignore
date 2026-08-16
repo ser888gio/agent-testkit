@@ -9,10 +9,10 @@ dist/
 venv/
 env/
 
-# agentkit
+# agentaudit
 *.db
 *.sqlite3
-agentkit.db
+agentaudit.db
 .env
 infra/.env
 

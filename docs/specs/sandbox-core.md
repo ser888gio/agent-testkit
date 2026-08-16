@@ -1,6 +1,6 @@
 # feat/sandbox-core — Spec
 
-**Task 6 · Depends on: 1 · Files:** `agentkit/core/sandbox.py`, `tests/test_sandbox_core.py`
+**Task 6 · Depends on: 1 · Files:** `agentaudit/core/sandbox.py`, `tests/test_sandbox_core.py`
 
 ## Goal
 Generic sandbox behavior separated from any domain, so action-safety works for every vertical.

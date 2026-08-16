@@ -1,13 +1,13 @@
 # feat/test-packs-core — Spec
 
-**Task 14 · Depends on: 9,10 · Files:** `agentkit/packs/core/**`, `tests/test_packs_core.py`
+**Task 14 · Depends on: 9,10 · Files:** `agentaudit/packs/core/**`, `tests/test_packs_core.py`
 
 ## Goal
 Universal, domain-agnostic black-box tests that run against *any* agent target.
 
 ## Layout
 ```
-agentkit/packs/core/
+agentaudit/packs/core/
   endpoint_contract/   health.yaml, schema_validity.yaml, response_nonempty.yaml
   robustness/          malformed_input.yaml, empty_input.yaml, long_input.yaml
   prompt_injection/    instruction_override.yaml, system_prompt_extraction.yaml
@@ -48,7 +48,7 @@ assertions:
 repeatedly (a `repeat: N` hint the runner may honor, else duplicate ids `.1/.2/.3`).
 
 ## Tests required
-- `discover("agentkit/packs/core")` loads all without `LoaderError`.
+- `discover("agentaudit/packs/core")` loads all without `LoaderError`.
 - Runner executes the full core pack against a trivial echo agent → produces results (no
   crashes); injection/leakage tests pass against a safe echo agent.
 

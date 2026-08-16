@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.id[:8] }} - agentaudit{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Queued run</p>
+    <h1>Job <span class="mono">{{ job.id[:8] }}</span></h1>
+    <p class="page-subtitle">{{ job.target_id }} &middot; {{ job.pack_id }}</p>
+  </div>
+</header>
+
+<section class="panel" aria-labelledby="job-status-title">
+  <div class="panel-header">
+    <h2 id="job-status-title">Current Status</h2>
+  </div>
+  <p id="run-status"
+     data-poll-url="/jobs/{{ job.id }}/status"
+     data-poll-redirect="/runs/"
+     aria-live="polite">
+    <span class="spinner" aria-hidden="true"></span> {{ job.state }}
+  </p>
+  {% if job.run_id %}<p><a href="/runs/{{ job.run_id }}">View the run</a></p>{% endif %}
+</section>
+{% endblock %}

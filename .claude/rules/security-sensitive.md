@@ -1,11 +1,11 @@
 ---
 description: Redaction, evidence policy, and the dashboard's execution surface
 paths:
-  - "backend/agentkit/core/redaction.py"
-  - "backend/agentkit/core/store.py"
-  - "backend/agentkit/core/runner.py"
-  - "backend/agentkit/core/config.py"
-  - "frontend/agentkit/web/app.py"
+  - "backend/agentaudit/core/redaction.py"
+  - "backend/agentaudit/core/store.py"
+  - "backend/agentaudit/core/runner.py"
+  - "backend/agentaudit/core/config.py"
+  - "frontend/agentaudit/web/app.py"
 ---
 
 # Security-sensitive code
@@ -38,7 +38,7 @@ config containing a real-looking credential.
 
 ## Dashboard execution surface
 
-`frontend/agentkit/web/app.py`'s re-run endpoint can load target/pack files and execute
+`frontend/agentaudit/web/app.py`'s re-run endpoint can load target/pack files and execute
 Python test modules under the packs directory. Consequently:
 
 - The default bind is `127.0.0.1`. Do not change the default.

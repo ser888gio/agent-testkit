@@ -6,13 +6,13 @@ instructions Claude itself reads, see [`../CLAUDE.md`](../CLAUDE.md).
 ## Where to start a session
 
 Start Claude Code from the **repository root** for almost everything. The package is a
-namespace package assembled from `./agentkit`, `./backend`, and `./frontend`, so a change
+namespace package assembled from `./agentaudit`, `./backend`, and `./frontend`, so a change
 that looks local usually is not — editing `core/schema.py` ripples into `reports/`,
 `web/app.py`, and the YAML packs.
 
 Start from a subdirectory only when the work is genuinely contained: authoring YAML packs
-(`agentkit/packs/`) or iterating on dashboard templates
-(`frontend/agentkit/web/`). You still get the root `CLAUDE.md` plus that directory's own.
+(`agentaudit/packs/`) or iterating on dashboard templates
+(`frontend/agentaudit/web/`). You still get the root `CLAUDE.md` plus that directory's own.
 
 For cross-component work spanning directories, stay at the root rather than adding
 directories — the whole repo is small enough that root context is cheap.
@@ -23,10 +23,10 @@ Claude reads these together, most general first:
 
 1. `CLAUDE.md` (root) — overview, commands, architecture rules, working rules
 2. Directory `CLAUDE.md` — local rules that differ from the root:
-   - `backend/agentkit/core/` — the trust-sensitive engine
-   - `backend/agentkit/domains/` — adding a vertical
-   - `frontend/agentkit/web/` — the dashboard
-   - `agentkit/packs/` — test content authoring
+   - `backend/agentaudit/core/` — the trust-sensitive engine
+   - `backend/agentaudit/domains/` — adding a vertical
+   - `frontend/agentaudit/web/` — the dashboard
+   - `agentaudit/packs/` — test content authoring
    - `tests/` — suite conventions
 3. `.claude/rules/*.md` — path-scoped rules that activate for matching files:
    `generated-files`, `security-sensitive`, `dependency-boundaries`, `test-packs`
@@ -91,7 +91,7 @@ tight loops and run the default before finishing.
   `uv run ... python -m pytest` is green. `uv run` itself works. `tools/validate.sh` already
   uses the module form.
 - Lint is green and enforced by a CI `lint` job, so `validate.sh` lints the whole repo.
-  `agentkit` is declared first-party for isort in `pyproject.toml` — without it ruff treats
+  `agentaudit` is declared first-party for isort in `pyproject.toml` — without it ruff treats
   the package as third-party and reorders import blocks incorrectly.
 
 ## Hooks
@@ -99,8 +99,8 @@ tight loops and run the default before finishing.
 `.claude/settings.json` configures:
 
 - **PreToolUse** → `tools/guard-protected-paths.sh` blocks edits to generated and vendored
-  paths (`dist/`, `uv.lock`, `agentkit.db`, `__pycache__/`, `docs/diagrams/*.svg`,
-  `agentkit.egg-info/`, `.venv/`) and prints how to regenerate each. It fails open, so a
+  paths (`dist/`, `uv.lock`, `agentaudit.db`, `__pycache__/`, `docs/diagrams/*.svg`,
+  `agentaudit.egg-info/`, `.venv/`) and prints how to regenerate each. It fails open, so a
   malformed payload never blocks ordinary work.
 - **PostToolUse** → `aislop hook claude`, the pre-existing code-quality scan.
 

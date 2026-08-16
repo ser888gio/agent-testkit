@@ -1,1 +1,1 @@
-"""Installable Alembic migration bundle for agentkit."""
+"""Installable Alembic migration bundle for agentaudit."""

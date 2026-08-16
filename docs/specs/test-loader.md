@@ -1,6 +1,6 @@
 # feat/test-loader — Spec
 
-**Task 10 · Depends on: 1,9 · Files:** `agentkit/core/loader.py`, `tests/test_loader.py`
+**Task 10 · Depends on: 1,9 · Files:** `agentaudit/core/loader.py`, `tests/test_loader.py`
 
 ## Goal
 Discover and load tests (declarative YAML/JSON + basic Python modules) into validated
@@ -65,7 +65,7 @@ exception → `error`.
 
 ## Examples
 ```python
-tests = discover("agentkit/packs")
+tests = discover("agentaudit/packs")
 filter_tests(tests, tags=["treasury"], categories=[Category.action_safety])
 ```
 

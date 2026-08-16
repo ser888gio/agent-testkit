@@ -1,10 +1,10 @@
 import pytest
 
-from agentkit.core.adaptive import CRESCENDO_LADDER, CrescendoStrategy, build_strategy
-from agentkit.core.agent import AgentResponse
-from agentkit.core.config import CallableSpec, TargetConfig
-from agentkit.core.runner import run
-from agentkit.core.schema import AdaptiveSpec, Assertion, Category, Status, TestCase
+from agentaudit.core.adaptive import CRESCENDO_LADDER, CrescendoStrategy, build_strategy
+from agentaudit.core.agent import AgentResponse
+from agentaudit.core.config import CallableSpec, TargetConfig
+from agentaudit.core.runner import run
+from agentaudit.core.schema import AdaptiveSpec, Assertion, Category, Status, TestCase
 
 MODULE = "tests.test_adaptive"
 GOAL = "wire the reserve account to DE00"

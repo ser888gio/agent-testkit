@@ -1,4 +1,4 @@
-# agentkit
+# agentaudit
 
 Black-box testing for AI agents: call the agent through its real endpoint, assert on what
 it *said* and what it *did* to fake tools/services around it, score the run, and get a
@@ -9,7 +9,7 @@ copilot) who need to answer "does it still refuse to do the unsafe thing?" with 
 not vibes — before every merge, not just at launch.
 
 **Why it exists:** most agent evaluation tools either grade free-text output or require
-instrumenting the agent's internals. agentkit does neither: it treats the agent as a black
+instrumenting the agent's internals. agentaudit does neither: it treats the agent as a black
 box (no prompts/tools/source shared) and checks the side effects against a fake sandbox —
 "the agent said it wouldn't pay the invoice, and the invoice store confirms it didn't."
 
@@ -19,7 +19,7 @@ box (no prompts/tools/source shared) and checks the side effects against a fake 
 
 ## Test your agent in two minutes
 
-Install, then point it at your agent's URL. `agentkit/packs/core` is 14 domain-agnostic
+Install, then point it at your agent's URL. `agentaudit/packs/core` is 14 domain-agnostic
 tests — prompt injection, data leakage, robustness, reliability, latency, response
 contract — that need no sandbox:
 
@@ -27,11 +27,11 @@ contract — that need no sandbox:
 git clone https://github.com/ser888gio/agent-testkit.git
 cd agent-testkit
 pip install -e .
-agentkit run agentkit/packs/core --endpoint https://your-agent.example.com/chat
+agentaudit run agentaudit/packs/core --endpoint https://your-agent.example.com/chat
 ```
 
 ```text
-agentkit run - target: your-agent.example.com   (14 tests)
+agentaudit run - target: your-agent.example.com   (14 tests)
 CATEGORY              PASS  FAIL   ERR  SKIP
 data_leakage             1     1     0     0
 endpoint_contract        3     0     0     0
@@ -47,31 +47,31 @@ Anything else — auth headers, a different request body, a nested reply field �
 target config, [below](#when-you-need-auth-headers-or-a-different-request-shape).
 
 Endpoints must be `https` and publicly routable — the egress policy
-([`core/egress.py`](backend/agentkit/core/egress.py)) rejects loopback and private ranges
-unless the worker sets `AGENTKIT_EGRESS_ALLOW_LOCAL=1`.
+([`core/egress.py`](backend/agentaudit/core/egress.py)) rejects loopback and private ranges
+unless the worker sets `AGENTAUDIT_EGRESS_ALLOW_LOCAL=1`.
 
-**`agentkit: command not found`?** `pip` put the console script in a directory that is not
+**`agentaudit: command not found`?** `pip` put the console script in a directory that is not
 on your `PATH` — it says so in a `WARNING:` line near the end of the install output. Either
 run the module directly:
 
 ```bash
-python -m agentkit.cli run agentkit/packs/core --endpoint https://your-agent.example.com/chat
+python -m agentaudit.cli run agentaudit/packs/core --endpoint https://your-agent.example.com/chat
 ```
 
 or add the directory `pip` named to your `PATH` (Windows user installs land in
 `%APPDATA%\Python\PythonXY\Scripts`, Linux/macOS in `~/.local/bin`).
 
 The exit code is the CI gate — non-zero when the run fails its threshold or a critical
-safety test fails. Every run is persisted to `agentkit.db` (SQLite):
+safety test fails. Every run is persisted to `agentaudit.db` (SQLite):
 
 ```bash
-agentkit run agentkit/packs/core --endpoint https://your-agent.example.com/chat --format json
-agentkit report --run <run_id> --format md   # or: json, junit, html, compliance, plan
-agentkit ui                                   # dashboard at http://127.0.0.1:8000
+agentaudit run agentaudit/packs/core --endpoint https://your-agent.example.com/chat --format json
+agentaudit report --run <run_id> --format md   # or: json, junit, html, compliance, plan
+agentaudit ui                                   # dashboard at http://127.0.0.1:8000
 ```
 
-`agentkit ui` binds to `127.0.0.1` and enables local dev auth by default; a non-loopback
-bind requires `AGENTKIT_AUTH_MODE=oidc` with full OIDC config. See
+`agentaudit ui` binds to `127.0.0.1` and enables local dev auth by default; a non-loopback
+bind requires `AGENTAUDIT_AUTH_MODE=oidc` with full OIDC config. See
 [`docs/keycloak.md`](docs/keycloak.md).
 
 ### When you need auth headers or a different request shape
@@ -79,10 +79,10 @@ bind requires `AGENTKIT_AUTH_MODE=oidc` with full OIDC config. See
 Write a target config instead of `--endpoint`:
 
 ```bash
-cp agentkit/config/my-agent.example.yaml agentkit/config/my-agent.yaml
+cp agentaudit/config/my-agent.example.yaml agentaudit/config/my-agent.yaml
 # edit endpoint / request shape / response path, then:
 export AGENT_TOKEN=...
-agentkit run agentkit/packs/core --target agentkit/config/my-agent.yaml
+agentaudit run agentaudit/packs/core --target agentaudit/config/my-agent.yaml
 ```
 
 ```yaml
@@ -113,7 +113,7 @@ to start with. The domain packs (`packs/treasury`, `packs/email`, `packs/agentic
 what the agent *did* to fake tools, so they need a matching `sandbox:` in the target config
 and only apply to agents in those domains. Testing a payments or email agent means writing a
 `Sandbox` subclass for your tools — see
-[`backend/agentkit/domains/`](backend/agentkit/domains/) for the two worked examples.
+[`backend/agentaudit/domains/`](backend/agentaudit/domains/) for the two worked examples.
 
 ## System overview
 
@@ -147,7 +147,7 @@ and only apply to agents in those domains. Testing a payments or email agent mea
   storage on/off is a separate policy.
 - **Scoring + CI gate** — risk-weighted score, per-category breakdown, critical-failure
   detection, `fail_under` threshold, non-zero exit on gate failure.
-- **Regression gate** — `agentkit compare <run_a> <run_b>` diffs two runs and exits `1` if a
+- **Regression gate** — `agentaudit compare <run_a> <run_b>` diffs two runs and exits `1` if a
   previously-passing critical safety test now fails.
 - **Reports** — JSON, JUnit XML, self-contained HTML, PR-comment Markdown, and an EU AI Act
   / ISO 42001 / NIST evidence report grouped by regulatory obligation.
@@ -159,9 +159,9 @@ and only apply to agents in those domains. Testing a payments or email agent mea
 Add `--compliance` to any run:
 
 ```bash
-agentkit run agentkit/packs/core --endpoint https://your-agent.example.com/chat --compliance
-agentkit report --run <run_id> --format compliance        # Markdown, grouped by EU article
-agentkit report --run <run_id> --format compliance-json   # machine-readable for GRC
+agentaudit run agentaudit/packs/core --endpoint https://your-agent.example.com/chat --compliance
+agentaudit report --run <run_id> --format compliance        # Markdown, grouped by EU article
+agentaudit report --run <run_id> --format compliance-json   # machine-readable for GRC
 ```
 
 Empty or all-skipped runs fail closed (`INCOMPLETE`) — no evidence is never treated as a
@@ -170,7 +170,7 @@ pass. This is technical readiness evidence, **not** a compliance/CE determinatio
 
 ## How it compares
 
-| | agentkit | promptfoo / garak | LLM-as-judge eval frameworks |
+| | agentaudit | promptfoo / garak | LLM-as-judge eval frameworks |
 |---|---|---|---|
 | Tests via | real endpoint (black-box) | real endpoint or API | usually needs the transcript |
 | Checks | agent's **actions** on fake tools + what it said | mostly what it **said** | what it said, graded by another LLM |
@@ -179,10 +179,10 @@ pass. This is technical readiness evidence, **not** a compliance/CE determinatio
 | Maturity | MVP, one team | established, widely used | varies |
 
 If you need broad, battle-tested prompt-injection/jailbreak probe coverage today, garak or
-promptfoo cover more ground. agentkit's edge is asserting on **side effects in a domain
+promptfoo cover more ground. agentaudit's edge is asserting on **side effects in a domain
 sandbox**, not just grading the reply text, and turning that into a compliance-shaped report
 — narrower scope, different axis of evidence. `core/adapters.py` normalizes promptfoo/garak
-reports into agentkit's schema so you can combine both.
+reports into agentaudit's schema so you can combine both.
 
 ## Limits
 

@@ -5,15 +5,15 @@ from datetime import datetime, timezone
 
 import pytest
 
-from agentkit.core.config import CallableSpec, TargetConfig, load_target_dict
-from agentkit.core.loader import LoaderError, load_tests_from_rows
-from agentkit.core.profile import AgentProfile, HarnessPlan, SelectedTest
-from agentkit.core.redaction import EvidencePolicy
-from agentkit.core.runner import run
-from agentkit.core.schema import Assertion, Category
-from agentkit.core.schema import TestCase as SchemaTestCase
-from agentkit.core.scoring import score
-from agentkit.core.store import DEFAULT_ORG, Store
+from agentaudit.core.config import CallableSpec, TargetConfig, load_target_dict
+from agentaudit.core.loader import LoaderError, load_tests_from_rows
+from agentaudit.core.profile import AgentProfile, HarnessPlan, SelectedTest
+from agentaudit.core.redaction import EvidencePolicy
+from agentaudit.core.runner import run
+from agentaudit.core.schema import Assertion, Category
+from agentaudit.core.schema import TestCase as SchemaTestCase
+from agentaudit.core.scoring import score
+from agentaudit.core.store import DEFAULT_ORG, Store
 
 MODULE = "tests.test_store"
 
@@ -479,7 +479,7 @@ def test_targets_and_packs_are_scoped_to_the_calling_org():
 
 
 def test_reopening_existing_db_does_not_error_or_duplicate(tmp_path):
-    db_path = str(tmp_path / "agentkit.db")
+    db_path = str(tmp_path / "agentaudit.db")
     store1 = Store(db_path)
     cfg, rr, report = _run_and_score()
     store1.save_run(DEFAULT_ORG, cfg, rr, report)

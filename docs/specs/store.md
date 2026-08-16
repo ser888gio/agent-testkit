@@ -1,4 +1,4 @@
-# `agentkit.core.store` — Specification
+# `agentaudit.core.store` — Specification
 
 ## Goal
 
@@ -92,7 +92,7 @@ Request/response evidence lives inside `result_json`. The runner redacts it befo
 
 ```python
 class Store:
-    def __init__(self, path: str = "database/agentkit.db"): ...
+    def __init__(self, path: str = "database/agentaudit.db"): ...
     def save_run(
         self, org_id: str, agent: TargetConfig, run: RunResult, score: ScoreReport
     ) -> None
@@ -139,7 +139,7 @@ validated tenant claim.
 - SQLite foreign-key enforcement is enabled on every Store connection.
 - `runs.status` is `passed` when `score.gate_passed`, otherwise `failed`.
 - Store construction creates the current schema for a new database. It does not upgrade an
-  older schema: run `agentkit migrate --db <path>` before opening a pre-T2 database.
+  older schema: run `agentaudit migrate --db <path>` before opening a pre-T2 database.
 
 ## Failure behavior
 

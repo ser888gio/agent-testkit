@@ -1,6 +1,6 @@
 # feat/redaction — Spec
 
-**Task 2 · Depends on: 1 · Files:** `agentkit/core/redaction.py`, `tests/test_redaction.py`
+**Task 2 · Depends on: 1 · Files:** `agentaudit/core/redaction.py`, `tests/test_redaction.py`
 
 ## Goal
 Strip secrets/PII from evidence before it is stored or displayed. Core to the product —

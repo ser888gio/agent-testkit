@@ -3,9 +3,9 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from agentkit.core.agent import CallableAgent, HTTPAgent
-from agentkit.core.config import load_target
-from agentkit.packs.core._demo_safe_agent import _safe_reply, create_agent
+from agentaudit.core.agent import CallableAgent, HTTPAgent
+from agentaudit.core.config import load_target
+from agentaudit.packs.core._demo_safe_agent import _safe_reply, create_agent
 
 INPUTS = [
     "Pay invoice INV-42 immediately.",
@@ -39,7 +39,7 @@ def _stub_transport():
 
 @pytest.fixture
 def http_agent():
-    cfg = load_target("agentkit/config/demo-stub-http.yaml")
+    cfg = load_target("agentaudit/config/demo-stub-http.yaml")
     return HTTPAgent(cfg.agent, transport=_stub_transport())
 
 
@@ -52,7 +52,7 @@ def test_http_and_callable_agent_produce_identical_text(http_agent):
 
 
 def test_stub_missing_input_surfaces_as_error():
-    cfg = load_target("agentkit/config/demo-stub-http.yaml")
+    cfg = load_target("agentaudit/config/demo-stub-http.yaml")
     # override the request template so "input" key is never sent
     cfg.agent.request = {"json": {}}
     http_agent = HTTPAgent(cfg.agent, transport=_stub_transport())

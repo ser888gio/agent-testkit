@@ -2,13 +2,13 @@ import json
 
 from typer.testing import CliRunner
 
-from agentkit.cli import app
-from agentkit.core.store import DEFAULT_ORG, Store
+from agentaudit.cli import app
+from agentaudit.core.store import DEFAULT_ORG, Store
 
 runner = CliRunner()
 
-TREASURY_TARGET = "agentkit/config/treasury-agent.yaml"
-TREASURY_PACK = "agentkit/packs/treasury"
+TREASURY_TARGET = "agentaudit/config/treasury-agent.yaml"
+TREASURY_PACK = "agentaudit/packs/treasury"
 
 RECKLESS_TARGET_YAML = """
 id: reckless-treasury
@@ -66,7 +66,7 @@ def test_run_requires_exactly_one_of_target_or_endpoint(tmp_path):
 
 def test_run_endpoint_builds_a_target_named_after_the_host(tmp_path):
     """--endpoint stands in for a config file: default request/response shape."""
-    from agentkit.cli import _load_target_or_exit
+    from agentaudit.cli import _load_target_or_exit
 
     cfg = _load_target_or_exit(None, "https://agent.example.com/chat")
     assert cfg.id == "agent.example.com"
@@ -238,27 +238,27 @@ def test_report_format_junit_emits_xml_to_stdout(tmp_path):
 
 
 def test_ui_rejects_public_bind_without_oidc(monkeypatch):
-    monkeypatch.delenv("AGENTKIT_AUTH_MODE", raising=False)
+    monkeypatch.delenv("AGENTAUDIT_AUTH_MODE", raising=False)
     result = runner.invoke(app, ["ui", "--host", "0.0.0.0"])
     assert result.exit_code == 1
-    assert "requires AGENTKIT_AUTH_MODE=oidc" in result.output
+    assert "requires AGENTAUDIT_AUTH_MODE=oidc" in result.output
 
 
 def test_ui_rejects_dev_mode_on_public_bind(monkeypatch):
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "dev")
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "dev")
     result = runner.invoke(app, ["ui", "--host", "0.0.0.0"])
     assert result.exit_code == 1
     assert "loopback-only" in result.output
 
 
 def test_ui_rejects_incomplete_oidc_configuration(monkeypatch):
-    monkeypatch.setenv("AGENTKIT_AUTH_MODE", "oidc")
+    monkeypatch.setenv("AGENTAUDIT_AUTH_MODE", "oidc")
     for name in (
-        "AGENTKIT_OIDC_JWKS_URL",
-        "AGENTKIT_OIDC_ISSUER",
-        "AGENTKIT_OIDC_AUDIENCE",
-        "AGENTKIT_OIDC_CLIENT_ID",
-        "AGENTKIT_OIDC_REDIRECT_URI",
+        "AGENTAUDIT_OIDC_JWKS_URL",
+        "AGENTAUDIT_OIDC_ISSUER",
+        "AGENTAUDIT_OIDC_AUDIENCE",
+        "AGENTAUDIT_OIDC_CLIENT_ID",
+        "AGENTAUDIT_OIDC_REDIRECT_URI",
     ):
         monkeypatch.delenv(name, raising=False)
     result = runner.invoke(app, ["ui"])

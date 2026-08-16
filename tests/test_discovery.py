@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from agentkit.core.config import CallableSpec, HTTPSpec, TargetConfig
-from agentkit.core.discovery import (
+from agentaudit.core.config import CallableSpec, HTTPSpec, TargetConfig
+from agentaudit.core.discovery import (
     ECHO_PROBE,
     MEMORY_PHRASE,
     MEMORY_PROBE,
@@ -9,7 +9,7 @@ from agentkit.core.discovery import (
     discover,
     profile_from_config,
 )
-from agentkit.core.schema import Category, Risk, RunResult, Status, TestResult
+from agentaudit.core.schema import Category, Risk, RunResult, Status, TestResult
 
 MODULE = "tests.test_discovery"
 

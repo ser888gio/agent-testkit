@@ -25,17 +25,17 @@ worth a look during `feat/docs-demo` cleanup or a later pass.
 
 ## feat/runner
 
-- **Sandbox registration ordering gotcha.** `agentkit.core.sandbox.SANDBOXES` only gets an
+- **Sandbox registration ordering gotcha.** `agentaudit.core.sandbox.SANDBOXES` only gets an
   entry once the module defining the `@register_sandbox(...)`-decorated class has actually
-  been imported (e.g. `agentkit.domains.treasury.sandbox`). `runner.run()` calls
+  been imported (e.g. `agentaudit.domains.treasury.sandbox`). `runner.run()` calls
   `build_sandbox(target.sandbox)` *before* `build_agent(target, sandbox=sandbox)` — and it's
   `build_agent`'s dynamic `importlib.import_module(...)` of the callable's module that
   transitively imports the domain sandbox module (since `agent.py` imports `sandbox.py`).
   So calling `run()` as the very first touch of a domain (no prior import of
-  `agentkit.domains.<x>.sandbox` or `.agent` anywhere in the process) raises
+  `agentaudit.domains.<x>.sandbox` or `.agent` anywhere in the process) raises
   `KeyError: unknown sandbox '<x>'; registered sandboxes: (none registered)` even though the
   sandbox is a real, correctly-decorated class — purely an import-order artifact, not a
   missing feature. Worked around in `tests/test_runner.py` by importing
-  `agentkit.domains.treasury.sandbox` before calling `run()`. `feat/cli` (task 16) should
-  eagerly import all `agentkit.domains.*` packages at startup (or `agentkit/domains/__init__.py`
+  `agentaudit.domains.treasury.sandbox` before calling `run()`. `feat/cli` (task 16) should
+  eagerly import all `agentaudit.domains.*` packages at startup (or `agentaudit/domains/__init__.py`
   should import its submodules) so this can't bite a real CLI invocation.

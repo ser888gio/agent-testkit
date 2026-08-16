@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from agentkit.core.attacks import TRANSFORMS, apply_attack, expand, split_variant
-from agentkit.core.loader import PythonTestCase
-from agentkit.core.schema import AdaptiveSpec, Assertion, Category, Risk, TestCase
+from agentaudit.core.attacks import TRANSFORMS, apply_attack, expand, split_variant
+from agentaudit.core.loader import PythonTestCase
+from agentaudit.core.schema import AdaptiveSpec, Assertion, Category, Risk, TestCase
 
 
 def _test_case(**kwargs) -> TestCase:

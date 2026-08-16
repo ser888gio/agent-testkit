@@ -1,6 +1,6 @@
 import pytest
 
-from agentkit.core.redaction import (
+from agentaudit.core.redaction import (
     EvidencePolicy,
     RedactionConfig,
     RedactionPattern,

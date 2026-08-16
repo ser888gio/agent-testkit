@@ -1,6 +1,6 @@
 # feat/runner — Spec
 
-**Task 11 · Depends on: 4,6,9,10 · Files:** `agentkit/core/runner.py`, `tests/test_runner.py`
+**Task 11 · Depends on: 4,6,9,10 · Files:** `agentaudit/core/runner.py`, `tests/test_runner.py`
 
 ## Goal
 The execution lifecycle: turn a target + a set of tests into a `RunResult`, deterministically
@@ -56,7 +56,7 @@ for test in tests:
 
 ## Examples
 ```python
-rr = run(cfg, discover("agentkit/packs/treasury"))
+rr = run(cfg, discover("agentaudit/packs/treasury"))
 {r.status for r in rr.results}          # {passed, failed} (or error on a broken target)
 ```
 

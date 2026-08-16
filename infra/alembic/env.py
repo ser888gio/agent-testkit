@@ -11,7 +11,7 @@ config = context.config
 
 def run_migrations_offline() -> None:
     raise RuntimeError(
-        "offline SQL generation is not supported: AgentKit migrations inspect and "
+        "offline SQL generation is not supported: AgentAudit migrations inspect and "
         "rebuild existing SQLite tables"
     )
 

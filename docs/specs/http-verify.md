@@ -1,7 +1,7 @@
 # feat/http-verify — Spec
 
 **Task 5 · Depends on: 4 · Files:** `examples/stub_endpoint.py`,
-`agentkit/config/*-http.yaml`, `tests/test_http_agent.py`
+`agentaudit/config/*-http.yaml`, `tests/test_http_agent.py`
 
 ## Goal
 Prove the black-box HTTP path produces the same normalized result as the in-process path —

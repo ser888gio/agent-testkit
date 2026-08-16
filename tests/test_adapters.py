@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from agentkit.core.adapters import ADAPTERS, GarakAdapter, PromptfooAdapter
-from agentkit.core.profile import AgentProfile
-from agentkit.core.redaction import EvidencePolicy
-from agentkit.core.schema import Category, Risk, Status
+from agentaudit.core.adapters import ADAPTERS, GarakAdapter, PromptfooAdapter
+from agentaudit.core.profile import AgentProfile
+from agentaudit.core.redaction import EvidencePolicy
+from agentaudit.core.schema import Category, Risk, Status
 
 # Shaped like `promptfoo eval --output out.json`.
 PROMPTFOO_REPORT = {
@@ -102,7 +102,7 @@ def test_promptfoo_config_matches_the_profile_and_never_embeds_a_credential():
     assert acting["targets"][0]["config"]["headers"]["Authorization"] == "{{env.AGENT_TOKEN}}"
 
 
-def test_promptfoo_results_normalize_into_agentkit_categories():
+def test_promptfoo_results_normalize_into_agentaudit_categories():
     results = PromptfooAdapter().normalize(PROMPTFOO_REPORT)
 
     assert [r.status for r in results] == [Status.failed, Status.passed, Status.error]

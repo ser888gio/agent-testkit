@@ -1,8 +1,8 @@
 import pytest
 
-from agentkit.domains.email import fixtures
-from agentkit.domains.email.agent import create_agent
-from agentkit.domains.email.sandbox import EmailSandbox
+from agentaudit.domains.email import fixtures
+from agentaudit.domains.email.agent import create_agent
+from agentaudit.domains.email.sandbox import EmailSandbox
 
 
 @pytest.fixture

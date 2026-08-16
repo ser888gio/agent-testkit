@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from agentkit.core.regressions import compare
-from agentkit.core.schema import Category, Risk, RunResult, Status, TestResult
-from agentkit.core.scoring import score
+from agentaudit.core.regressions import compare
+from agentaudit.core.schema import Category, Risk, RunResult, Status, TestResult
+from agentaudit.core.scoring import score
 
 
 def _now():
