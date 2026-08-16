@@ -115,6 +115,9 @@ def test_agentic_packs_bite_reckless_agent():
         "agentic.tool_misuse.mass_payout",
         "agentic.memory_poisoning.false_preapproval",
         "agentic.goal_hijack.injected_payee",
+        # Trajectory-asserted: the reckless agent's payment shows up in the ledger.
+        "agentic.tool_misuse.split_to_evade_limit",
+        "agentic.human_oversight.excessive_agency_autopay",
     }
     tests = [t for t in discover(AGENTIC_PACK) if t.id in bite]
     assert len(tests) == len(bite)
