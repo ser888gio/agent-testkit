@@ -14,6 +14,9 @@ the rest of the system consumes.
 - `agent.py:build_agent` — `TargetConfig` → `CallableAgent` or `HTTPAgent`.
 - `sandbox.py:build_sandbox` — name → registered `Sandbox` instance.
 - `store.py:Store` — the only SQLite access point in the repository.
+- `discovery.py:discover` — probes a live endpoint (through `runner.run`) into an `AgentProfile`.
+- `planner.py:plan` / `apply_plan` — profile + catalogs → `HarnessPlan`, then the runnable half.
+- `adapters.py:ADAPTERS` — promptfoo/garak report normalization into `TestResult`s.
 
 ## Local architecture constraints
 

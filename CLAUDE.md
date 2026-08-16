@@ -52,8 +52,12 @@ agent, and how to push farther when it starts to crack."
 
 Keep the story honest when describing this codebase:
 
-- **Current repo** - fixed packs, fixed sandboxes, fixed run flow, fixed scoring, solid
-  black-box execution, and solid evidence/reporting foundations.
+- **Current repo** - fixed packs and sandboxes, solid black-box execution, solid
+  evidence/reporting foundations, plus a first adaptive layer: endpoint probing into an
+  `AgentProfile`, a metadata catalog with explainable ranking, a planner that records why
+  each test was selected and what was left untested, and adapters normalizing promptfoo and
+  garak reports. Adapter-selected tests are ranked and their invocation generated, but they
+  are still executed out of band.
 - **Target product** - automated agent discovery, generated harnesses, dynamic test
   planning, adaptive iterative attacks, risk-aware coverage, and a stronger assurance
   narrative.
@@ -63,13 +67,16 @@ The practical framing for contributors is:
 > This repo is the execution and evidence core of a larger adaptive agent assurance
 > platform.
 
-Suggested next product milestones:
+Suggested next product milestones (1-3 and 5 shipped; see
+[`IMPLEMENTATION-TESTS-PLAN.md`](IMPLEMENTATION-TESTS-PLAN.md) for the full roadmap):
 
-1. `AgentProfile` model.
-2. Test-library metadata tagged by domain, capability, risk, and preconditions.
-3. Planner that ranks tests from profile plus risk.
+1. ~~`AgentProfile` model.~~ — `core/profile.py`, `core/discovery.py`
+2. ~~Test-library metadata tagged by domain, capability, risk, and preconditions.~~ — `core/catalog.py`
+3. ~~Planner that ranks tests from profile plus risk.~~ — `core/planner.py`
 4. Iterative attack loop with branching and retries.
-5. Reporting that explains why a test was selected for a given agent.
+5. ~~Reporting that explains why a test was selected for a given agent.~~ — `reports/plan.py`
+6. Adapter *execution*: today `core/adapters.py` normalizes promptfoo/garak reports and
+   generates their config/argv, but agentkit does not spawn either tool.
 
 **Non-obvious structural fact:** the `agentkit` package is physically split across four
 top-level directories and reassembled by an explicit setuptools package map
@@ -108,8 +115,9 @@ backend/agentkit/
   cli.py               Typer CLI (the `agentkit` console script)
   core/                agent · sandbox · schema · loader · runner · assertions
                        scoring · redaction · compliance · regressions · store
+                       profile · discovery · catalog · planner · adapters
   domains/             treasury/ · email/  (Sandbox subclasses + demo agents)
-  reports/             json · junit · html · md · compliance renderers
+  reports/             json · junit · html · md · compliance · plan renderers
 frontend/agentkit/web/ app.py · templates/ · static/
 tests/                 pytest suite · _fixtures.py
 docs/                  architecture.md · plan.md · specs/ · diagrams/ · components.yaml
@@ -128,7 +136,7 @@ All commands below were executed successfully in this repository.
 | --- | --- |
 | Install deps | `uv sync --extra dev` |
 | Editable install | `pip install -e .` |
-| Unit tests (full suite, 373 tests, ~175s) | `python -m pytest` |
+| Unit tests (full suite, 489 tests, ~190s) | `python -m pytest` |
 | Single test file | `python -m pytest tests/test_runner.py` |
 | Single test | `python -m pytest tests/test_runner.py -k name` |
 | Lint | `python -m ruff check .` |
@@ -169,7 +177,9 @@ Product commands (exercising agentkit itself, useful for manual verification):
 ```bash
 agentkit run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml
 agentkit run agentkit/packs/agentic  --target agentkit/config/treasury-agent.yaml --compliance
-agentkit report --run <run_id> --format md      # also: json, junit, html, compliance, compliance-json
+agentkit plan agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml
+agentkit run agentkit/packs/treasury --target agentkit/config/treasury-agent.yaml --plan --max-tests 8
+agentkit report --run <run_id> --format md      # also: json, junit, html, compliance, compliance-json, plan
 agentkit compare <run_id_a> <run_id_b>
 agentkit ui
 ```
@@ -208,7 +218,10 @@ before declaring done.
   `domains`, `reports`, `web`, or `cli`. Never add a reverse edge.
 - **Redaction is not optional.** `Redactor` runs in the runner before a `TestResult` is
   built, and `Store.save_run` re-applies it as a defense-in-depth pass. Never log or persist
-  a raw request/response.
+  a raw request/response. `core/adapters.py` is the one path that does not go through the
+  runner — third-party reports are normalized outside it — so `normalize()` redacts and
+  applies the `EvidencePolicy` itself. Any future non-runner source of `TestResult`s owes
+  the same.
 - **The runner never crashes.** Agent and sandbox failures become `TestResult`s with
   `Status.ERROR`, never propagated exceptions. See `core/runner.py`.
 - **Compliance fails closed.** Empty or all-skipped runs are `INCOMPLETE`, never a pass.
