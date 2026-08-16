@@ -17,6 +17,7 @@ import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
 import yaml
 from agentkit.core.assertions import REGISTRY as ASSERTION_REGISTRY
+from agentkit.core.attacks import split_variant
 from agentkit.core.loader import LoaderError, discover
 from agentkit.core.redaction import builtin_pattern_names
 from agentkit.core.regressions import compare
@@ -792,6 +793,7 @@ def run_detail(
         duration_ms=duration,
         filters={"q": q, "status": status, "category": category},
         categories=sorted(matrix),
+        plan=get_store().get_run_plan(principal.org_id, run_id),
     )
 
 
@@ -837,10 +839,19 @@ def test_detail(
             "detail": "Captured state changes around the test execution.",
         },
     ]
+    plan = get_store().get_run_plan(principal.org_id, run_id)
+    # Attack variants keep their base test's rationale: the transform did not
+    # change why the test was worth running.
+    base_id = split_variant(test_id)[0]
+    selection = next(
+        (s for s in (plan.selected if plan else []) if s.test_id in (test_id, base_id)),
+        None,
+    )
     return _render(
         "test_detail.html",
         run=rr,
         result=result,
+        selection=selection,
         previous_result=ordered[idx - 1] if idx > 0 else None,
         next_result=ordered[idx + 1] if idx + 1 < len(ordered) else None,
         passed_assertions=passed_assertions,

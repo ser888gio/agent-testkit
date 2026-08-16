@@ -9,6 +9,7 @@ from agentkit.reports.html import to_html
 from agentkit.reports.json import to_json
 from agentkit.reports.junit import to_junit
 from agentkit.reports.md import to_markdown
+from agentkit.reports.plan import to_plan_markdown
 
 _RENDERERS = {
     "json": to_json,
@@ -33,6 +34,7 @@ __all__ = [
     "to_junit",
     "to_html",
     "to_markdown",
+    "to_plan_markdown",
     "to_compliance",
     "to_compliance_json",
     "render",

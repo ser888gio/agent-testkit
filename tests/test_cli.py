@@ -308,3 +308,36 @@ def test_max_tests_without_plan_is_rejected(tmp_path):
         ["run", TREASURY_PACK, "--target", TREASURY_TARGET, "--db", db, "--max-tests", "2"],
     )
     assert result.exit_code == 2, result.output
+
+
+def test_report_plan_format_renders_the_stored_rationale(tmp_path):
+    db = str(tmp_path / "planned.db")
+    assert (
+        runner.invoke(
+            app, ["run", TREASURY_PACK, "--target", TREASURY_TARGET, "--db", db, "--plan"]
+        ).exit_code
+        == 0
+    )
+    run_id = Store(db).list_runs(DEFAULT_ORG)[0].id
+
+    result = runner.invoke(app, ["report", "--run", run_id, "--format", "plan", "--db", db])
+
+    assert result.exit_code == 0, result.output
+    assert "## Discovered profile" in result.output
+    assert "## Not tested" in result.output
+
+
+def test_report_plan_format_is_honest_about_an_unplanned_run(tmp_path):
+    db = str(tmp_path / "plain.db")
+    assert (
+        runner.invoke(
+            app, ["run", TREASURY_PACK, "--target", TREASURY_TARGET, "--db", db]
+        ).exit_code
+        == 0
+    )
+    run_id = Store(db).list_runs(DEFAULT_ORG)[0].id
+
+    result = runner.invoke(app, ["report", "--run", run_id, "--format", "plan", "--db", db])
+
+    assert result.exit_code == 0, result.output
+    assert "without a planner" in result.output

@@ -31,6 +31,9 @@ components:
       - Sandbox ABC and the sandbox registry
       - TestCase/TestResult/RunResult schema (the shared contract)
       - Test discovery and loading from YAML/JSON/Python packs
+      - Endpoint discovery and agent profiling
+      - Test catalog metadata, ranking, and harness planning
+      - Adapters normalizing third-party eval reports (promptfoo, garak)
       - Test execution (single- and multi-turn), which never raises
       - Killable process isolation and sandbox RPC supervision
       - Assertion registry and evaluation
@@ -43,6 +46,8 @@ components:
       - backend/agentkit/core/runner.py       # run()
       - backend/agentkit/core/isolation.py    # IsolatedRunner
       - backend/agentkit/core/loader.py       # discover()
+      - backend/agentkit/core/discovery.py    # discover() -> AgentProfile
+      - backend/agentkit/core/planner.py      # plan(), apply_plan()
       - backend/agentkit/core/agent.py        # build_agent()
       - backend/agentkit/core/sandbox.py      # build_sandbox(), register_sandbox()
       - backend/agentkit/core/store.py        # Store
@@ -53,11 +58,15 @@ components:
       - backend/agentkit/core/config.py       # TargetConfig
       - backend/agentkit/core/assertions.py   # REGISTRY (referenced by name from YAML packs)
       - backend/agentkit/core/sandbox.py      # Sandbox ABC
+      - backend/agentkit/core/profile.py      # AgentProfile, TestCatalogEntry, HarnessPlan
+      - backend/agentkit/core/adapters.py     # ExternalEvalAdapter
     constraints:
       - "httpx is imported only in agent.py"
       - "SQLite is accessed only through store.py"
       - "runner.py must never propagate an exception"
       - "redaction runs before TestResult construction and again in store.save_run"
+      - "adapters.py results bypass runner.py, so normalize() redacts and applies the evidence policy itself"
+      - "profile.py models carry no agent output: a HarnessPlan is persisted with the run"
     validation:
       - python -m pytest tests/test_runner.py tests/test_assertions.py tests/test_schema.py tests/test_loader.py tests/test_scoring.py tests/test_store.py tests/test_redaction.py tests/test_config.py tests/test_agent.py tests/test_compliance.py tests/test_regressions.py tests/test_sandbox_core.py
     specs: docs/specs

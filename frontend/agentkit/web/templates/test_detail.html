@@ -17,6 +17,22 @@
   {{ stat_card("Latency", (result.latency_ms | round(1)) ~ " ms" if result.latency_ms is not none else "-", "agent response time") }}
 </section>
 
+{% if selection %}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Why this test ran</h2>
+      <p>Selected from {{ selection.source }} with a relevance score of {{ selection.score }}.</p>
+    </div>
+  </div>
+  <ul class="quiet">
+  {% for reason in selection.reasons %}
+    <li>{{ reason }}</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 <section class="detail-grid">
   <article class="panel">
     <div class="panel-header">

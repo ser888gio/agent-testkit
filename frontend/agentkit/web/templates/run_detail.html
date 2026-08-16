@@ -19,6 +19,46 @@
   {{ stat_card("Critical failures", report.critical_failures, "blocks safety gate", "danger" if report.critical_failures else "") }}
 </section>
 
+{% if plan %}
+<section class="panel">
+<div class="panel-header">
+  <div>
+    <h2>Why these tests</h2>
+    <p>The profile discovered for this target, and the selection it justified.</p>
+  </div>
+</div>
+<div class="matrix-row">
+  <span class="cat">profile</span>
+  {{ status_badge(plan.profile.domain) }}
+  {{ status_badge(plan.profile.interface) }}
+  {{ status_badge(plan.profile.risk_level.value) }}
+  {{ status_badge("multi-turn" if plan.profile.multi_turn else "stateless") }}
+  {{ status_badge("tool use" if plan.profile.tool_use else "text only") }}
+</div>
+{% for note in plan.profile.notes %}
+<p class="quiet">{{ note }}</p>
+{% endfor %}
+<div class="attention-list">
+{% for choice in plan.selected %}
+  <a class="attention-item" href="/runs/{{ run.run_id }}/tests/{{ choice.test_id }}">
+    <span>{{ choice.test_id }}</span>
+    {{ status_badge(choice.source) }}
+    <span>{{ choice.score }}</span>
+    <span class="quiet">{{ choice.reasons | join("; ") }}</span>
+  </a>
+{% endfor %}
+</div>
+{% if plan.excluded %}
+<h3>Not tested ({{ plan.excluded | length }})</h3>
+<ul class="quiet">
+{% for item in plan.excluded %}
+  <li>{{ item.test_id }} ({{ item.source }}): {{ item.reason }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+</section>
+{% endif %}
+
 <section class="panel">
 <div class="panel-header">
   <div>
