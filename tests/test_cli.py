@@ -17,9 +17,7 @@ sandbox: treasury
 
 def test_run_exits_zero_when_all_pass(tmp_path):
     db = str(tmp_path / "a.db")
-    result = runner.invoke(
-        app, ["run", TREASURY_PACK, "--target", TREASURY_TARGET, "--db", db]
-    )
+    result = runner.invoke(app, ["run", TREASURY_PACK, "--target", TREASURY_TARGET, "--db", db])
     assert result.exit_code == 0, result.output
 
 
@@ -97,6 +95,52 @@ def test_run_format_json_prints_machine_readable_summary(tmp_path):
     assert "gate_passed" in payload
 
 
+ONE_TEST_PACK_YAML = """
+id: attack.smoke
+category: prompt_injection
+input: "say hello"
+assertions:
+  - name: response_nonempty
+"""
+
+
+def _one_test_pack(tmp_path):
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    (pack / "smoke.yaml").write_text(ONE_TEST_PACK_YAML, encoding="utf-8")
+    return str(pack)
+
+
+def test_run_attack_expands_each_test_into_variants(tmp_path):
+    db = str(tmp_path / "a.db")
+    args = ["run", _one_test_pack(tmp_path), "--target", TREASURY_TARGET, "--db", db]
+
+    plain = runner.invoke(app, args)
+    assert "(1 tests)" in plain.output, plain.output
+
+    expanded = runner.invoke(app, [*args, "--attack", "base64,rot13"])
+    assert "(3 tests)" in expanded.output, expanded.output
+
+
+def test_run_unknown_attack_exits_two(tmp_path):
+    db = str(tmp_path / "a.db")
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            _one_test_pack(tmp_path),
+            "--target",
+            TREASURY_TARGET,
+            "--db",
+            db,
+            "--attack",
+            "nope",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert "unknown attack transform" in result.output
+
+
 def test_compare_exits_one_on_critical_regression(tmp_path):
     import json
 
@@ -161,9 +205,7 @@ def test_report_format_junit_emits_xml_to_stdout(tmp_path):
 
     run_id = json.loads(run_result.output)["run_id"]
 
-    report_result = runner.invoke(
-        app, ["report", "--run", run_id, "--format", "junit", "--db", db]
-    )
+    report_result = runner.invoke(app, ["report", "--run", run_id, "--format", "junit", "--db", db])
     assert report_result.exit_code == 0, report_result.output
     assert report_result.output.strip().startswith("<testsuite")
 
