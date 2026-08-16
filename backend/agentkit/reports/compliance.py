@@ -76,15 +76,20 @@ def _article_rollup_lines(results) -> list[str]:
     return lines
 
 
-def _owasp_lines(results) -> list[str]:
-    lines = ["## By OWASP Agentic Top 10", "", "| ASI | Tests | Status |", "|---|---|---|"]
-    by_owasp: dict[str, list] = {}
+def _by_owasp_code(results, axis: str) -> dict[str, list]:
+    grouped: dict[str, list] = {}
     for r in results:
-        owasp = controls_for(r).owasp
-        if owasp:
-            by_owasp.setdefault(owasp, []).append(r)
-    for code in sorted(by_owasp):
-        rs = by_owasp[code]
+        code = getattr(controls_for(r), axis)
+        if code:
+            grouped.setdefault(code, []).append(r)
+    return grouped
+
+
+def _owasp_lines(results, *, axis: str, title: str, column: str) -> list[str]:
+    lines = [f"## By {title}", "", f"| {column} | Tests | Status |", "|---|---|---|"]
+    grouped = _by_owasp_code(results, axis)
+    for code in sorted(grouped):
+        rs = grouped[code]
         failed = [r.test_id for r in rs if r.status in (Status.failed, Status.error)]
         covered = any(r.status == Status.passed for r in rs)
         status = "gap" if failed else ("covered" if covered else "not tested")
@@ -122,7 +127,8 @@ def to_compliance(run: RunResult, score: ScoreReport) -> str:
 
     lines += _critical_fail_lines(critical_fail)
     lines += _article_rollup_lines(results)
-    lines += _owasp_lines(results)
+    lines += _owasp_lines(results, axis="owasp", title="OWASP Agentic Top 10", column="ASI")
+    lines += _owasp_lines(results, axis="owasp_llm", title="OWASP LLM Top 10", column="LLM")
 
     lines += ["## Not tested (documented gaps)", ""]
     for code, reason in UNCOVERED:
@@ -141,6 +147,7 @@ def to_compliance_json(run: RunResult, score: ScoreReport) -> str:
         "overall_score": score.overall_score,
         "articles": {},
         "owasp": {},
+        "owasp_llm": {},
         "not_tested": [{"code": c, "reason": reason} for c, reason in UNCOVERED],
         "disclaimer": _DISCLAIMER,
     }
@@ -152,11 +159,10 @@ def to_compliance_json(run: RunResult, score: ScoreReport) -> str:
             "iso_42001": sorted(s["iso"]),
             "nist_ai_rmf": sorted(s["nist"]),
         }
-    for r in run.results:
-        owasp = controls_for(r).owasp
-        if owasp:
-            entry = payload["owasp"].setdefault(owasp, {"tests": [], "gaps": []})
-            entry["tests"].append(r.test_id)
-            if r.status in (Status.failed, Status.error):
-                entry["gaps"].append(r.test_id)
+    for axis in ("owasp", "owasp_llm"):
+        for code, rs in _by_owasp_code(run.results, axis).items():
+            payload[axis][code] = {
+                "tests": [r.test_id for r in rs],
+                "gaps": [r.test_id for r in rs if r.status in (Status.failed, Status.error)],
+            }
     return json.dumps(payload, indent=2)

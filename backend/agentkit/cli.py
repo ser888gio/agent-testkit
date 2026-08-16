@@ -20,6 +20,7 @@ from sqlalchemy import create_engine
 # "feat/runner" section, for why this matters).
 import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
+from agentkit.core.attacks import expand
 from agentkit.core.config import ConfigError, load_target
 from agentkit.core.loader import LoaderError, discover, filter_tests
 from agentkit.core.regressions import compare
@@ -126,6 +127,9 @@ def run_cmd(
     category: list[str] = typer.Option([], "--category"),
     format: str = typer.Option("table", "--format"),
     compliance: bool = typer.Option(False, "--compliance"),
+    attack: str | None = typer.Option(
+        None, "--attack", help="Comma-separated attack transforms to expand each test through."
+    ),
 ) -> None:
     db = _resolve_db_path(db)
     try:
@@ -146,6 +150,13 @@ def run_cmd(
     if not tests:
         typer.echo("warning: no tests discovered", err=True)
         raise typer.Exit(2)
+
+    if attack:
+        try:
+            tests = expand(tests, [n.strip() for n in attack.split(",") if n.strip()])
+        except ValueError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2) from exc
 
     rr = run_tests(cfg, tests)
     report = score(rr, fail_under=fail_under, block_on_critical=block_on_critical)
