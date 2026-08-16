@@ -60,14 +60,18 @@ mode = "comment"
 name = "default"
 default = true
 
+# B101 flags `assert`, which is what pytest is built on. Only meaningful
+# outside the test suite.
+[[exclude]]
+file_patterns = ["tests/**"]
+plugins = ["bandit"]
+
 
 [[plugin]]
 name = "actionlint"
 
 [[plugin]]
 name = "bandit"
-# B101 (assert used) is what pytest is; only meaningful outside tests.
-exclude_patterns = ["tests/**"]
 
 [[plugin]]
 name = "hadolint"
