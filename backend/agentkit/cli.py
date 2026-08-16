@@ -20,9 +20,14 @@ from sqlalchemy import create_engine
 # "feat/runner" section, for why this matters).
 import agentkit.domains.email.sandbox  # noqa: F401
 import agentkit.domains.treasury.sandbox  # noqa: F401
+from agentkit.core.adapters import ADAPTERS
 from agentkit.core.attacks import expand
 from agentkit.core.config import ConfigError, load_target
+from agentkit.core.discovery import discover as discover_profile
 from agentkit.core.loader import LoaderError, discover, filter_tests
+from agentkit.core.planner import apply_plan
+from agentkit.core.planner import plan as build_plan
+from agentkit.core.profile import HarnessPlan
 from agentkit.core.regressions import compare
 from agentkit.core.runner import run as run_tests
 from agentkit.core.schema import Category
@@ -114,6 +119,68 @@ def _print_table(rr, report) -> None:
     typer.echo(f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}")
 
 
+def _print_plan(harness: HarnessPlan) -> None:
+    profile = harness.profile
+    typer.echo(f"agentkit plan - target: {profile.id}")
+    typer.echo(
+        f"  profile: domain={profile.domain} interface={profile.interface} "
+        f"risk={profile.risk_level.value} multi_turn={profile.multi_turn} "
+        f"tool_use={profile.tool_use}"
+    )
+    for note in profile.notes:
+        typer.echo(f"    - {note}")
+
+    typer.echo(f"  selected ({len(harness.selected)}):")
+    for choice in harness.selected:
+        typer.echo(f"    {choice.score:>6.2f}  {choice.test_id}  [{choice.source}]")
+        typer.echo(f"            why: {'; '.join(choice.reasons)}")
+
+    typer.echo(f"  not tested ({len(harness.excluded)}):")
+    for skipped in harness.excluded:
+        typer.echo(f"            {skipped.test_id}: {skipped.reason}")
+
+
+def _load_target_or_exit(target: str):
+    try:
+        return load_target(target)
+    except (ConfigError, FileNotFoundError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+
+def _discover_tests_or_exit(packs_dir: str):
+    try:
+        return discover(packs_dir)
+    except LoaderError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+
+@app.command("plan")
+def plan_cmd(
+    packs_dir: str = typer.Argument(...),
+    target: str = typer.Option(..., "--target"),
+    max_tests: int | None = typer.Option(None, "--max-tests", min=1),
+    format: str = typer.Option("table", "--format"),
+) -> None:
+    """Probe the target, rank the catalog against it, and print the plan.
+
+    Probing calls the endpoint. Nothing is executed beyond two trivial probes.
+    """
+    cfg = _load_target_or_exit(target)
+    tests = _discover_tests_or_exit(packs_dir)
+    harness = build_plan(
+        discover_profile(cfg),
+        tests,
+        adapters=list(ADAPTERS.values()),
+        max_tests=max_tests,
+    )
+    if format == "json":
+        typer.echo(harness.model_dump_json(indent=2))
+    else:
+        _print_plan(harness)
+
+
 @app.command("run")
 def run_cmd(
     packs_dir: str = typer.Argument(...),
@@ -130,25 +197,38 @@ def run_cmd(
     attack: str | None = typer.Option(
         None, "--attack", help="Comma-separated attack transforms to expand each test through."
     ),
+    use_plan: bool = typer.Option(
+        False, "--plan", help="Profile the target first and run only the tests it justifies."
+    ),
+    max_tests: int | None = typer.Option(None, "--max-tests", min=1),
 ) -> None:
     db = _resolve_db_path(db)
-    try:
-        cfg = load_target(target)
-    except (ConfigError, FileNotFoundError) as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(2) from exc
-
-    try:
-        tests = discover(packs_dir)
-    except LoaderError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(2) from exc
+    cfg = _load_target_or_exit(target)
+    tests = _discover_tests_or_exit(packs_dir)
 
     categories = [Category(c) for c in category] if category else None
     tests = filter_tests(tests, tags=tag or None, categories=categories)
 
     if not tests:
         typer.echo("warning: no tests discovered", err=True)
+        raise typer.Exit(2)
+
+    harness = None
+    if use_plan:
+        harness = build_plan(
+            discover_profile(cfg),
+            tests,
+            adapters=list(ADAPTERS.values()),
+            max_tests=max_tests,
+            attack_transforms=[n.strip() for n in (attack or "").split(",") if n.strip()],
+        )
+        tests = apply_plan(harness, tests)
+        _print_plan(harness)
+        if not tests:
+            typer.echo("warning: the plan selected no runnable local tests", err=True)
+            raise typer.Exit(2)
+    elif max_tests is not None:
+        typer.echo("error: --max-tests only applies with --plan", err=True)
         raise typer.Exit(2)
 
     if attack:
@@ -162,7 +242,7 @@ def run_cmd(
     report = score(rr, fail_under=fail_under, block_on_critical=block_on_critical)
 
     store = Store(db)
-    store.save_run(DEFAULT_ORG, cfg, rr, report)
+    store.save_run(DEFAULT_ORG, cfg, rr, report, plan=harness)
 
     if format == "json":
         typer.echo(

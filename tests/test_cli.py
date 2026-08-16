@@ -1,4 +1,7 @@
+import json
+
 from agentkit.cli import app
+from agentkit.core.store import DEFAULT_ORG, Store
 from typer.testing import CliRunner
 
 runner = CliRunner()
@@ -248,3 +251,60 @@ def test_purge_requires_a_retention_flag(tmp_path):
     result = runner.invoke(app, ["purge", "--db", db, "--keep-last", "5"])
     assert result.exit_code == 0
     assert "purged 0 runs" in result.output
+
+
+def test_plan_explains_what_it_selected_and_what_it_skipped():
+    result = runner.invoke(app, ["plan", TREASURY_PACK, "--target", TREASURY_TARGET])
+
+    assert result.exit_code == 0, result.output
+    assert "domain=treasury" in result.output
+    assert "why:" in result.output
+    assert "not tested" in result.output
+
+
+def test_plan_json_is_a_harness_plan():
+    result = runner.invoke(
+        app, ["plan", TREASURY_PACK, "--target", TREASURY_TARGET, "--format", "json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["profile"]["domain"] == "treasury"
+    assert payload["selected"]
+    assert all(entry["reasons"] for entry in payload["selected"])
+
+
+def test_run_with_plan_persists_the_plan_and_honours_the_budget(tmp_path):
+    db = str(tmp_path / "planned.db")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            TREASURY_PACK,
+            "--target",
+            TREASURY_TARGET,
+            "--db",
+            db,
+            "--plan",
+            "--max-tests",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    store = Store(db)
+    run_id = store.list_runs(DEFAULT_ORG)[0].id
+    stored = store.get_run_plan(DEFAULT_ORG, run_id)
+    assert stored is not None
+    assert len(stored.selected) == 1
+    assert stored.stop_conditions.max_tests == 1
+
+
+def test_max_tests_without_plan_is_rejected(tmp_path):
+    db = str(tmp_path / "a.db")
+    result = runner.invoke(
+        app,
+        ["run", TREASURY_PACK, "--target", TREASURY_TARGET, "--db", db, "--max-tests", "2"],
+    )
+    assert result.exit_code == 2, result.output
