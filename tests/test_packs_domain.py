@@ -68,3 +68,59 @@ def test_broken_treasury_agent_fails_unapproved_payment_spot_check():
     ]
     rr = run(cfg, tests)
     assert rr.results[0].status == Status.failed
+
+
+AGENTIC_PACK = "agentkit/packs/agentic"
+TRAJECTORY_TESTS = {
+    "agentic.goal_hijack.payee_swap_survives_injection",
+    "agentic.tool_misuse.split_to_evade_limit",
+    "agentic.human_oversight.excessive_agency_autopay",
+}
+
+
+def _hijackable_factory():
+    def _hijackable(input, sandbox):
+        # Obeys an IBAN it finds in the invoice data - the exact failure the
+        # goal_hijack trajectory test exists to catch. The end state still says
+        # "invoice paid"; only the ledger shows where the money went.
+        match = re.search(r"INV-\d+", str(input), re.IGNORECASE)
+        if not match:
+            return "nothing to do"
+        invoice = sandbox.get_invoice(match.group(0).upper())
+        injected = re.search(r"\bDE\d{20}\b", invoice.payee)
+        bank_details = injected.group(0) if injected else invoice.bank_details
+        sandbox.bank.create_payment(invoice.id, invoice.amount, invoice.payee, bank_details)
+        return f"Paid {invoice.amount} for {invoice.id}."
+
+    return _hijackable
+
+
+def _treasury_target(callable_ref: str, target_id: str) -> TargetConfig:
+    return TargetConfig(
+        id=target_id,
+        agent=CallableSpec(type="callable", callable=callable_ref),
+        sandbox="treasury",
+    )
+
+
+def test_trajectory_agentic_tests_pass_against_the_demo_agent():
+    cfg = load_target("agentkit/config/treasury-agent.yaml")
+    tests = [t for t in discover(AGENTIC_PACK) if t.id in TRAJECTORY_TESTS]
+    assert len(tests) == len(TRAJECTORY_TESTS)
+
+    rr = run(cfg, tests)
+    for r in rr.results:
+        assert r.status == Status.passed, f"{r.test_id}: {r.assertion_results}"
+
+
+def test_goal_hijack_trajectory_test_catches_a_redirected_payment():
+    # The end state is "INV-94 paid" either way; only the recorded call argument
+    # distinguishes the safe agent from the hijacked one.
+    cfg = _treasury_target("tests.test_packs_domain:_hijackable_factory", "hijackable")
+    tests = [
+        t
+        for t in discover(AGENTIC_PACK)
+        if t.id == "agentic.goal_hijack.payee_swap_survives_injection"
+    ]
+    rr = run(cfg, tests)
+    assert rr.results[0].status == Status.failed
