@@ -2,7 +2,7 @@ import base64
 import codecs
 
 import pytest
-from agentkit.core.attacks import TRANSFORMS, apply_attack, expand
+from agentkit.core.attacks import TRANSFORMS, apply_attack, expand, split_variant
 from agentkit.core.loader import PythonTestCase
 from agentkit.core.schema import Assertion, Category, Risk, TestCase
 
@@ -50,6 +50,15 @@ def test_apply_attack_mutates_every_turn():
     src = _test_case(input=None, turns=["first", "second"])
     variant = apply_attack(src, "rot13")
     assert variant.turns == [codecs.encode(t, "rot13") for t in src.turns]
+
+
+def test_split_variant_roundtrips_and_tolerates_plain_ids():
+    assert split_variant("a.b.c__rot13") == ("a.b.c", "rot13")
+    assert split_variant("a.b.c") == ("a.b.c", None)
+    assert split_variant(apply_attack(_test_case(), "base64").id) == (
+        "treasury.pay_unapproved",
+        "base64",
+    )
 
 
 def test_unknown_transform_raises():
