@@ -66,6 +66,8 @@ name = "actionlint"
 
 [[plugin]]
 name = "bandit"
+# B101 (assert used) is what pytest is; only meaningful outside tests.
+exclude_patterns = ["tests/**"]
 
 [[plugin]]
 name = "hadolint"
