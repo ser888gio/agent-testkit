@@ -56,8 +56,9 @@ Keep the story honest when describing this codebase:
   evidence/reporting foundations, plus a first adaptive layer: endpoint probing into an
   `AgentProfile`, a metadata catalog with explainable ranking, a planner that records why
   each test was selected and what was left untested, and adapters normalizing promptfoo and
-  garak reports. Adapter-selected tests are ranked and their invocation generated, but they
-  are still executed out of band.
+  garak reports plus `core/external.py`, which runs them under a wall-clock budget.
+  Adapter-selected tests are ranked and executable; merging their results into a
+  `RunResult` is still the caller's job, not something `runner.run` does.
 - **Target product** - automated agent discovery, generated harnesses, dynamic test
   planning, adaptive iterative attacks, risk-aware coverage, and a stronger assurance
   narrative.
@@ -75,8 +76,9 @@ Suggested next product milestones (1-3 and 5 shipped; see
 3. ~~Planner that ranks tests from profile plus risk.~~ — `core/planner.py`
 4. Iterative attack loop with branching and retries.
 5. ~~Reporting that explains why a test was selected for a given agent.~~ — `reports/plan.py`
-6. Adapter *execution*: today `core/adapters.py` normalizes promptfoo/garak reports and
-   generates their config/argv, but agentaudit does not spawn either tool.
+6. ~~Adapter *execution*.~~ — `core/external.py:run_external` spawns promptfoo/garak under
+   a wall-clock budget and normalizes the report. Not yet wired into `runner.run` or the
+   worker: a caller must invoke it, and external results are merged by that caller.
 
 **Non-obvious structural fact:** the `agentaudit` package is physically split across four
 top-level directories and reassembled by an explicit setuptools package map
@@ -116,7 +118,7 @@ backend/agentaudit/
   core/                agent · sandbox · schema · loader · runner · assertions
                        scoring · redaction · compliance · regressions · store
                        profile · discovery · catalog · planner · adapters
-                       adaptive · attacker · judge · jsonx
+                       external · adaptive · attacker · judge · jsonx
   domains/             treasury/ · email/  (Sandbox subclasses + demo agents)
   reports/             json · junit · html · md · compliance · plan renderers
 frontend/agentaudit/web/ app.py · templates/ · static/

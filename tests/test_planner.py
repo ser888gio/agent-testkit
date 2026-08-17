@@ -27,6 +27,9 @@ class _StubAdapter(ExternalEvalAdapter):
     def normalize(self, raw, *, evidence=None, started_at=None):
         return []
 
+    def invocation(self, profile, endpoint, workdir):
+        return [self.name, "--endpoint", endpoint], workdir / "report.json"
+
 
 def _test_case(test_id, **kwargs):
     kwargs.setdefault("category", Category.prompt_injection)

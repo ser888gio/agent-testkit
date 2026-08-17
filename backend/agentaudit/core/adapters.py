@@ -22,6 +22,7 @@ import re
 import shutil
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from agentaudit.core.profile import AgentProfile, TestCatalogEntry
@@ -202,6 +203,17 @@ class ExternalEvalAdapter(ABC):
     ) -> list[TestResult]:
         """Turn one report from the tool into redacted agentaudit results."""
 
+    @abstractmethod
+    def invocation(
+        self, profile: AgentProfile, endpoint: str, workdir: Path
+    ) -> tuple[list[str], Path]:
+        """Prepare a run in `workdir`; return the argv and where the report will land.
+
+        Writing a config file is allowed and expected -- it is how promptfoo is
+        driven. Spawning is not: `core/external.py` owns the process, its budget,
+        and its teardown, so an adapter cannot start something nothing will kill.
+        """
+
 
 class PromptfooAdapter(ExternalEvalAdapter):
     """promptfoo as a declarative red-team backend behind the agentaudit runtime."""
@@ -262,6 +274,26 @@ class PromptfooAdapter(ExternalEvalAdapter):
                 "numTests": num_tests,
             },
         }
+
+    def invocation(
+        self, profile: AgentProfile, endpoint: str, workdir: Path
+    ) -> tuple[list[str], Path]:
+        config_path = workdir / "promptfooconfig.json"
+        report_path = workdir / "report.json"
+        config_path.write_text(
+            json.dumps(self.to_config(profile, endpoint), indent=2), encoding="utf-8"
+        )
+        argv = [
+            "promptfoo",
+            "redteam",
+            "run",
+            "--config",
+            str(config_path),
+            "--output",
+            str(report_path),
+            "--no-progress-bar",
+        ]
+        return argv, report_path
 
     def catalog(self, profile: AgentProfile) -> list[TestCatalogEntry]:
         entries = []
@@ -386,6 +418,15 @@ class GarakAdapter(ExternalEvalAdapter):
             "--report_prefix",
             report_prefix,
         ]
+
+    def invocation(
+        self, profile: AgentProfile, endpoint: str, workdir: Path
+    ) -> tuple[list[str], Path]:
+        # garak derives the report filename from the prefix and writes it into
+        # the working directory the process was started in.
+        prefix = "scan"
+        argv = self.command(endpoint, self.probes(profile), report_prefix=prefix)
+        return argv, workdir / f"{prefix}.report.jsonl"
 
     def catalog(self, profile: AgentProfile) -> list[TestCatalogEntry]:
         entries = []

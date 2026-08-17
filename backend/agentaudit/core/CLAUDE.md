@@ -28,7 +28,16 @@ the rest of the system consumes.
 - `jsonx.py:extract_json` — pulls the first JSON object out of a model reply that may be
   fenced, prefaced, or trailed by prose. Used by every module that asks a model for JSON.
 - `planner.py:plan` / `apply_plan` — profile + catalogs → `HarnessPlan`, then the runnable half.
-- `adapters.py:ADAPTERS` — promptfoo/garak report normalization into `TestResult`s.
+- `adapters.py:ADAPTERS` — promptfoo/garak report normalization into `TestResult`s, plus
+  `invocation()` describing how each tool is launched (argv + where its report lands).
+  Adapters prepare and normalize; they never spawn.
+- `external.py:run_external` — spawns one external tool under a wall-clock budget, kills
+  the process *tree* on overrun, and hands the report to the adapter. Raises
+  `ExternalRunError` rather than propagating, so a failed scan becomes evidence. **The
+  egress guarantee here is weaker than a native run:** the child resolves the hostname
+  itself, so it does not inherit the `pinned_url`/SNI pinning `agent.py` applies in
+  process. The allowlist and resolve-time check still hold; the rebinding window does not
+  close. Do not describe an external scan as equivalently protected.
 
 ## Local architecture constraints
 
