@@ -45,12 +45,18 @@ agentaudit/          Data: target configs + YAML test packs (no logic)
 backend/agentaudit/  Engine: core/ · domains/ · reports/ · cli.py · worker.py
 frontend/agentaudit/ Web: FastAPI dashboard, Jinja templates, auth
 infra/               Docker, compose, dev launcher, Alembic migrations, Keycloak realm
-tests/               pytest suite for agentaudit itself (one file per module)
-docs/                Architecture, specs, plans, D2 diagrams, component map
+tests/               pytest suite for agentaudit itself (37 files, one per module)
+docs/                Architecture, 25 specs, plans, D2 diagrams, component map
 tools/               validate.sh · affected.sh · guard-protected-paths.sh · install-hooks.sh
 .claude/             Agents, slash commands, path-scoped rules for Claude Code
 .github/             CI, security workflow, templates, branch-protection notes
+.qlty/               Pre-push quality gate (bandit, trufflehog, shellcheck, actionlint)
+.aislop/             Per-edit slop scanner config and session log
 ```
+
+Reading order for someone new: this file → [`docs/architecture.md`](architecture.md) for
+the trust model → the docstring at the top of whichever `core/` module you are about to
+touch. Those docstrings carry the *why*, and they are the densest documentation here.
 
 ---
 
@@ -244,32 +250,125 @@ Migration history, which doubles as a changelog of the platform phases:
 
 ## `tests/` — the pytest suite
 
-One file per module, ~493 tests, **~150s**. Most of that is process spawn: since the
-isolation work every `runner.run` starts a sandbox supervisor plus a nested agent worker
-(~2.5s per run on Windows). Production pays that once per run; the suite calls `run`
-dozens of times.
+590 tests, **~165s**. Most of that is process spawn: since the isolation work every
+`runner.run` starts a sandbox supervisor plus a nested agent worker (~2.5s per run on
+Windows). Production pays that once per run; the suite calls `run` dozens of times.
 
-Integration coverage lives in the same suite — `test_http_agent.py` (HTTP/callable
-parity), `test_web.py`, `test_cli.py`, `test_security_p0.py`, `test_phase2_infra.py`.
-There is no separate e2e runner. `_fixtures.py` holds shared fixtures.
+**One file per module, and the mapping is load-bearing** — `tools/affected.sh` derives
+its pytest targets from it. A test placed in the wrong file silently drops out of
+affected-scope validation.
 
-## `docs/` and `tools/`
+| Test file | Covers |
+| --- | --- |
+| `test_schema.py`, `test_config.py`, `test_profile.py` | The three contracts |
+| `test_agent.py`, `test_http_agent.py` | Adapters; HTTP/callable behavioral parity |
+| `test_runner.py`, `test_isolation.py` | Execution lifecycle; process isolation and kill |
+| `test_loader.py`, `test_assertions.py` | Discovery/validation; assertion registry |
+| `test_sandbox_core.py`, `test_treasury.py`, `test_email.py` | Sandbox ABC and both verticals |
+| `test_adaptive.py`, `test_attacks.py`, `test_attacker.py`, `test_judge.py`, `test_jsonx.py` | The adaptive layer |
+| `test_catalog.py`, `test_planner.py`, `test_discovery.py`, `test_adapters.py` | Selection and profiling |
+| `test_scoring.py`, `test_compliance.py`, `test_regressions.py`, `test_reports.py` | Control plane and renderers |
+| `test_store.py`, `test_migrate.py`, `test_artifacts.py` | Persistence, Alembic, artifact keys |
+| `test_redaction.py`, `test_security_p0.py`, `test_auth.py` | Evidence and security invariants |
+| `test_cli.py`, `test_web.py`, `test_worker.py`, `test_phase2_infra.py` | Application surfaces |
+| `test_packs_core.py`, `test_packs_domain.py` | The YAML packs validate and load |
 
-`docs/architecture.md` (trust domains, deployment topology) · `docs/specs/` (per-module
-contracts, one per original feature branch) · `docs/components.yaml` (machine-readable,
-with per-component validation commands) · `docs/diagrams/*.d2` + rendered SVGs ·
-`docs/archive/plans/` (superseded) · `docs/IMPLEMENTATION-TESTS-PLAN.md` (the roadmap
-Part 2 tracks against).
+`_fixtures.py` holds shared helpers — underscore-prefixed so pytest does not collect it.
+**There is no `conftest.py`**; add to `_fixtures.py` first and only introduce one if a
+fixture genuinely needs pytest injection.
 
-`tools/affected.sh` (what changed) · `tools/validate.sh [--affected]` (probes for a
-runner with both pytest and ruff) · `tools/guard-protected-paths.sh` ·
-`tools/install-hooks.sh`.
+Two conventions worth knowing before writing a test here:
+
+- **Failure paths matter more than happy paths.** The runner's contract is that it never
+  raises, which is only meaningful if the failure paths are exercised.
+- **`test_security_p0.py` failures are blocking.** Each test reproduces a weakness the
+  code had or could regress into. If a change makes one fail, the burden is proving the
+  invariant still holds — not relaxing the assertion.
+- Expect `PytestCollectionWarning` for `TestCase`/`TestResult`/`TestCatalogEntry`: pytest
+  sees the `Test` prefix. Harmless, and the names are public contracts — do not rename.
+
+## `docs/` — reasoning that outlived its branch
+
+| Path | Contents |
+| --- | --- |
+| `architecture.md` | Trust domains, deployment topology, the deeper "why" |
+| `specs/` | Per-module contracts, one per original Phase 0 feature branch (25 files) |
+| `components.yaml` | Machine-readable component map with per-component validation commands |
+| `diagrams/*.d2` | D2 sources for architecture, infrastructure, isolation |
+| `diagrams/*.svg` | **Generated** — light/dark renders, never hand-edited |
+| `IMPLEMENTATION-TESTS-PLAN.md` | The 14-workstream roadmap Part 2 tracks against |
+| `plan.md`, `plan-attack-surface-completion.md`, `plan-competitive-response.md` | Active plans |
+| `archive/plans/` | Superseded plans, kept for provenance |
+| `claude-code.md` | Contributor guide for the Claude Code setup |
+| `keycloak.md` | Auth setup |
+| `notes/errors-and-improvements.md` | Running log of mistakes and their fixes |
+
+## `tools/` — the validation scripts
+
+| Script | Does |
+| --- | --- |
+| `affected.sh` | Maps changed files → components → pytest targets. `--tests-only`, `--components-only`, `--files-only` for scripting; `--base <ref>` to diff against a branch |
+| `validate.sh` | Runs the ladder. `--affected` narrows to changed scope. Probes for a runner that has *both* pytest and ruff — prefer it over calling either directly |
+| `guard-protected-paths.sh` | Blocks edits to generated/vendored paths |
+| `install-hooks.sh` | Installs the git hooks |
+
+## `.claude/` — agent configuration
+
+Not incidental: this repo is set up so an agent can work in it safely.
+
+- `agents/` — `architecture-explorer`, `dependency-tracer`, `test-finder`, `code-reviewer`
+  (all read-only except the reviewer's Bash)
+- `commands/` — the `explore` → `plan` → `implement` → `review` workflow
+- `rules/` — path-scoped rules: `dependency-boundaries.md`, `generated-files.md`,
+  `security-sensitive.md`, `test-packs.md`
+- `settings.json` (committed) / `settings.local.json` (local)
+
+Directory-level `CLAUDE.md` files add local rules in `core/`, `domains/`, `web/`,
+`packs/`, `tests/`, and `infra/`.
+
+## `.github/` — CI and policy
+
+| Workflow | Jobs |
+| --- | --- |
+| `ci.yml` | `tests` (Python 3.10–3.13 matrix), `lint` (ruff, repo-wide), `package` (`uv build`), and `required` — an aggregator gate that all three must pass |
+| `security.yml` | `pip-audit` over exported locked runtime deps; also runs weekly on cron |
+
+Actions are pinned by commit SHA and run with `persist-credentials: false`.
+`BRANCH_PROTECTION.md` documents the ruleset that must exist in repo settings — workflow
+files cannot prevent direct pushes on their own.
+
+> **Gap worth knowing:** both workflows trigger only on `main`, but `origin/HEAD` is
+> `develop` and feature branches merge there. PRs into `develop` therefore run no CI —
+> the gate applies only at the `develop` → `main` promotion. Verified against
+> `.github/workflows/*.yml` and `git symbolic-ref refs/remotes/origin/HEAD`.
+
+## `.qlty/` — the pre-push quality gate
+
+`qlty.toml` configures plugins beyond ruff: `bandit` (excluded on `tests/`, since B101
+flags the `assert` pytest is built on), `trufflehog` (secrets), `shellcheck`, `hadolint`,
+`actionlint` + `zizmor` (workflow linting), `radarlint`. `hooks/pre-push.sh` runs it.
+`.qlty/out/` is generated scan output — ignored, never edited.
+
+An aislop PostToolUse hook also scans on every Edit/Write; its findings are blocking, and
+`.aislop/config.yaml` is authoritative for thresholds.
+
+## Root files
+
+`pyproject.toml` (the package map — see the top of this document) · `alembic.ini`
+(`script_location = infra/alembic`; its `sqlalchemy.url` is a placeholder, the real
+target comes from `agentaudit migrate --db`) · `uv.lock` (generated) · `CLAUDE.md` ·
+`AGENTS.md` (the same guidance for Codex) · `README.md` · `CONTRIBUTING.md` ·
+`SECURITY.md` · `LICENSE`.
 
 ## Never edit by hand
 
 `dist/` · `agentaudit.egg-info/` · `.venv/` · `agentaudit.db` · `**/__pycache__/` ·
-`uv.lock` (regenerate with `uv lock`) · `docs/diagrams/*.svg` (rendered from the `.d2`
-sources beside them).
+`.qlty/out/` · `uv.lock` (regenerate with `uv lock`) · `docs/diagrams/*.svg` (rendered
+from the `.d2` sources beside them).
+
+> A stale `agentkit.db` sits at the repo root from before the `agentaudit` rename. The
+> live default is `database/agentaudit.db` (`cli.py:DEFAULT_DB_PATH`); the root file is
+> leftover state, not a fixture.
 
 ---
 
@@ -414,10 +513,24 @@ the phase most in flight.
 | Attacker-model refinement behind the strategy protocol | same | `core/attacker.py` |
 | Judge stop condition, attacker techniques, intent-keyed garak mapping | same | `core/judge.py`, `core/jsonx.py` |
 
+### Phase 4c — Wiring the planner into the hosted path
+
+| Push | Branch | Landed |
+| --- | --- | --- |
+| Plan every worker run, not only CLI `--plan` runs | `feat/wire-planner-into-run` | `worker.py:execute_job` |
+
+The planner had exactly one caller. `agentaudit run --plan` profiled and persisted a
+`HarnessPlan`; the **worker** — the path a hosted deployment actually uses — ran the whole
+pack and wrote `plan_json` as NULL, so every hosted run rendered as "launched without a
+planner". `execute_job` now discovers, plans, applies, and persists. Discovery runs
+through a closure carrying the same redactor and validated endpoint as the graded run, so
+the egress decision made once is reused rather than reopened.
+
 **Two honest caveats about this phase:**
 
 1. **"Harness" means `HarnessPlan`, not generated per-agent code.** The planner layer
-   exists and is tested; it is not yet wired into every run path.
+   exists, is tested, and now runs on both the CLI and worker paths — but it selects from
+   a catalog; it does not generate harness code.
 2. **Adapters normalize, they do not execute.** `core/adapters.py` maps promptfoo/garak
    reports and generates their config/argv, but `agentaudit` does not spawn either tool.
    Adapter-selected tests are ranked and their invocation generated, then run out of band.
@@ -461,7 +574,7 @@ the current state honestly marked:
 | W9 `tau2-bench` `PolicyBundle` + user simulators | Not started |
 | W10 Browser agents (`BrowserGym`/`AgentLab`) | Not started |
 | W11 `PurpleLlama` / CWE / ATT&CK mapping | Not started |
-| W12 Discovery + planning | Shipped |
+| W12 Discovery + planning | Shipped, and wired into both the CLI and worker run paths |
 | W13 Iterative attack engine (branch-and-retry, exploit confirmation) | Partial — ladders and transforms ship; branching and reproduction do not |
 | W14 Reporting and product surface | Shipped |
 
