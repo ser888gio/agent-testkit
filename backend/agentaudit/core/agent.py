@@ -215,12 +215,17 @@ class HTTPAttacker:
         api_key: str | None = None,
         timeout_s: float = 30.0,
         transport: Any = None,
+        # Attackers want variance -- identical retries against the same refusal
+        # are wasted turns. A judge wants the opposite: the same reply should
+        # get the same verdict, so callers scoring rather than attacking pass 0.
+        temperature: float = 0.9,
     ) -> None:
         self.endpoint = endpoint
         self.model = model
         self.api_key = api_key
         self.timeout_s = timeout_s
         self.transport = transport
+        self.temperature = temperature
 
     def complete(self, system: str, user: str) -> str:
         headers = {"Content-Type": "application/json"}
@@ -232,9 +237,7 @@ class HTTPAttacker:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            # Some variance is wanted: identical retries against the same
-            # refusal are wasted turns.
-            "temperature": 0.9,
+            "temperature": self.temperature,
         }
         try:
             with httpx.Client(timeout=self.timeout_s, transport=self.transport) as client:

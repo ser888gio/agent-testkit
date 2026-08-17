@@ -19,6 +19,7 @@ from agentaudit.core.attacker import build_refining_strategy
 from agentaudit.core.config import TargetConfig
 from agentaudit.core.egress import ValidatedEndpoint
 from agentaudit.core.isolation import IsolatedRunner, IsolationFailure
+from agentaudit.core.judge import build_judge
 from agentaudit.core.loader import PythonTestCase
 from agentaudit.core.redaction import EvidencePolicy, Redactor
 from agentaudit.core.sandbox import SANDBOXES, Sandbox
@@ -113,11 +114,13 @@ def _run_turns(
         return run_turn(turn, test.timeout_s)
 
     if test.adaptive is not None:
-        # Refinement is opt-in and returns None when unconfigured, so the
-        # scripted ladder stays the default path for every offline run.
-        strategy = build_refining_strategy(test.input, test.adaptive) or build_strategy(
-            test.input, test.adaptive
-        )
+        # Both model-driven layers are opt-in and return None when
+        # unconfigured, so the scripted ladder with its substring stop check
+        # stays the default path for every offline run.
+        judge = build_judge()
+        strategy = build_refining_strategy(
+            test.input, test.adaptive, judge=judge
+        ) or build_strategy(test.input, test.adaptive, judge)
         history: list[AgentResponse] = []
         sent: list[Any] = []
         while (turn := strategy.next_turn(history)) is not None:
@@ -273,9 +276,7 @@ def _sandbox_modules() -> tuple[str, ...]:
     # not imported, so core keeps no dependency edge to domain packages while
     # third-party Sandbox registrations work too.
     modules = {sandbox_type.__module__ for sandbox_type in SANDBOXES.values()}
-    modules.update(
-        name for name in list(sys.modules) if name.startswith("agentaudit.domains.")
-    )
+    modules.update(name for name in list(sys.modules) if name.startswith("agentaudit.domains."))
     return tuple(sorted(modules))
 
 
@@ -291,17 +292,13 @@ def _run_isolated(
                 "timeout_s must be finite and > 0"
             )
         else:
-            result = isolated.run_python_test(
-                test, test.timeout_s + isolation.GRACE_SECONDS
-            )
+            result = isolated.run_python_test(test, test.timeout_s + isolation.GRACE_SECONDS)
     else:
         if test.adaptive is not None:
             turns = test.adaptive.max_turns
         else:
             turns = len(test.turns) if test.turns else 1
-        result = isolated.run_test(
-            test, turns * test.timeout_s + isolation.GRACE_SECONDS
-        )
+        result = isolated.run_test(test, turns * test.timeout_s + isolation.GRACE_SECONDS)
     if isinstance(result, IsolationFailure):
         result = _error_result(test, test_started, result.error, redactor)
     return result

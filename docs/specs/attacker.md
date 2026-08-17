@@ -20,19 +20,24 @@ class AttackerModel(Protocol):
     def complete(self, system: str, user: str) -> str: ...   # raises AttackerError
 
 class RefinementLog:
-    model_written: list[str]     # turns the model actually wrote
-    fallbacks: list[str]         # why each fallback happened
-    degraded: bool               # any fallback occurred
+    model_written: list[str]           # turns the model actually wrote
+    fallbacks: list[str]               # why each fallback happened
+    degraded: bool                     # any fallback occurred
+    rationale: list[dict[str, str]]    # observation/thought/technique per turn
+    techniques: list[str]              # techniques named, in order of use
+
+TECHNIQUES: dict[str, str]             # the attacker's technique toolbox
 
 class RefiningStrategy:          # satisfies adaptive.AttackStrategy
-    def __init__(goal, spec, model, redactor=None, log=None): ...
+    def __init__(goal, spec, model, redactor=None, log=None, judge=None): ...
     def next_turn(history: list[AgentResponse]) -> str | None: ...
 
 class HTTPAttacker:              # lives in core/agent.py, see below
-    def __init__(endpoint, model, api_key=None, timeout_s=30.0, transport=None): ...
+    def __init__(endpoint, model, api_key=None, timeout_s=30.0,
+                 transport=None, temperature=0.9): ...
 
 def build_attacker(spec) -> AttackerModel | None
-def build_refining_strategy(goal, spec, model=None, log=None) -> AttackStrategy | None
+def build_refining_strategy(goal, spec, model=None, log=None, judge=None) -> AttackStrategy | None
 ```
 
 Schema additions on `AdaptiveSpec`:
@@ -68,6 +73,17 @@ primitive.
   nothing must be the safe one. `tests/test_attacker.py` mutation-checks this.
 - **The first turn is always scripted.** With no history there is nothing to react to, so
   a model call there would spend money for no signal.
+- **The attacker answers in JSON, and a prose answer is still used.** The model is asked
+  for `observation`/`thought`/`technique`/`response` so a report can say *why* a turn was
+  sent, and `core/jsonx.py:extract_json` tolerates fences, preambles and trailing
+  explanation. When the reply is not JSON at all, the raw text becomes the turn and only
+  the rationale is lost: losing the reasoning is a reporting gap, losing the turn is a
+  coverage gap, and the coverage gap is worse. JSON with no `response` field is a
+  fallback, because there is no turn in it.
+- **Techniques are a named toolbox, not hidden prompt text.** `TECHNIQUES` holds seven
+  entries adapted from Meta's GOAT set (as distributed in garak, Apache-2.0). The model
+  picks one and names it, so `RefinementLog.techniques` records which technique produced
+  a finding — reproducible by hand in a way "crescendo rung 3" is not.
 - **`HTTPAttacker` lives in `core/agent.py`.** `httpx` is imported in exactly one module,
   and that boundary is what makes the network surface auditable. `core/attacker.py` owns
   the refinement logic and never learns how the model is reached.
@@ -81,14 +97,18 @@ primitive.
 
 deepteam's `LinearJailbreaking` is ~450 lines per attack, duplicated sync/async, and each
 attack re-implements the same loop. The mechanism reduces to "ask a model for the next
-turn", which is what this module does once for every ladder. Also skipped: its
-`BehaviorShiftDetector` and `NonRefusal` judge (each an extra model call per turn, and
-`stop_on` already covers the common case), the `deepeval` metric stack, and the
-Confident AI API client.
+turn", which is what this module does once for every ladder. Also skipped: the `deepeval`
+metric stack and the Confident AI API client.
+
+Its `NonRefusal` judge *was* skipped on the grounds that `stop_on` covers the common case.
+That reasoning did not survive contact: `stop_on` is wrong in both directions — a refusal
+that quotes the marker back trips it, and an agent that complies in its own words does
+not. `core/judge.py` now fills that seam. See [`judge.md`](judge.md).
 
 ## Testing
 
-`tests/test_attacker.py` — 18 tests. The load-bearing ones: fallback on every failure
-mode, redaction before egress, bounding preserved under refinement, and off-by-default so
-CI stays offline and free. All use a stub attacker or `httpx.MockTransport`; no test
-makes a network call.
+`tests/test_attacker.py` — 23 tests. The load-bearing ones: fallback on every failure
+mode, redaction before egress, bounding preserved under refinement, structured-reply
+parsing (including the prose-degrades-gracefully path), and off-by-default so CI stays
+offline and free. All use a stub attacker or `httpx.MockTransport`; no test makes a
+network call. `tests/test_jsonx.py` covers the extractor separately.

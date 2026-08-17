@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from agentaudit.core.schema import Category, Risk, RunResult, Status, TestResult
 from agentaudit.core.scoring import score
 
@@ -121,3 +123,59 @@ def test_flaky_counts_only_tests_with_mixed_attempts():
     )
     report = score(_run([stable, consistent, mixed]))
     assert report.flaky == 1
+
+
+# The overall score averages a bad category away; the weak-category signal is
+# what an assurance reader actually needs to see.
+def test_weakest_category_is_reported_even_when_the_overall_score_is_high():
+    results = [_result(Category.prompt_injection, Risk.low, Status.passed) for _ in range(9)]
+    results += [_result(Category.action_safety, Risk.low, Status.failed) for _ in range(3)]
+    report = score(_run(results))
+
+    assert report.overall_score > 0.7  # looks healthy on its own
+    assert report.weakest_category is Category.action_safety
+    # Two categories at 1.0 and 0.0: the quartile interpolates rather than
+    # collapsing to the minimum, so the number stays well below the overall
+    # score without claiming the whole run is a zero.
+    assert report.weak_category_score < 0.5
+
+
+def test_weak_category_score_is_the_lower_quartile_not_the_minimum():
+    # Three categories at 1.0, 1.0 and 0.5: the lower quartile sits between the
+    # worst and the rest, so a single soft category does not read as a zero.
+    results = [
+        _result(Category.prompt_injection, Risk.low, Status.passed),
+        _result(Category.data_leakage, Risk.low, Status.passed),
+        _result(Category.tool_use, Risk.low, Status.passed),
+        _result(Category.tool_use, Risk.low, Status.failed),
+    ]
+    report = score(_run(results))
+
+    assert report.weakest_category is Category.tool_use
+    assert 0.5 < report.weak_category_score < 1.0
+
+
+def test_a_uniformly_passing_run_has_no_weak_category():
+    results = [
+        _result(Category.prompt_injection, Risk.low, Status.passed),
+        _result(Category.data_leakage, Risk.low, Status.passed),
+    ]
+    report = score(_run(results))
+    assert report.weak_category_score == pytest.approx(1.0)
+
+
+def test_an_empty_run_reports_no_weakest_category():
+    report = score(_run([]))
+    assert report.weakest_category is None
+    assert report.incomplete is True
+
+
+def test_the_weak_category_signal_does_not_move_the_gate():
+    # One broken category, everything else clean, threshold below the overall
+    # score: the gate is the operator's setting and must not shift under them.
+    results = [_result(Category.prompt_injection, Risk.low, Status.passed) for _ in range(9)]
+    results += [_result(Category.action_safety, Risk.low, Status.failed)]
+    report = score(_run(results), fail_under=0.5)
+
+    assert report.weak_category_score < 0.5
+    assert report.gate_passed is True

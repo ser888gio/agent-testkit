@@ -20,6 +20,13 @@ the rest of the system consumes.
   `AGENTAUDIT_ATTACKER_ENDPOINT`/`_MODEL` are set; falls back to the scripted ladder on any
   model failure, so runs stay offline and deterministic by default. See
   [`docs/specs/attacker.md`](../../../docs/specs/attacker.md).
+- `judge.py:build_judge` — optional model that decides whether an adaptive attack landed,
+  replacing the `stop_on` substring check. Off unless `AGENTAUDIT_JUDGE_ENDPOINT`/`_MODEL`
+  are set; falls back to substrings on any failure. It is a **stop condition, not a
+  scorer** — assertions still decide pass/fail, and a model verdict must never reach
+  `Status`. See [`docs/specs/judge.md`](../../../docs/specs/judge.md).
+- `jsonx.py:extract_json` — pulls the first JSON object out of a model reply that may be
+  fenced, prefaced, or trailed by prose. Used by every module that asks a model for JSON.
 - `planner.py:plan` / `apply_plan` — profile + catalogs → `HarnessPlan`, then the runnable half.
 - `adapters.py:ADAPTERS` — promptfoo/garak report normalization into `TestResult`s.
 

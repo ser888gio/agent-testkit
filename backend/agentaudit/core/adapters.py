@@ -30,9 +30,63 @@ from agentaudit.core.schema import AssertionResult, Category, Risk, Status, Test
 
 _ID_SAFE = re.compile(r"[^a-z0-9_.]+")
 
-# A garak probe module maps to one internal category. Keyed on the module (the
-# part before the dot in `probe_classname`), because garak versions rename
-# individual probe classes far more often than they move a whole module.
+# garak tags each attempt with an intent code from its trait typology
+# (data/cas/trait_typology.json) describing the behaviour the probe tries to
+# elicit. That is a better key than the probe module: it says what the test was
+# *for* rather than which file it lives in, so a probe that moves or gets
+# renamed keeps its meaning, and one module holding probes with different
+# intents no longer collapses into a single category.
+#
+# Codes are hierarchical -- `S008mal` is a kind of `S008` -- so lookup falls
+# back to progressively shorter prefixes, and an unrecognized code lands on the
+# family (S/T/M/C) rather than on a default that means nothing.
+GARAK_INTENT_CATEGORIES: dict[str, Category] = {
+    # T: instruction hierarchy and trust. Parent codes are listed alongside
+    # their children so an unrecognized child resolves to the right parent
+    # rather than falling all the way through to the family.
+    "T009": Category.instruction_following,  # system prompt
+    "T009ignore": Category.instruction_following,
+    "T009indirect": Category.prompt_injection,
+    "T009reveal": Category.data_leakage,
+    "T008": Category.data_leakage,  # repeat
+    "T008data": Category.data_leakage,
+    "T018decode": Category.prompt_injection,
+    "T015img": Category.action_safety,
+    "T001invalid": Category.reliability,
+    "T999test": Category.reliability,
+    # S: safety of what the model produces.
+    "S008": Category.action_safety,  # unsafe things with computers
+    "S008inject": Category.action_safety,
+    "S008terminal": Category.action_safety,
+    "S009": Category.data_leakage,  # privacy
+    "S009cred": Category.data_leakage,
+    "S009personal": Category.data_leakage,
+    "S009exfil": Category.data_leakage,
+    "S003productkeys": Category.data_leakage,
+    "S001": Category.reliability,  # malinfo
+    "S001fab": Category.reliability,
+    # M: disclosure about the system itself.
+    "M009": Category.data_leakage,  # opsec
+    "M010": Category.reliability,  # response
+    "M010degrade": Category.reliability,
+    "M010blank": Category.reliability,
+    # C: conversational scope.
+    "C009": Category.reliability,
+}
+
+# Family fallbacks for intent codes not named above. Deliberately coarse: these
+# are the "we know roughly what this is" tier, not a claim of precision.
+GARAK_INTENT_FAMILIES: dict[str, Category] = {
+    "S": Category.instruction_following,
+    "T": Category.instruction_following,
+    "M": Category.data_leakage,
+    "C": Category.reliability,
+}
+
+# Fallback for reports predating intent tagging, or probes that set none.
+# Keyed on the module (the part before the dot in `probe_classname`), because
+# garak versions rename individual probe classes far more often than they move
+# a whole module.
 GARAK_PROBE_CATEGORIES: dict[str, Category] = {
     "promptinject": Category.prompt_injection,
     "latentinjection": Category.prompt_injection,
@@ -92,6 +146,28 @@ def _safe_id(*parts: object) -> str:
 
 def _risk_for(category: Category) -> Risk:
     return Risk.high if category in _HIGH_RISK_CATEGORIES else Risk.medium
+
+
+def _garak_category(intent: str | None, probe_classname: str) -> Category:
+    """Category for a garak attempt, preferring its intent over its module.
+
+    Intent codes are hierarchical, so an unknown `S008xyz` still resolves
+    through `S008` and then through the `S` family. The probe module is the
+    fallback for reports written before garak tagged intents.
+    """
+    code = (intent or "").strip()
+    if code:
+        if code in GARAK_INTENT_CATEGORIES:
+            return GARAK_INTENT_CATEGORIES[code]
+        # Walk back to shorter prefixes: S008mal -> S008 -> S.
+        for end in range(len(code) - 1, 0, -1):
+            if code[:end] in GARAK_INTENT_CATEGORIES:
+                return GARAK_INTENT_CATEGORIES[code[:end]]
+        if code[0] in GARAK_INTENT_FAMILIES:
+            return GARAK_INTENT_FAMILIES[code[0]]
+
+    module = probe_classname.split(".")[0]
+    return GARAK_PROBE_CATEGORIES.get(module, Category.instruction_following)
 
 
 def _evidence(policy: EvidencePolicy, request: Any, response: Any) -> tuple[Any, Any]:
@@ -342,8 +418,7 @@ class GarakAdapter(ExternalEvalAdapter):
 
         for attempt in _garak_attempts(raw):
             classname = str(attempt.get("probe_classname", "unknown.unknown"))
-            module = classname.split(".")[0]
-            category = GARAK_PROBE_CATEGORIES.get(module, Category.instruction_following)
+            category = _garak_category(attempt.get("intent"), classname)
 
             detectors = attempt.get("detector_results") or {}
             assertion_results = [

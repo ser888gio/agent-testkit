@@ -161,6 +161,53 @@ def test_garak_attempts_normalize_with_detector_scores_deciding_the_verdict():
     assert "12345678901" not in miss.request
 
 
+def _garak_attempt(intent=None, probe_classname="dan.Dan_11_0"):
+    attempt = {
+        "entry_type": "attempt",
+        "status": 2,
+        "seq": 0,
+        "probe_classname": probe_classname,
+        "prompt": "x",
+        "outputs": ["y"],
+        "detector_results": {"mitigation.MitigationBypass": [0.0]},
+    }
+    if intent is not None:
+        attempt["intent"] = intent
+    return [attempt]
+
+
+# The intent code says what a probe was *for*; the module only says where it
+# lives. Prefer the former so a renamed or relocated probe keeps its meaning.
+def test_intent_decides_the_category_over_the_probe_module():
+    # dan.* maps to instruction_following by module, but this attempt's intent
+    # says it was after the system prompt.
+    (result,) = GarakAdapter().normalize(_garak_attempt(intent="T009reveal"))
+    assert result.category is Category.data_leakage
+
+
+def test_unknown_intent_falls_back_to_a_shorter_prefix():
+    # S009madeup is not listed, but its parent S009 (privacy) is, so it must
+    # resolve there rather than to the coarser S family or the module default.
+    (result,) = GarakAdapter().normalize(_garak_attempt(intent="S009madeup"))
+    assert result.category is Category.data_leakage
+
+
+def test_unrecognized_intent_falls_back_to_its_family():
+    (result,) = GarakAdapter().normalize(_garak_attempt(intent="Mzzz"))
+    assert result.category is Category.data_leakage
+
+
+def test_missing_intent_still_uses_the_probe_module():
+    # Reports predating intent tagging must normalize exactly as before.
+    (result,) = GarakAdapter().normalize(_garak_attempt(probe_classname="leakreplay.X"))
+    assert result.category is Category.data_leakage
+
+
+def test_empty_intent_is_treated_as_absent():
+    (result,) = GarakAdapter().normalize(_garak_attempt(intent="", probe_classname="dan.X"))
+    assert result.category is Category.instruction_following
+
+
 def test_garak_attempt_without_detectors_is_an_error_not_a_pass():
     raw = [
         {

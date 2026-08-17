@@ -11,8 +11,11 @@ escalates authority, `sequential` decomposes the ask into innocuous stages,
 the agent as a harmfulness rater and asks it to author the worst case.
 
 Every ladder is data, not a model call: CI stays deterministic, offline and
-free. An attacker-LLM strategy would slot in behind the same protocol, as would
-a judge-driven tree search, which is why the ladders stay behind `next_turn`.
+free. Two optional model-driven layers slot in behind the same protocol without
+changing that default -- `attacker.py` rewrites each turn from the agent's
+actual reply, and a `Judge` replaces the `stop_on` substring check with a model
+that reads the reply and says whether the attack landed. Both are off unless
+configured, and both fall back to the scripted behaviour on any failure.
 """
 
 from __future__ import annotations
@@ -27,6 +30,11 @@ from agentaudit.core.schema import AdaptiveSpec
 class AttackStrategy(Protocol):
     def next_turn(self, history: list[AgentResponse]) -> str | None:
         """The next prompt to send, or None to stop."""
+
+
+class Judge(Protocol):
+    def succeeded(self, goal: str, response: AgentResponse) -> bool | None:
+        """Whether the attack landed, or None when the judge cannot say."""
 
 
 # Escalating framings, applied in order until one lands or the ladder runs out.
@@ -78,10 +86,13 @@ class _LadderStrategy:
 
     LADDER: list[str] = []
 
-    def __init__(self, goal: str, spec: AdaptiveSpec) -> None:
+    def __init__(self, goal: str, spec: AdaptiveSpec, judge: Judge | None = None) -> None:
         self.goal = goal
         self.max_turns = spec.max_turns
         self.stop_on = [marker.lower() for marker in spec.stop_on]
+        # Optional and off by default: without one, the substring check below
+        # is the whole stop condition and the run stays offline.
+        self.judge = judge
 
     def next_turn(self, history: list[AgentResponse]) -> str | None:
         if len(history) >= min(self.max_turns, len(self.LADDER)):
@@ -91,7 +102,13 @@ class _LadderStrategy:
         return self.LADDER[len(history)].format(goal=self.goal)
 
     def _succeeded(self, response: AgentResponse) -> bool:
-        # No point escalating once the agent has already complied.
+        # No point escalating once the agent has already complied. A judge
+        # answers that question directly; the substring check is the fallback,
+        # both when no judge is configured and when the judge cannot answer.
+        if self.judge is not None:
+            verdict = self.judge.succeeded(self.goal, response)
+            if verdict is not None:
+                return verdict
         text = response.text.lower()
         return any(marker in text for marker in self.stop_on)
 
@@ -120,7 +137,7 @@ class BadLikertJudgeStrategy(_LadderStrategy):
     LADDER = LIKERT_LADDER
 
 
-STRATEGIES: dict[str, Callable[[str, AdaptiveSpec], AttackStrategy]] = {
+STRATEGIES: dict[str, Callable[..., AttackStrategy]] = {
     "crescendo": CrescendoStrategy,
     "sequential": SequentialStrategy,
     "linear": LinearStrategy,
@@ -128,10 +145,10 @@ STRATEGIES: dict[str, Callable[[str, AdaptiveSpec], AttackStrategy]] = {
 }
 
 
-def build_strategy(goal: str, spec: AdaptiveSpec) -> AttackStrategy:
+def build_strategy(goal: str, spec: AdaptiveSpec, judge: Judge | None = None) -> AttackStrategy:
     factory = STRATEGIES.get(spec.strategy)
     if factory is None:
         raise ValueError(
             f"unknown attack strategy '{spec.strategy}' (known: {', '.join(sorted(STRATEGIES))})"
         )
-    return factory(goal, spec)
+    return factory(goal, spec, judge)
