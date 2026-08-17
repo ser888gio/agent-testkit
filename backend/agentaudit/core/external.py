@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # qlty-ignore: bandit:B404 - spawning is this module's entire purpose
 import sys
 import tempfile
 from collections.abc import Sequence
@@ -84,8 +84,14 @@ def _kill_tree(process: subprocess.Popen) -> None:
         return
     try:
         if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            # Absolute path, not bare "taskkill": resolving through PATH while
+            # tearing down a hostile process is how you run the attacker's
+            # taskkill.exe. %SystemRoot% is not tenant-writable.
+            system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            taskkill = system_root / "System32" / "taskkill.exe"
+            # qlty-ignore: bandit:B603,bandit:B607 - fixed argv, absolute path, shell=False
+            subprocess.run(  # noqa: S603
+                [str(taskkill), "/F", "/T", "/PID", str(process.pid)],
                 capture_output=True,
                 check=False,
             )
@@ -114,7 +120,11 @@ def _spawn(argv: Sequence[str], *, cwd: Path, timeout_s: float, env: dict[str, s
     # tree can be signalled at once. Windows gets the taskkill path instead.
     popen_kwargs = {"start_new_session": True} if sys.platform != "win32" else {}
     try:
-        process = subprocess.Popen(  # noqa: S603 - argv is adapter-generated, never shell
+        # argv comes from the adapter, never from tenant config, and shell=False
+        # throughout: the endpoint reaches the tool as an argument, not as text a
+        # shell would parse. argv[0] is the absolute path `which` resolved above.
+        # qlty-ignore: bandit:B603
+        process = subprocess.Popen(  # noqa: S603
             [executable, *list(argv)[1:]],
             cwd=str(cwd),
             stdout=subprocess.PIPE,
@@ -188,11 +198,14 @@ def run_external(
         raw = report_path.read_text(encoding="utf-8", errors="replace")
         try:
             results = adapter.normalize(raw, evidence=evidence, started_at=started_at)
+        # qlty-ignore(radarlint-python:python:S5713): not redundant -- see below
         except ValidationError:
-            # A ValidationError is our mapping being wrong, not the tool's report
-            # being bad. ValidationError subclasses ValueError, so without this
-            # it would be reported as "the tool wrote an unreadable report" and
-            # send the reader to debug the wrong process.
+            # Not redundant with the ValueError clause below, which is exactly
+            # why it is here: ValidationError *subclasses* ValueError, and it
+            # means our mapping is wrong rather than the tool's report being
+            # bad. Without this clause an adapter bug is reported as "the tool
+            # wrote an unreadable report", sending the reader to debug the wrong
+            # process. Pinned by test_a_broken_mapping_is_not_blamed_on_the_tool.
             raise
         except (ValueError, json.JSONDecodeError) as exc:
             raise ExternalRunError(f"{adapter.name} wrote an unreadable report: {exc}") from exc
