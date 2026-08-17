@@ -1,0 +1,62 @@
+direction: down
+
+parent: "Parent process\nrunner.run" {
+  class: server
+
+  isolated: IsolatedRunner (isolation.py) {
+    class: golang
+  }
+}
+
+supervisor: "Supervisor child — spawned, trusted\nowns the sandbox, never killed mid-run" {
+  class: container
+
+  rpc: RPC resolver (_handle_rpc) {
+    class: golang
+  }
+
+  sandbox: Real Sandbox (domains/) {
+    class: container
+  }
+
+  eval: Assertions + Redactor {
+    class: golang
+  }
+
+  rpc -> sandbox: "5. resolve against\nthe real object"
+  sandbox -> eval: "8. snapshot + assert,\nthen redact"
+}
+
+worker: "Agent worker — spawned, untrusted\nkilled on timeout, respawned next test" {
+  class: container
+
+  agent: build_agent() — agent under test {
+    class: golang
+  }
+
+  # Hexagon (not a hardcoded fill) marks the trust boundary, so the node stays
+  # legible under both the light and dark D2 themes.
+  proxy: _RemoteObject (sandbox proxy) {
+    shape: hexagon
+  }
+
+  agent -> proxy: "3. sandbox.bank.transfer(...)"
+}
+
+parent.isolated -> supervisor: "1. spawn + cloudpickle(test)\ndeadline = turns x timeout_s + 5s grace"
+supervisor -> worker: "2. spawn, command pipe\n(turn / python fn)"
+worker.proxy -> supervisor.rpc: "4. RPC: getattr / call / getitem\n(stamped time.monotonic(),\npast-deadline messages dropped)"
+supervisor.rpc -> worker.proxy: "6. value | proxy | method thunk" {style.stroke-dash: 3}
+worker -> supervisor: "7. agent response" {style.stroke-dash: 3}
+supervisor -> parent.isolated: "9. TestResult (redacted)" {style.stroke-dash: 3}
+
+parent.isolated -> worker: "On timeout: kill the worker tree FIRST\n(killpg / Job Object), and only THEN\nlet the supervisor snapshot the sandbox —\nso timeout evidence cannot race a live agent" {
+  style.stroke: "#b91c1c"
+  style.bold: true
+  style.stroke-width: 2
+}
+
+limits: "Ceilings applied in both children (_prepare_process)\nPOSIX: setpgid + RLIMIT_AS / RLIMIT_CPU (soft AND hard)\nWindows: kill-on-close Job Object\ndefaults: 2048 MB, 900 CPU-seconds" {
+  shape: text
+  near: bottom-center
+}
