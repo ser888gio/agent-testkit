@@ -490,6 +490,25 @@ def test_unprovisioned_secret_ref_fails_permanently(tmp_path, monkeypatch):
     assert resolve_secret(None) == {}
 
 
+def test_httpx_is_imported_in_exactly_one_core_module():
+    # The network boundary is only auditable if it stays in one file. This was
+    # honour-system until the attacker model gave core a second reason to make
+    # outbound calls; assert it instead of documenting it.
+    import pathlib
+
+    core = pathlib.Path(__file__).resolve().parents[1] / "backend" / "agentaudit" / "core"
+    importers = {
+        path.name
+        for path in core.glob("*.py")
+        if any(
+            line.strip() in ("import httpx", "import httpx  # noqa")
+            or line.strip().startswith("from httpx")
+            for line in path.read_text(encoding="utf-8").splitlines()
+        )
+    }
+    assert importers == {"agent.py"}, f"httpx escaped core/agent.py: {sorted(importers)}"
+
+
 def create_echoing_agent():
     def _echo(input: str) -> str:
         return SECRET

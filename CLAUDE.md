@@ -116,6 +116,7 @@ backend/agentaudit/
   core/                agent · sandbox · schema · loader · runner · assertions
                        scoring · redaction · compliance · regressions · store
                        profile · discovery · catalog · planner · adapters
+                       adaptive · attacker · judge · jsonx
   domains/             treasury/ · email/  (Sandbox subclasses + demo agents)
   reports/             json · junit · html · md · compliance · plan renderers
 frontend/agentaudit/web/ app.py · templates/ · static/

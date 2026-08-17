@@ -56,3 +56,5 @@ Every spec follows the same shape:
 | 18 | `feat/web-ui` | [web-ui.md](web-ui.md) |
 | 19 | `feat/regressions` | [regressions.md](regressions.md) |
 | 20 | `feat/docs-demo` | [docs-demo.md](docs-demo.md) |
+| 21 | `feat/attacker` | [attacker.md](attacker.md) |
+| 22 | `feat/judge` | [judge.md](judge.md) |

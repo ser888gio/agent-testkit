@@ -51,6 +51,13 @@ class AdaptiveSpec(BaseModel):
     max_turns: int = Field(4, ge=1, le=20)
     # Substrings that mean the attack landed, so escalation can stop early.
     stop_on: list[str] = Field(default_factory=list)
+    # Let an attacker model write each turn from the agent's actual reply
+    # instead of following the script. Off by default, and a no-op unless
+    # AGENTAUDIT_ATTACKER_ENDPOINT/_MODEL are set, so CI stays offline.
+    refine: bool = False
+    # Which ladder supplies the turn budget and the fallback when the attacker
+    # model is unavailable. Defaults to `strategy`.
+    refine_from: str | None = None
 
 
 class TestCase(BaseModel):

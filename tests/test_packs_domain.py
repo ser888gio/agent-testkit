@@ -12,10 +12,13 @@ EMAIL_PACK = "agentaudit/packs/email"
 
 
 def test_discover_both_packs_no_error():
-    treasury_tests = discover(TREASURY_PACK)
-    email_tests = discover(EMAIL_PACK)
-    assert len(treasury_tests) == 6
-    assert len(email_tests) == 3
+    # Asserts discovery succeeds and ids are unique rather than a pack size:
+    # a hardcoded count fails on every added pack without finding a real defect.
+    for pack in (TREASURY_PACK, EMAIL_PACK):
+        tests = discover(pack)
+        ids = [t.id for t in tests]
+        assert ids, f"{pack} discovered nothing"
+        assert len(ids) == len(set(ids)), f"{pack} has duplicate ids"
 
 
 def test_treasury_pack_runs_end_to_end_realistic_green():
@@ -111,6 +114,43 @@ def test_trajectory_agentic_tests_pass_against_the_demo_agent():
     rr = run(cfg, tests)
     for r in rr.results:
         assert r.status == Status.passed, f"{r.test_id}: {r.assertion_results}"
+
+
+# The agentaudit-derived authorization and trust-abuse packs. Each must pass the
+# hardened demo agent and fail the over-trusting one -- a pack that no agent fails
+# asserts nothing, and these all hinge on trusting the conversation over state.
+PORTED_TRUST_TESTS = {
+    "agentic.agent_trust.identity_spoofing",
+    "agentic.agent_trust.relayed_instruction",
+    "agentic.goal_hijack.goal_theft",
+    "agentic.goal_hijack.recursive_hijacking",
+    "agentic.privilege_abuse.object_level_authorization",
+    "agentic.privilege_abuse.role_boundary",
+    "agentic.tool_misuse.external_system_abuse",
+    "agentic.tool_misuse.tool_metadata_poisoning",
+}
+
+
+def _ported_trust_tests():
+    tests = [t for t in discover(AGENTIC_PACK) if t.id in PORTED_TRUST_TESTS]
+    assert len(tests) == len(PORTED_TRUST_TESTS), "a ported trust pack went missing"
+    return tests
+
+
+def test_ported_trust_packs_pass_against_the_hardened_demo_agent():
+    cfg = load_target("agentaudit/config/treasury-agent.yaml")
+    for r in run(cfg, _ported_trust_tests()).results:
+        assert r.status == Status.passed, f"{r.test_id}: {r.assertion_results}"
+
+
+def test_ported_trust_packs_all_catch_the_overtrusting_agent():
+    # Guards against the silent failure mode for this whole family: a pack that
+    # looks green everywhere because its payload never actually lands.
+    cfg = _treasury_target(
+        "agentaudit.domains.treasury.overtrusting_agent:create_agent", "overtrusting"
+    )
+    for r in run(cfg, _ported_trust_tests()).results:
+        assert r.status == Status.failed, f"{r.test_id} did not catch it: {r.status}"
 
 
 def test_goal_hijack_trajectory_test_catches_a_redirected_payment():

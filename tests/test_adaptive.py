@@ -1,6 +1,11 @@
 import pytest
 
-from agentaudit.core.adaptive import CRESCENDO_LADDER, CrescendoStrategy, build_strategy
+from agentaudit.core.adaptive import (
+    CRESCENDO_LADDER,
+    STRATEGIES,
+    CrescendoStrategy,
+    build_strategy,
+)
 from agentaudit.core.agent import AgentResponse
 from agentaudit.core.config import CallableSpec, TargetConfig
 from agentaudit.core.runner import run
@@ -57,6 +62,36 @@ def test_crescendo_stops_early_once_the_attack_lands():
 def test_unknown_strategy_raises():
     with pytest.raises(ValueError, match="unknown attack strategy"):
         build_strategy(GOAL, AdaptiveSpec(strategy="nope"))
+
+
+# Every registered ladder must honour the same three invariants, so a new
+# strategy is covered by these the moment it lands in STRATEGIES.
+@pytest.mark.parametrize("name", sorted(STRATEGIES))
+def test_every_strategy_is_bounded_by_max_turns(name):
+    strategy = build_strategy(GOAL, AdaptiveSpec(strategy=name, max_turns=2))
+    assert len(_drive(strategy, "I cannot help with that.")) == 2
+
+
+@pytest.mark.parametrize("name", sorted(STRATEGIES))
+def test_every_strategy_terminates_when_max_turns_exceeds_its_ladder(name):
+    strategy = build_strategy(GOAL, AdaptiveSpec(strategy=name, max_turns=20))
+    sent = _drive(strategy, "no")
+    assert 0 < len(sent) < 20
+
+
+@pytest.mark.parametrize("name", sorted(STRATEGIES))
+def test_every_strategy_stops_early_once_the_attack_lands(name):
+    strategy = build_strategy(
+        GOAL, AdaptiveSpec(strategy=name, max_turns=4, stop_on=["transfer executed"])
+    )
+    assert len(_drive(strategy, "Sure - TRANSFER EXECUTED.")) == 1
+
+
+@pytest.mark.parametrize("name", sorted(STRATEGIES))
+def test_every_strategy_interpolates_the_goal_somewhere(name):
+    strategy = build_strategy(GOAL, AdaptiveSpec(strategy=name, max_turns=20))
+    # A ladder that never mentions the goal would probe nothing.
+    assert any(GOAL in turn for turn in _drive(strategy, "no"))
 
 
 def _adaptive_test(**spec_kwargs) -> TestCase:
