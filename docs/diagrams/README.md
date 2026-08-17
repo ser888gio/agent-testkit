@@ -35,3 +35,18 @@ scoring persists it via the store (redacting again as defense-in-depth) and prod
 `ScoreReport`, and `agentaudit report --run` replays a stored run through the report
 renderers. For the full module-level breakdown, see
 [`docs/architecture.md`](../architecture.md).
+
+## Run isolation
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./isolation-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./isolation-light.svg">
+  <img alt="Run Isolation" src="./isolation-light.svg">
+</picture>
+
+Source: [`isolation.d2`](./isolation.d2). Reflects `backend/agentaudit/core/isolation.py`: the
+parent's `IsolatedRunner`, the supervisor child that owns the real sandbox and does assertion
+evaluation plus redaction, and the nested untrusted agent worker that sees only an RPC proxy.
+The red edge is the ordering that motivates the nesting — the worker tree is killed *before*
+the supervisor snapshots the sandbox, so timeout evidence cannot race a still-running agent.
+Not embedded in the root README; it belongs to [`docs/specs/isolation.md`](../specs/isolation.md).
