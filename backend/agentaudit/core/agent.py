@@ -191,6 +191,68 @@ class HTTPAgent:
         )
 
 
+class AttackerUnavailable(Exception):
+    """The attacker model could not be reached or did not answer usably."""
+
+
+class HTTPAttacker:
+    """An OpenAI-compatible chat-completions client for the attacker model.
+
+    Lives here rather than beside the rest of `core/attacker.py` for one
+    reason: `httpx` is imported in this module alone, and that boundary is
+    what makes the network surface auditable. `core/attacker.py` owns the
+    refinement logic and never learns how the model is reached.
+
+    OpenAI-compatible rather than provider-specific because every candidate
+    backend (OpenAI, Anthropic via proxy, vLLM, Ollama) speaks this shape, and
+    the alternative is an SDK dependency for a single POST.
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        model: str,
+        api_key: str | None = None,
+        timeout_s: float = 30.0,
+        transport: Any = None,
+    ) -> None:
+        self.endpoint = endpoint
+        self.model = model
+        self.api_key = api_key
+        self.timeout_s = timeout_s
+        self.transport = transport
+
+    def complete(self, system: str, user: str) -> str:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            # Some variance is wanted: identical retries against the same
+            # refusal are wasted turns.
+            "temperature": 0.9,
+        }
+        try:
+            with httpx.Client(timeout=self.timeout_s, transport=self.transport) as client:
+                response = client.post(self.endpoint, headers=headers, json=payload)
+        except httpx.HTTPError as exc:
+            raise AttackerUnavailable(f"attacker model unreachable: {exc}") from exc
+
+        if response.is_error:
+            raise AttackerUnavailable(
+                f"attacker model returned http {response.status_code}"
+            )
+        try:
+            body = response.json()
+            return body["choices"][0]["message"]["content"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise AttackerUnavailable(f"malformed attacker model response: {exc}") from exc
+
+
 def build_agent(
     config: TargetConfig,
     sandbox: Any = None,

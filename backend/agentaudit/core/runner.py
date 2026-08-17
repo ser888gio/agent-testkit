@@ -15,6 +15,7 @@ from agentaudit.core import isolation
 from agentaudit.core.adaptive import build_strategy
 from agentaudit.core.agent import Agent, AgentResponse
 from agentaudit.core.assertions import AssertionContext, evaluate
+from agentaudit.core.attacker import build_refining_strategy
 from agentaudit.core.config import TargetConfig
 from agentaudit.core.egress import ValidatedEndpoint
 from agentaudit.core.isolation import IsolatedRunner, IsolationFailure
@@ -112,7 +113,11 @@ def _run_turns(
         return run_turn(turn, test.timeout_s)
 
     if test.adaptive is not None:
-        strategy = build_strategy(test.input, test.adaptive)
+        # Refinement is opt-in and returns None when unconfigured, so the
+        # scripted ladder stays the default path for every offline run.
+        strategy = build_refining_strategy(test.input, test.adaptive) or build_strategy(
+            test.input, test.adaptive
+        )
         history: list[AgentResponse] = []
         sent: list[Any] = []
         while (turn := strategy.next_turn(history)) is not None:

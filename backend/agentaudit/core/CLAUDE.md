@@ -15,6 +15,11 @@ the rest of the system consumes.
 - `sandbox.py:build_sandbox` — name → registered `Sandbox` instance.
 - `store.py:Store` — the only SQLite access point in the repository.
 - `discovery.py:discover` — probes a live endpoint (through `runner.run`) into an `AgentProfile`.
+- `attacker.py:build_refining_strategy` — optional attacker model that writes each adaptive
+  turn from the agent's actual reply. Off unless `refine: true` **and**
+  `AGENTAUDIT_ATTACKER_ENDPOINT`/`_MODEL` are set; falls back to the scripted ladder on any
+  model failure, so runs stay offline and deterministic by default. See
+  [`docs/specs/attacker.md`](../../../docs/specs/attacker.md).
 - `planner.py:plan` / `apply_plan` — profile + catalogs → `HarnessPlan`, then the runnable half.
 - `adapters.py:ADAPTERS` — promptfoo/garak report normalization into `TestResult`s.
 
@@ -23,7 +28,9 @@ the rest of the system consumes.
 - **`core` imports nothing from `domains`, `reports`, `web`, or `cli`.** It is the bottom of
   the dependency graph. If you need something from a layer above, the design is wrong.
 - **`httpx` may be imported only in `agent.py`.** Any other module reaching the network is a
-  boundary violation.
+  boundary violation. This is why `HTTPAttacker` (the attacker-model client for
+  `attacker.py`) lives in `agent.py` rather than beside the logic that uses it. Enforced by
+  `tests/test_security_p0.py::test_httpx_is_imported_in_exactly_one_core_module`.
 - **Runner/control-plane split inside this package:** `agent.py`, `sandbox.py`,
   `redaction.py`, `runner.py` are runner-side. `scoring.py`, `store.py`, `compliance.py`,
   `regressions.py` are control-plane-side and must operate purely on already-redacted
