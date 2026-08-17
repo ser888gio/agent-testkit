@@ -22,7 +22,7 @@ from sqlalchemy import create_engine
 import agentaudit.domains.email.sandbox  # noqa: F401
 import agentaudit.domains.treasury.sandbox  # noqa: F401
 from agentaudit.core.adapters import ADAPTERS
-from agentaudit.core.attacks import expand
+from agentaudit.core.attacks import TRANSFORMS, expand
 from agentaudit.core.config import ConfigError, load_target, load_target_dict
 from agentaudit.core.discovery import discover as discover_profile
 from agentaudit.core.loader import LoaderError, discover, filter_tests
@@ -230,7 +230,12 @@ def run_cmd(
     format: str = typer.Option("table", "--format"),
     compliance: bool = typer.Option(False, "--compliance"),
     attack: str | None = typer.Option(
-        None, "--attack", help="Comma-separated attack transforms to expand each test through."
+        None,
+        "--attack",
+        help=(
+            "Comma-separated attack transforms to expand each test through. "
+            f"Available: {', '.join(sorted(TRANSFORMS))}."
+        ),
     ),
     use_plan: bool = typer.Option(
         False, "--plan", help="Profile the target first and run only the tests it justifies."

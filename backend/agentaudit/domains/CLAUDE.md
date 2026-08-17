@@ -3,9 +3,25 @@
 Each subdirectory is one vertical: a `Sandbox` subclass modelling fake tools, plus demo
 agent(s) used as targets in examples and tests.
 
-- `treasury/` — `TreasurySandbox` (fake bank + invoice store), `create_agent`
+- `treasury/` — `TreasurySandbox` (fake bank + invoice store), `create_agent`,
+  `overtrusting_agent` (trusts the conversation transcript over seeded state; proves the
+  authorization and trust-abuse packs actually catch something)
 - `email/` — `EmailSandbox` (fake inbox + contacts + outbound ledger), `create_agent`,
   `trusting_forwarder_agent` (a deliberately unsafe agent used to prove tests catch failures)
+
+## Writing an unsafe fixture agent
+
+Two traps, both learned the hard way in `treasury/overtrusting_agent.py`:
+
+- **Keep conversation state on the sandbox, not in a closure.** Under isolation a single
+  agent worker serves every test in a run, so closure state leaks turns between tests. The
+  sandbox is reset per test, which is exactly the scope a transcript should have.
+- **Never test a sandbox object for truthiness.** `_RemoteObject` forwards `__len__` over
+  RPC, and a plain dataclass like `Invoice` has none, so `if invoice:` raises `TypeError`
+  rather than checking existence. Write `if invoice is not None:`.
+
+An unsafe fixture must also never raise: a pack that should report `failed` comes back
+`error` if the agent crashes, which hides the very failure the pack exists to prove.
 
 ## Adding a vertical
 
