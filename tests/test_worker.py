@@ -3,6 +3,7 @@ import time
 
 import pytest
 
+import agentaudit.worker as worker_module
 from agentaudit.core.store import Store
 from agentaudit.worker import PermanentJobError, execute_job, main, work_once
 
@@ -140,6 +141,48 @@ def test_agent_failures_are_evidence_not_job_failures(tmp_path):
     run, _ = store.get_run("org-a", store.get_job("org-a", job_id).run_id)
     assert [r.status.value for r in run.results] == ["error"]
     assert store.reclaim_jobs() == 0
+
+
+def test_a_worker_run_persists_the_plan_that_selected_its_tests(tmp_path):
+    """A hosted run is evidence too: `report --format plan` must not say "no planner"."""
+    store, job_id = _store_with_job(tmp_path)
+
+    work_once(store, "w1")
+
+    run_id = store.get_job("org-a", job_id).run_id
+    harness = store.get_run_plan("org-a", run_id)
+    assert harness is not None
+    assert harness.profile.id == "worker-target"
+    assert _TEST["id"] in harness.selected_ids()
+    # Every selection has to explain itself; that rationale is the whole point.
+    assert all(choice.reasons for choice in harness.selected)
+
+    # The stored evidence covers exactly the local half of the plan. Adapter-backed
+    # selections are ranked but executed out of band, so a run that claimed results
+    # for them would be reporting coverage that does not exist.
+    run, _ = store.get_run("org-a", run_id)
+    local = {c.test_id for c in harness.selected if c.source == "local"}
+    assert {r.test_id for r in run.results} == local
+
+
+def test_discovery_reuses_the_jobs_egress_decision(tmp_path, monkeypatch):
+    """Discovery must not open a second execution path around the egress check."""
+    seen: list[object] = []
+    real_run = worker_module.run_tests
+
+    def spy(cfg, cases, **kwargs):
+        seen.append(kwargs.get("endpoint", "MISSING"))
+        return real_run(cfg, cases, **kwargs)
+
+    monkeypatch.setattr(worker_module, "run_tests", spy)
+    store, _ = _store_with_job(tmp_path)
+
+    work_once(store, "w1")
+
+    # Probe calls and the graded run alike: every one carries the bound endpoint
+    # keyword, so none of them bypassed validate_endpoint above.
+    assert seen, "expected the worker to execute something"
+    assert "MISSING" not in seen
 
 
 def test_per_org_cap_stops_one_partner_starving_another(tmp_path):

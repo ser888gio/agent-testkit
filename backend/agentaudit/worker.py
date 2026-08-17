@@ -22,9 +22,13 @@ import uuid
 # as cli.py and web/app.py. Not dead imports.
 import agentaudit.domains.email.sandbox  # noqa: F401
 import agentaudit.domains.treasury.sandbox  # noqa: F401
+from agentaudit.core.adapters import ADAPTERS
 from agentaudit.core.config import ConfigError, HTTPSpec, load_target_dict
+from agentaudit.core.discovery import discover as discover_profile
 from agentaudit.core.egress import EgressError, EgressPolicy, validate_endpoint
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
+from agentaudit.core.planner import apply_plan
+from agentaudit.core.planner import plan as plan_harness
 from agentaudit.core.redaction import Redactor
 from agentaudit.core.runner import run as run_tests
 from agentaudit.core.scoring import score
@@ -139,9 +143,28 @@ def execute_job(store: Store, job: JobRow) -> str:
         )
     )
 
-    result = run_tests(target, tests, redactor=redactor, endpoint=endpoint)
+    # Every run below this line goes through the same bound execution path: the
+    # egress decision above is made once and reused, so discovery cannot reach an
+    # endpoint the job's policy already rejected.
+    def bound_run(cfg, cases):
+        return run_tests(cfg, cases, redactor=redactor, endpoint=endpoint)
+
+    harness = plan_harness(
+        discover_profile(target, runner=bound_run),
+        tests,
+        adapters=list(ADAPTERS.values()),
+    )
+    planned, unexecuted = apply_plan(harness, tests)
+    if unexecuted:
+        log.info(
+            "job %s: %d selected test(s) belong to external tools and are not executed here",
+            job.id,
+            len(unexecuted),
+        )
+
+    result = bound_run(target, planned)
     report = score(result)
-    store.save_run(job.org_id, target, result, report, job.created_by)
+    store.save_run(job.org_id, target, result, report, job.created_by, plan=harness)
     return result.run_id
 
 

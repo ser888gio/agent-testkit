@@ -386,11 +386,13 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
     from agentaudit.core.store import Store
 
     monkeypatch.setenv("PARTNER_TOKEN", SECRET)
-    seen: list[str] = []
+    seen: set[str] = set()
     real_run = worker_module.run_tests
 
     def spy(target, tests, **kwargs):
-        seen.extend(k for k, v in os.environ.items() if v == SECRET)
+        # Sampled on every execution, discovery probes included: each one is a
+        # moment the variable could have been exported and not yet restored.
+        seen.update(k for k, v in os.environ.items() if v == SECRET)
         return real_run(target, tests, **kwargs)
 
     monkeypatch.setattr(worker_module, "run_tests", spy)
@@ -428,7 +430,7 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
 
     # PARTNER_TOKEN is the deployment's own provisioning, which the worker read
     # from. It must not have grown a second copy under the config's var name.
-    assert seen == ["PARTNER_TOKEN"], seen
+    assert seen == {"PARTNER_TOKEN"}, seen
 
 
 def test_resolved_secret_is_added_to_the_run_redactor(tmp_path, monkeypatch):
