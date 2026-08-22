@@ -35,9 +35,10 @@ Start by reading the diff: `git diff` for unstaged, `git diff --staged`, or
 
 ## Repository traps to check for specifically
 
-- **Deleted `# noqa: F401` imports.** `import agentaudit.domains.<name>.sandbox` in `cli.py`
-  and `web/app.py` look like dead imports but trigger `@register_sandbox`. Removing one
-  breaks `build_sandbox` at runtime with no test-time import error in some paths.
+- **Deleted `# noqa: F401` imports.** The `sandbox` imports in
+  `backend/agentaudit/domains/__init__.py` look like dead imports but trigger
+  `@register_sandbox`. Removing one breaks `build_sandbox` at runtime with no test-time
+  import error in some paths.
 - **Renamed pack `id:` values.** These are the stable keys for `agentaudit compare` regression
   history. A rename silently breaks cross-run comparison.
 - **New `Category`/`Risk` enum values** without corresponding updates to `core/scoring.py`

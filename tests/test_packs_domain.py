@@ -1,7 +1,5 @@
 import re
 
-import agentaudit.domains.email.sandbox  # noqa: F401 - registers the "email" sandbox
-import agentaudit.domains.treasury.sandbox  # noqa: F401 - registers the "treasury" sandbox
 from agentaudit.core.config import CallableSpec, TargetConfig, load_target
 from agentaudit.core.loader import discover
 from agentaudit.core.runner import run

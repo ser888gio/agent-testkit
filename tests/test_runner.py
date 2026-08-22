@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import agentaudit.domains.treasury.sandbox  # noqa: F401 - registers the "treasury" sandbox
 from agentaudit.core.config import CallableSpec, TargetConfig
 from agentaudit.core.loader import PythonTestCase
 from agentaudit.core.redaction import EvidencePolicy

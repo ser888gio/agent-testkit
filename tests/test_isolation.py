@@ -4,10 +4,28 @@ from types import SimpleNamespace
 
 from agentaudit.core.assertions import AssertionContext, assertion
 from agentaudit.core.config import CallableSpec, TargetConfig
-from agentaudit.core.isolation import _apply_posix_limits
+from agentaudit.core.isolation import (
+    GRACE_SECONDS,
+    IsolatedRunner,
+    IsolationFailure,
+    _apply_posix_limits,
+)
 from agentaudit.core.runner import run
 from agentaudit.core.sandbox import Sandbox, register_sandbox
-from agentaudit.core.schema import Assertion, AssertionResult, Category, TestCase
+from agentaudit.core.schema import (
+    AdaptiveSpec,
+    Assertion,
+    AssertionResult,
+    Category,
+    TestCase,
+)
+
+
+def _case(test_id: str, **kwargs) -> TestCase:
+    if "turns" not in kwargs:
+        kwargs.setdefault("input", "hi")
+    kwargs.setdefault("assertions", [Assertion(name="response_nonempty")])
+    return TestCase(id=test_id, category=Category.reliability, **kwargs)
 
 MODULE = "tests.test_isolation"
 
@@ -184,3 +202,39 @@ def test_agent_is_dead_before_timeout_snapshot_is_taken():
 
     assert result.error == "timeout"
     assert result.sandbox_diff["changed"]["n"]["after"] == 1
+
+
+def test_the_child_budget_is_derived_from_the_test_not_the_caller(monkeypatch):
+    """The turn budget, the two test kinds and GRACE_SECONDS live on one side.
+
+    The runner used to compute this, which meant it had to know the ladder's
+    turn budget and a constant belonging to the isolation implementation.
+    """
+    seen: list[float] = []
+
+    def spy(self, kind, payload, deadline_s):
+        seen.append(deadline_s)
+        return None
+
+    monkeypatch.setattr(IsolatedRunner, "_request", spy)
+    isolated = IsolatedRunner(None, None)
+
+    isolated.run_test(_case("one.turn", timeout_s=2.0))
+    isolated.run_test(_case("three.turns", timeout_s=2.0, turns=["a", "b", "c"]))
+    isolated.run_test(
+        _case("a.b.adaptive", timeout_s=2.0, adaptive=AdaptiveSpec(max_turns=4))
+    )
+
+    assert seen == [2.0 + GRACE_SECONDS, 6.0 + GRACE_SECONDS, 8.0 + GRACE_SECONDS]
+
+
+def test_a_python_test_with_an_unusable_timeout_fails_before_it_spawns():
+    # PythonTestCase is a dataclass, so nothing validated this upstream.
+    isolated = IsolatedRunner(None, None)
+
+    result = isolated.run_python_test(
+        SimpleNamespace(id="t", timeout_s=float("inf"), fn=lambda *a: None)
+    )
+
+    assert isinstance(result, IsolationFailure)
+    assert result.error == "timeout_s must be finite and > 0"

@@ -43,6 +43,10 @@ Every hit must start `from agentaudit.core.` — anything else is a violation.
 
 ## Registration imports are load-bearing
 
-`cli.py` and `web/app.py` contain `import agentaudit.domains.<name>.sandbox  # noqa: F401`
-lines. They look like dead imports and are not — they trigger `@register_sandbox`. Removing
-them makes `build_sandbox` fail with `unknown sandbox`. Leave the `noqa` in place.
+`backend/agentaudit/domains/__init__.py` imports every built-in vertical's `sandbox` module
+with `# noqa: F401`. They look like dead imports and are not — they trigger
+`@register_sandbox`. Removing one makes `build_sandbox` fail with `unknown sandbox`.
+
+`core.sandbox.load_builtin_sandboxes` imports that package **by name** (`importlib`), which
+is why the boundary above still holds: there is no `import agentaudit.domains` at module
+scope anywhere in `core`. `build_sandbox` calls it, so no entry point repeats the import.

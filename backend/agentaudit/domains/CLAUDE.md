@@ -31,9 +31,9 @@ This is additive by design and must not require any change to `core/`:
 2. Implement `reset`, `apply_setup`, `snapshot`, and record side effects via `record_event`.
    Use `_unknown_setup_key` for unrecognised `setup` keys so bad packs fail loudly.
 3. Add YAML packs under `agentaudit/packs/<name>/` and a target config in `agentaudit/config/`.
-4. Register the import so the decorator runs — `cli.py` and `web/app.py` both import
-   `agentaudit.domains.<name>.sandbox` explicitly with `# noqa: F401`. Miss this and
-   `build_sandbox` raises `unknown sandbox`.
+4. Add the import to `domains/__init__.py` so the decorator runs. That package is what
+   `core.sandbox.load_builtin_sandboxes` imports by name; miss the line and `build_sandbox`
+   raises `unknown sandbox`. No entry point needs touching.
 5. Add `tests/test_<name>.py`.
 
 ## Constraints
