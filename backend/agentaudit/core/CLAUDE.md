@@ -22,6 +22,10 @@ the rest of the system consumes.
   verticals itself (`load_builtin_sandboxes`, by module name), so no caller carries a
   registration import; `sandbox_modules()` reports what a spawned child must import.
 - `store.py:Store` — the only SQLite access point in the repository.
+- `store.py:JobQueue` — the run queue, reached as `Store.jobs`: `enqueue`, `claim`,
+  `heartbeat`, `release`, `reclaim`, `get`, `list_recent`. Lease expiry, attempt caps
+  and terminal states live there, not among Store's row-mapping methods. It stays in
+  `store.py` because SQLite is reached only through this module.
 - `discovery.py:discover` — probes a live endpoint (through `runner.run`) into an `AgentProfile`.
 - `attacker.py:build_refining_strategy` — optional attacker model that writes each adaptive
   turn from the agent's actual reply. Off unless `refine: true` **and**

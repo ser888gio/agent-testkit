@@ -386,7 +386,7 @@ def connect_agent_page(principal: Principal = Depends(current_principal)) -> HTM
     # Default to whatever this org last launched -- derived, not a stored
     # preference. Jobs record the target's yaml `id` and the pack directory
     # name (_import_first_party), so map the path options back the same way.
-    last_jobs = get_store().list_jobs(principal.org_id, limit=1)
+    last_jobs = get_store().jobs.list_recent(principal.org_id, limit=1)
     default_target = default_pack = None
     if last_jobs:
         for rel in targets:
@@ -949,7 +949,7 @@ def run_status(
     # endpoint useful for queued/running work while retaining the finished-run
     # response for callers that already have a run id.
     try:
-        job = get_store().get_job(principal.org_id, run_id)
+        job = get_store().jobs.get(principal.org_id, run_id)
     except KeyError:
         job = None
     if job is not None:
@@ -1077,7 +1077,7 @@ def run_again(
     """Queue a run. The worker executes it; this handler never blocks on an agent."""
     store = get_store()
     target_id, pack_id = _import_first_party(store, principal.org_id, target, packs)
-    job_id = store.enqueue_job(principal.org_id, target_id, pack_id, created_by=principal.subject)
+    job_id = store.jobs.enqueue(principal.org_id, target_id, pack_id, created_by=principal.subject)
     return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 
@@ -1104,7 +1104,7 @@ def _job_status_payload(job) -> dict[str, object]:
 
 def _load_job_or_404(org_id: str, job_id: str):
     try:
-        return get_store().get_job(org_id, job_id)
+        return get_store().jobs.get(org_id, job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="job not found") from None
 
