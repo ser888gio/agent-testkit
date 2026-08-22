@@ -38,7 +38,7 @@ Per test (`_run_isolated`, `core/runner.py:277`):
 
 | Step | Where |
 | --- | --- |
-| deadline = `turns * timeout_s + GRACE_SECONDS` (5s) | parent |
+| deadline = `turns * timeout_s + GRACE_SECONDS` (5s) | `IsolatedRunner.run_test` |
 | test pickled with `cloudpickle`, sent over the pipe | parent → supervisor |
 | `sandbox.reset()` | supervisor |
 | agent turn(s) or Python test fn | worker, proxied |
