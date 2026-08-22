@@ -40,7 +40,7 @@ def _store_with_job(tmp_path, org: str = "org-a", **kw) -> tuple[Store, str]:
     store = Store(str(tmp_path / "worker.db"))
     store.save_target(org, "worker-target", "Worker Target", _TARGET_CONFIG)
     store.save_pack(org, "pack-1", "Pack One", [_TEST])
-    job_id = store.enqueue_job(org, "worker-target", "pack-1", **kw)
+    job_id = store.jobs.enqueue(org, "worker-target", "pack-1", **kw)
     return store, job_id
 
 
@@ -49,7 +49,7 @@ def test_work_once_runs_the_job_and_persists_the_run(tmp_path):
 
     assert work_once(store, "w1").id == job_id
 
-    job = store.get_job("org-a", job_id)
+    job = store.jobs.get("org-a", job_id)
     assert job.state == "done"
     assert job.lease_owner is None
     assert job.finished_at is not None
@@ -67,14 +67,14 @@ def test_work_once_returns_none_on_an_empty_queue(tmp_path):
 
 def test_unknown_target_fails_permanently_without_burning_retries(tmp_path):
     store = Store(str(tmp_path / "missing.db"))
-    job_id = store.enqueue_job("org-a", "nope", "also-nope")
+    job_id = store.jobs.enqueue("org-a", "nope", "also-nope")
 
     work_once(store, "w1")
 
-    job = store.get_job("org-a", job_id)
+    job = store.jobs.get("org-a", job_id)
     assert job.state == "failed"
     assert "unknown target or pack" in job.error
-    assert store.reclaim_jobs() == 0
+    assert store.jobs.reclaim() == 0
 
 
 def test_resolved_secret_is_not_written_to_job_errors_or_logs(tmp_path, monkeypatch, caplog):
@@ -90,20 +90,20 @@ def test_resolved_secret_is_not_written_to_job_errors_or_logs(tmp_path, monkeypa
         allowed_hosts=["agent.example.test"],
     )
     store.save_pack("org-a", "pack-1", "Pack One", [_TEST])
-    job_id = store.enqueue_job("org-a", "bad-endpoint", "pack-1")
+    job_id = store.jobs.enqueue("org-a", "bad-endpoint", "pack-1")
 
     with caplog.at_level("WARNING", logger="agentaudit.worker"):
         work_once(store, "w1")
 
-    job = store.get_job("org-a", job_id)
+    job = store.jobs.get("org-a", job_id)
     assert secret not in (job.error or "")
     assert secret not in caplog.text
 
 
 def test_execute_job_raises_permanent_for_a_foreign_orgs_target(tmp_path):
     store, _ = _store_with_job(tmp_path, org="org-a")
-    stolen = store.enqueue_job("org-b", "worker-target", "pack-1")
-    job = store.get_job("org-b", stolen)
+    stolen = store.jobs.enqueue("org-b", "worker-target", "pack-1")
+    job = store.jobs.get("org-b", stolen)
 
     with pytest.raises(PermanentJobError):
         execute_job(store, job)
@@ -119,9 +119,9 @@ def test_infrastructure_faults_are_left_for_lease_expiry(tmp_path, monkeypatch):
     work_once(store, "w1", lease_seconds=-1)
 
     # Still 'running' and unreleased -- the reclaim sweep owns the retry.
-    assert store.get_job("org-a", job_id).state == "running"
-    assert store.reclaim_jobs() == 1
-    assert store.get_job("org-a", job_id).state == "queued"
+    assert store.jobs.get("org-a", job_id).state == "running"
+    assert store.jobs.reclaim() == 1
+    assert store.jobs.get("org-a", job_id).state == "queued"
 
 
 def test_agent_failures_are_evidence_not_job_failures(tmp_path):
@@ -134,14 +134,14 @@ def test_agent_failures_are_evidence_not_job_failures(tmp_path):
         {"id": "boom", "agent": {"type": "callable", "callable": f"{MODULE}:create_broken_agent"}},
     )
     store.save_pack("org-a", "pack-1", "Pack One", [_TEST])
-    job_id = store.enqueue_job("org-a", "boom", "pack-1")
+    job_id = store.jobs.enqueue("org-a", "boom", "pack-1")
 
     work_once(store, "w1")
 
-    assert store.get_job("org-a", job_id).state == "done"
-    run, _ = store.get_run("org-a", store.get_job("org-a", job_id).run_id)
+    assert store.jobs.get("org-a", job_id).state == "done"
+    run, _ = store.get_run("org-a", store.jobs.get("org-a", job_id).run_id)
     assert [r.status.value for r in run.results] == ["error"]
-    assert store.reclaim_jobs() == 0
+    assert store.jobs.reclaim() == 0
 
 
 def test_a_worker_run_persists_the_plan_that_selected_its_tests(tmp_path):
@@ -150,7 +150,7 @@ def test_a_worker_run_persists_the_plan_that_selected_its_tests(tmp_path):
 
     work_once(store, "w1")
 
-    run_id = store.get_job("org-a", job_id).run_id
+    run_id = store.jobs.get("org-a", job_id).run_id
     harness = store.get_run_plan("org-a", run_id)
     assert harness is not None
     assert harness.profile.id == "worker-target"
@@ -189,10 +189,10 @@ def test_discovery_reuses_the_jobs_egress_decision(tmp_path, monkeypatch):
 def test_per_org_cap_stops_one_partner_starving_another(tmp_path):
     store = Store(str(tmp_path / "cap.db"))
     for _ in range(3):
-        store.enqueue_job("org-a", "t", "p")
-    b_job = store.enqueue_job("org-b", "t", "p")
+        store.jobs.enqueue("org-a", "t", "p")
+    b_job = store.jobs.enqueue("org-b", "t", "p")
 
-    claimed = [store.claim_job(f"w{i}", max_per_org=2) for i in range(3)]
+    claimed = [store.jobs.claim(f"w{i}", max_per_org=2) for i in range(3)]
 
     assert [j.org_id for j in claimed] == ["org-a", "org-a", "org-b"]
     assert claimed[2].id == b_job
@@ -205,11 +205,11 @@ def test_heartbeat_keeps_a_long_job_from_being_reclaimed(tmp_path, monkeypatch):
     done = threading.Thread(target=work_once, args=(store, "w1"), kwargs={"lease_seconds": 4})
     done.start()
     time.sleep(2.5)
-    reclaimed = store.reclaim_jobs()
+    reclaimed = store.jobs.reclaim()
     done.join(timeout=10)
 
     assert reclaimed == 0
-    assert store.get_job("org-a", job_id).state == "done"
+    assert store.jobs.get("org-a", job_id).state == "done"
 
 
 def _slow_run(target, tests, **kw):
@@ -231,11 +231,11 @@ def test_main_stops_when_signalled(tmp_path):
     deadline = time.time() + 10
     check = Store(str(tmp_path / "worker.db"))
     while time.time() < deadline:
-        if check.get_job("org-a", job_id).state == "done":
+        if check.jobs.get("org-a", job_id).state == "done":
             break
         time.sleep(0.1)
     stop.set()
     thread.join(timeout=10)
 
     assert not thread.is_alive()
-    assert check.get_job("org-a", job_id).state == "done"
+    assert check.jobs.get("org-a", job_id).state == "done"

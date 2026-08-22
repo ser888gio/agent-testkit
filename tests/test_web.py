@@ -1180,7 +1180,7 @@ def test_post_runs_queues_a_job_without_executing_it(tmp_path, monkeypatch):
     assert resp.status_code == 303
     job_id = resp.headers["location"].rsplit("/", 1)[-1]
     store = Store(str(tmp_path / "web.db"))
-    job = store.get_job(DEFAULT_ORG, job_id)
+    job = store.jobs.get(DEFAULT_ORG, job_id)
     assert job.state == "queued"
     assert job.run_id is None
     # No run executed inside the handler.
@@ -1207,13 +1207,13 @@ def test_job_status_reports_queued_running_and_done(tmp_path, monkeypatch):
     ).json()
     assert (legacy_body["state"], legacy_body["running"]) == ("queued", True)
 
-    store.claim_job("w1", lease_seconds=-1)
+    store.jobs.claim("w1", lease_seconds=-1)
     assert client.get(f"/jobs/{job_id}/status").json()["state"] == "running"
 
     from agentaudit.worker import work_once
 
     # w1 "died"; its lease has already expired, so the job comes back.
-    assert store.reclaim_jobs(max_attempts=99) == 1
+    assert store.jobs.reclaim(max_attempts=99) == 1
     work_once(store, "w2")
     body = client.get(f"/jobs/{job_id}/status").json()
     assert body["state"] == "done"

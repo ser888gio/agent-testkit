@@ -453,6 +453,178 @@ class _SQLitePool:
                 self._created -= 1
 
 
+def _job_by_id(conn: sqlite3.Connection, job_id: str) -> JobRow:
+    row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    return JobRow(**dict(row))
+
+
+class JobQueue:
+    """The run queue: lease, heartbeat, release, reclaim.
+
+    Split out of `Store` because its interface is its invariants -- a lease
+    expires, attempts cap, a terminal state is final -- and those were sitting
+    among thirty row-mapping methods that hide nothing. A reader asking "what
+    happens when a worker dies mid-job" now has one place to look, and the
+    worker's tests name a queue instead of a store.
+
+    It stays inside `store.py` on purpose: SQLite is reached only through this
+    module, and moving the SQL out to buy a shorter file would trade a rule that
+    is enforced for one that is not. `Store.jobs` is the whole seam.
+    """
+
+    def __init__(self, store: Store) -> None:
+        self._store = store
+
+    def enqueue(
+        self,
+        org_id: str,
+        target_id: str,
+        pack_id: str,
+        *,
+        created_by: str | None = None,
+        priority: int = 0,
+    ) -> str:
+        job_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+        with self._store._connection() as conn, conn:
+            self._store._ensure_org(conn, org_id, now)
+            conn.execute(
+                "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
+                "priority, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)",
+                (job_id, org_id, target_id, pack_id, created_by, priority, now),
+            )
+        return job_id
+
+    def claim(
+        self, owner: str, *, lease_seconds: int = 60, max_per_org: int | None = None
+    ) -> JobRow | None:
+        """Lease the highest-priority queued job, or return None if there is none.
+
+        Two workers racing is resolved by the `AND state = 'queued'` guard on the
+        update: the loser sees `rowcount == 0` and gets None, then polls again.
+        This is portable to Postgres as-is; `FOR UPDATE SKIP LOCKED` is an
+        optimization to add there if claim contention ever shows up in practice,
+        not a correctness requirement.
+
+        `max_per_org` skips orgs already at their running-job cap, so one partner
+        cannot starve the others.
+        """
+        now = datetime.now(timezone.utc)
+        now_text = now.isoformat()
+        expires = (now + timedelta(seconds=lease_seconds)).isoformat()
+        select = "SELECT id FROM jobs WHERE state = 'queued'"
+        params: tuple = ()
+        if max_per_org is not None:
+            # ponytail: two workers can each admit the last slot for one org and
+            # overshoot the cap by one, because the count is read before either
+            # commits. This is anti-starvation, not a safety limit, so ±1 is
+            # fine; make it exact with SELECT ... FOR UPDATE on Postgres if not.
+            select += (
+                " AND org_id NOT IN (SELECT org_id FROM jobs WHERE state = 'running'"
+                " GROUP BY org_id HAVING COUNT(*) >= ?)"
+            )
+            params = (max_per_org,)
+        with self._store._connection() as conn, conn:
+            # SQLite has no FOR UPDATE SKIP LOCKED.  BEGIN IMMEDIATE acquires
+            # the write lock before selecting a candidate, making the cap and
+            # the claim one atomic operation even across worker processes.
+            conn.execute("BEGIN IMMEDIATE")
+            candidate = conn.execute(
+                f"{select} ORDER BY priority DESC, created_at, id LIMIT 1", params
+            ).fetchone()
+            if candidate is None:
+                return None
+            cursor = conn.execute(
+                "UPDATE jobs SET state = 'running', lease_owner = ?, lease_expires_at = ?, "
+                "heartbeat_at = ?, started_at = COALESCE(started_at, ?), "
+                "attempt_count = attempt_count + 1 "
+                "WHERE id = ? AND state = 'queued'",
+                (owner, expires, now_text, now_text, candidate["id"]),
+            )
+            if cursor.rowcount != 1:
+                return None
+            return _job_by_id(conn, candidate["id"])
+
+    def heartbeat(self, job_id: str, owner: str, *, lease_seconds: int = 60) -> bool:
+        """Extend the lease. False means the lease was lost -- stop working."""
+        now = datetime.now(timezone.utc).isoformat()
+        expires = (datetime.fromisoformat(now) + timedelta(seconds=lease_seconds)).isoformat()
+        with self._store._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET lease_expires_at = ?, heartbeat_at = ? "
+                "WHERE id = ? AND lease_owner = ? AND state = 'running'",
+                (expires, now, job_id, owner),
+            )
+        return cursor.rowcount == 1
+
+    def release(
+        self,
+        job_id: str,
+        owner: str,
+        *,
+        state: str,
+        run_id: str | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Finish a job the caller holds the lease on. False means it was reclaimed."""
+        if state not in _TERMINAL_JOB_STATES:
+            raise ValueError(f"release state must be one of {_TERMINAL_JOB_STATES}")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._store._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET state = ?, run_id = ?, error = ?, finished_at = ?, "
+                "lease_owner = NULL, lease_expires_at = NULL "
+                "WHERE id = ? AND lease_owner = ? AND state = 'running'",
+                (state, run_id, error, now, job_id, owner),
+            )
+        return cursor.rowcount == 1
+
+    def reclaim(self, *, max_attempts: int = 3) -> int:
+        """Requeue jobs whose lease expired; fail those past `max_attempts`.
+
+        A live worker keeps its lease alive with `heartbeat`, so an expired
+        lease means the worker is gone -- not that the job is slow.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._store._connection() as conn, conn:
+            expired = "state = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?"
+            failed = conn.execute(
+                f"UPDATE jobs SET state = 'failed', error = 'lease expired', finished_at = ?, "
+                f"lease_owner = NULL, lease_expires_at = NULL "
+                f"WHERE {expired} AND attempt_count >= ?",
+                (now, now, max_attempts),
+            ).rowcount
+            requeued = conn.execute(
+                f"UPDATE jobs SET state = 'queued', lease_owner = NULL, lease_expires_at = NULL "
+                f"WHERE {expired}",
+                (now,),
+            ).rowcount
+        return failed + requeued
+
+    def get(self, org_id: str, job_id: str) -> JobRow:
+        # Another org's job is KeyError, same as missing -- see get_run.
+        with self._store._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE org_id = ? AND id = ?", (org_id, job_id)
+            ).fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        return JobRow(**dict(row))
+
+    def list_recent(
+        self, org_id: str, *, state: str | None = None, limit: int = 50
+    ) -> list[JobRow]:
+        query = "SELECT * FROM jobs WHERE org_id = ?"
+        params: tuple = (org_id,)
+        if state is not None:
+            query += " AND state = ?"
+            params += (state,)
+        query += " ORDER BY created_at DESC, id LIMIT ?"
+        with self._store._connection() as conn:
+            rows = conn.execute(query, (*params, limit)).fetchall()
+        return [JobRow(**dict(row)) for row in rows]
+
+
 class Store:
     """The only SQLite access point. Safe to share across threads."""
 
@@ -465,6 +637,7 @@ class Store:
         self._pool = _SQLitePool(self._path, pool_size)
         with self._connection():
             pass
+        self.jobs = JobQueue(self)
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -767,158 +940,6 @@ class Store:
     # `release_job`, and `reclaim_jobs` are deliberately *not*: a worker serves
     # every org, and its authority comes from `lease_owner`, not from a tenant
     # claim. They never return another org's evidence -- only job control rows.
-
-    def enqueue_job(
-        self,
-        org_id: str,
-        target_id: str,
-        pack_id: str,
-        *,
-        created_by: str | None = None,
-        priority: int = 0,
-    ) -> str:
-        job_id = uuid.uuid4().hex
-        now = datetime.now(timezone.utc).isoformat()
-        with self._connection() as conn, conn:
-            self._ensure_org(conn, org_id, now)
-            conn.execute(
-                "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
-                "priority, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)",
-                (job_id, org_id, target_id, pack_id, created_by, priority, now),
-            )
-        return job_id
-
-    def claim_job(
-        self, owner: str, *, lease_seconds: int = 60, max_per_org: int | None = None
-    ) -> JobRow | None:
-        """Lease the highest-priority queued job, or return None if there is none.
-
-        Two workers racing is resolved by the `AND state = 'queued'` guard on the
-        update: the loser sees `rowcount == 0` and gets None, then polls again.
-        This is portable to Postgres as-is; `FOR UPDATE SKIP LOCKED` is an
-        optimization to add there if claim contention ever shows up in practice,
-        not a correctness requirement.
-
-        `max_per_org` skips orgs already at their running-job cap, so one partner
-        cannot starve the others.
-        """
-        now = datetime.now(timezone.utc)
-        now_text = now.isoformat()
-        expires = (now + timedelta(seconds=lease_seconds)).isoformat()
-        select = "SELECT id FROM jobs WHERE state = 'queued'"
-        params: tuple = ()
-        if max_per_org is not None:
-            # ponytail: two workers can each admit the last slot for one org and
-            # overshoot the cap by one, because the count is read before either
-            # commits. This is anti-starvation, not a safety limit, so ±1 is
-            # fine; make it exact with SELECT ... FOR UPDATE on Postgres if not.
-            select += (
-                " AND org_id NOT IN (SELECT org_id FROM jobs WHERE state = 'running'"
-                " GROUP BY org_id HAVING COUNT(*) >= ?)"
-            )
-            params = (max_per_org,)
-        with self._connection() as conn, conn:
-            # SQLite has no FOR UPDATE SKIP LOCKED.  BEGIN IMMEDIATE acquires
-            # the write lock before selecting a candidate, making the cap and
-            # the claim one atomic operation even across worker processes.
-            conn.execute("BEGIN IMMEDIATE")
-            candidate = conn.execute(
-                f"{select} ORDER BY priority DESC, created_at, id LIMIT 1", params
-            ).fetchone()
-            if candidate is None:
-                return None
-            cursor = conn.execute(
-                "UPDATE jobs SET state = 'running', lease_owner = ?, lease_expires_at = ?, "
-                "heartbeat_at = ?, started_at = COALESCE(started_at, ?), "
-                "attempt_count = attempt_count + 1 "
-                "WHERE id = ? AND state = 'queued'",
-                (owner, expires, now_text, now_text, candidate["id"]),
-            )
-            if cursor.rowcount != 1:
-                return None
-            return self._job_by_id(conn, candidate["id"])
-
-    def heartbeat_job(self, job_id: str, owner: str, *, lease_seconds: int = 60) -> bool:
-        """Extend the lease. False means the lease was lost -- stop working."""
-        now = datetime.now(timezone.utc).isoformat()
-        expires = (datetime.fromisoformat(now) + timedelta(seconds=lease_seconds)).isoformat()
-        with self._connection() as conn, conn:
-            cursor = conn.execute(
-                "UPDATE jobs SET lease_expires_at = ?, heartbeat_at = ? "
-                "WHERE id = ? AND lease_owner = ? AND state = 'running'",
-                (expires, now, job_id, owner),
-            )
-        return cursor.rowcount == 1
-
-    def release_job(
-        self,
-        job_id: str,
-        owner: str,
-        *,
-        state: str,
-        run_id: str | None = None,
-        error: str | None = None,
-    ) -> bool:
-        """Finish a job the caller holds the lease on. False means it was reclaimed."""
-        if state not in _TERMINAL_JOB_STATES:
-            raise ValueError(f"release state must be one of {_TERMINAL_JOB_STATES}")
-        now = datetime.now(timezone.utc).isoformat()
-        with self._connection() as conn, conn:
-            cursor = conn.execute(
-                "UPDATE jobs SET state = ?, run_id = ?, error = ?, finished_at = ?, "
-                "lease_owner = NULL, lease_expires_at = NULL "
-                "WHERE id = ? AND lease_owner = ? AND state = 'running'",
-                (state, run_id, error, now, job_id, owner),
-            )
-        return cursor.rowcount == 1
-
-    def reclaim_jobs(self, *, max_attempts: int = 3) -> int:
-        """Requeue jobs whose lease expired; fail those past `max_attempts`.
-
-        A live worker keeps its lease alive with `heartbeat_job`, so an expired
-        lease means the worker is gone -- not that the job is slow.
-        """
-        now = datetime.now(timezone.utc).isoformat()
-        with self._connection() as conn, conn:
-            expired = "state = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?"
-            failed = conn.execute(
-                f"UPDATE jobs SET state = 'failed', error = 'lease expired', finished_at = ?, "
-                f"lease_owner = NULL, lease_expires_at = NULL "
-                f"WHERE {expired} AND attempt_count >= ?",
-                (now, now, max_attempts),
-            ).rowcount
-            requeued = conn.execute(
-                f"UPDATE jobs SET state = 'queued', lease_owner = NULL, lease_expires_at = NULL "
-                f"WHERE {expired}",
-                (now,),
-            ).rowcount
-        return failed + requeued
-
-    def get_job(self, org_id: str, job_id: str) -> JobRow:
-        # Another org's job is KeyError, same as missing -- see get_run.
-        with self._connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM jobs WHERE org_id = ? AND id = ?", (org_id, job_id)
-            ).fetchone()
-        if row is None:
-            raise KeyError(job_id)
-        return JobRow(**dict(row))
-
-    def list_jobs(self, org_id: str, *, state: str | None = None, limit: int = 50) -> list[JobRow]:
-        query = "SELECT * FROM jobs WHERE org_id = ?"
-        params: tuple = (org_id,)
-        if state is not None:
-            query += " AND state = ?"
-            params += (state,)
-        query += " ORDER BY created_at DESC, id LIMIT ?"
-        with self._connection() as conn:
-            rows = conn.execute(query, (*params, limit)).fetchall()
-        return [JobRow(**dict(row)) for row in rows]
-
-    @staticmethod
-    def _job_by_id(conn: sqlite3.Connection, job_id: str) -> JobRow:
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-        return JobRow(**dict(row))
 
     def save_run(
         self,
