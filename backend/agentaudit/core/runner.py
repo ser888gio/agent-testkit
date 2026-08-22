@@ -6,17 +6,18 @@ import concurrent.futures
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 from agentaudit.core.adaptive import build_strategy
 from agentaudit.core.agent import Agent, AgentResponse
 from agentaudit.core.assertions import AssertionContext, evaluate
-from agentaudit.core.attacker import build_refining_strategy
+from agentaudit.core.attacker import RefinementLog, build_refining_strategy
 from agentaudit.core.config import TargetConfig
 from agentaudit.core.egress import ValidatedEndpoint
 from agentaudit.core.isolation import IsolatedRunner, IsolationFailure
-from agentaudit.core.judge import build_judge
+from agentaudit.core.judge import JudgeLog, build_judge
 from agentaudit.core.loader import PythonTestCase
 from agentaudit.core.redaction import EvidencePolicy, Redactor
 from agentaudit.core.sandbox import Sandbox, sandbox_modules
@@ -91,18 +92,32 @@ def _redact_assertions(
     ]
 
 
+@dataclass
+class _Provenance:
+    """How this run's turns were produced, for the evidence record.
+
+    Empty for every scripted run. Carries names and a boolean only: the
+    attacker's rationale and the judge's reasoning are derived from agent
+    replies, so they stay out of anything persisted.
+    """
+
+    techniques: list[str] = field(default_factory=list)
+    degraded: bool = False
+
+
 def _run_turns(
     agent: Agent | None,
     test: TestCase,
     run_turn: Callable[[Any, float], AgentResponse] | None,
-) -> tuple[AgentResponse, Any]:
+) -> tuple[AgentResponse, Any, _Provenance]:
     # Single-input tests run one turn; multi-turn tests run each turn in
     # sequence WITHOUT resetting the sandbox between turns, so state (and
     # any poisoned memory) carries across turns like a server-side session.
     # The final turn's response is what assertions run against.
     #
-    # Returns the final response plus the turns actually sent, because an
-    # adaptive test's turns are generated here and are the only record of them.
+    # Returns the final response, the turns actually sent (an adaptive test's
+    # turns are generated here and are the only record of them), and how they
+    # were produced.
     def _send(turn: Any) -> AgentResponse:
         if run_turn is None:
             if agent is None:  # pragma: no cover - internal invariant
@@ -113,10 +128,13 @@ def _run_turns(
     if test.adaptive is not None:
         # Both model-driven layers are opt-in and return None when
         # unconfigured, so the scripted ladder with its substring stop check
-        # stays the default path for every offline run.
-        judge = build_judge()
+        # stays the default path for every offline run. The logs are passed in
+        # rather than left to default so what they record survives the call.
+        refinement_log = RefinementLog()
+        judge_log = JudgeLog()
+        judge = build_judge(log=judge_log)
         strategy = build_refining_strategy(
-            test.input, test.adaptive, judge=judge
+            test.input, test.adaptive, log=refinement_log, judge=judge
         ) or build_strategy(test.input, test.adaptive, judge)
         history: list[AgentResponse] = []
         sent: list[Any] = []
@@ -126,14 +144,18 @@ def _run_turns(
             history.append(response)
             if response.error == "timeout":
                 break
-        return history[-1], sent
+        provenance = _Provenance(
+            techniques=list(refinement_log.techniques),
+            degraded=refinement_log.degraded or judge_log.degraded,
+        )
+        return history[-1], sent, provenance
 
     turns = test.turns if test.turns else [test.input]
     for turn in turns:
         response = _send(turn)
         if response.error == "timeout":
             break
-    return response, (test.turns if test.turns else test.input)
+    return response, (test.turns if test.turns else test.input), _Provenance()
 
 
 def run_one(
@@ -155,7 +177,7 @@ def run_one(
         else:
             before = None
 
-        response, request = _run_turns(agent, test, run_turn)
+        response, request, provenance = _run_turns(agent, test, run_turn)
 
         # An isolated turn runner kills the agent worker before returning a
         # timeout, so the supervisor-owned sandbox is stable.  Direct calls to
@@ -192,6 +214,8 @@ def run_one(
             response=response_evidence,
             sandbox_diff=redactor.redact(diff) if diff is not None else None,
             error=redactor.redact_text(response.error) if response.error else None,
+            techniques=provenance.techniques,
+            degraded=provenance.degraded,
             started_at=started,
             finished_at=_now(),
         )

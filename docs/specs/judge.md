@@ -60,7 +60,8 @@ as the attacker model.
   reports the wrong turn as the finding, so the cheap error is the one to prefer.
 - **Failure degrades to substrings.** Unreachable, non-JSON, or an unusable verdict all
   return `None` and log a fallback. `JudgeLog.degraded` exists so a report cannot describe
-  a run as judged when it silently fell back.
+  a run as judged when it silently fell back; `runner.py` ORs it into `TestResult.degraded`,
+  so a fallback in either the attacker or the judge marks the result.
 - **Replies are redacted before leaving the process.** Same boundary and same
   builtins-on default as `RefiningStrategy`; `tests/test_judge.py` mutation-checks it.
 - **`temperature=0.0`.** Judging is scoring: the same reply must produce the same verdict

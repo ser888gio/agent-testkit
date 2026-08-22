@@ -52,3 +52,18 @@ def detail_for(result: TestResult) -> str:
     if failed:
         return failed[0].detail
     return result.error or ""
+
+
+def provenance_for(result: TestResult) -> str:
+    """How this result's turns were produced, or "" for an ordinary scripted run.
+
+    Kept beside `detail_for` so no renderer has to decide for itself what
+    "model-written" means. A degraded run is called out explicitly: silence
+    would let a report imply a model probed when it fell back to the script.
+    """
+    parts: list[str] = []
+    if result.techniques:
+        parts.append("via " + ", ".join(result.techniques))
+    if result.degraded:
+        parts.append("degraded to scripted ladder")
+    return " ".join(parts)

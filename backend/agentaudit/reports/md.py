@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agentaudit.core.attacks import split_variant
-from agentaudit.core.findings import detail_for, failures
+from agentaudit.core.findings import detail_for, failures, provenance_for
 from agentaudit.core.schema import RunResult
 from agentaudit.core.scoring import ScoreReport
 
@@ -35,7 +35,9 @@ def _failure_lines(failing) -> list[str]:
     grouped: dict[str, list[tuple[str | None, str]]] = {}
     for r in failing:
         base, transform = split_variant(r.test_id)
-        grouped.setdefault(base, []).append((transform, detail_for(r)))
+        provenance = provenance_for(r)
+        detail = f"{detail_for(r)} ({provenance})" if provenance else detail_for(r)
+        grouped.setdefault(base, []).append((transform, detail))
 
     lines: list[str] = []
     for base, entries in grouped.items():
