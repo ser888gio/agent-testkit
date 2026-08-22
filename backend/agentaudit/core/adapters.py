@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - argv lists only, resolved binary, never a shell
 import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -205,9 +205,13 @@ class ExternalEvalAdapter(ABC):
     # unbounded amount of traffic aimed at someone else's endpoint.
     timeout_s: float = 900.0
 
-    @abstractmethod
+    def _binary(self) -> str | None:
+        """Absolute path to the backing tool, or None when it is not installed."""
+        return shutil.which(self.name)
+
     def available(self) -> bool:
         """Is the backing tool installed and runnable on this machine?"""
+        return self._binary() is not None
 
     @abstractmethod
     def catalog(self, profile: AgentProfile) -> list[TestCatalogEntry]:
@@ -272,7 +276,8 @@ class ExternalEvalAdapter(ABC):
         items = self.selected_items(profile, selected)
         if not items:
             return []
-        if not self.available():
+        binary = self._binary()
+        if binary is None:
             return [
                 self._failure(
                     f"{self.name} is not installed on this runner", evidence, started_at
@@ -284,8 +289,14 @@ class ExternalEvalAdapter(ABC):
             work_dir = Path(tmp)
             try:
                 argv = self._invocation(profile, endpoint, items, work_dir)
-                completed = subprocess.run(  # noqa: S603 - argv list, never a shell
-                    argv,
+                if not argv or argv[0] != self.name:
+                    raise ValueError(f"{self.name} adapter built a foreign invocation")
+                # The only executable ever spawned is this adapter's own tool, at
+                # the path `_binary()` resolved. Everything after argv[0] is a
+                # value argument in a list -- no shell, so no word splitting and
+                # nothing for an endpoint string to escape into.
+                completed = subprocess.run(  # nosec B603 - resolved binary, argv list, no shell
+                    [binary, *argv[1:]],
                     cwd=work_dir,
                     capture_output=True,
                     text=True,
@@ -355,9 +366,6 @@ class PromptfooAdapter(ExternalEvalAdapter):
     # Plugins worth running for an agent that only talks, versus one that acts.
     _BASE_PLUGINS = ("harmful", "prompt-extraction", "pii", "hallucination")
     _ACTING_PLUGINS = ("excessive-agency", "rbac", "bola", "ssrf", "tool-discovery")
-
-    def available(self) -> bool:
-        return shutil.which("promptfoo") is not None
 
     def _plugins(self, profile: AgentProfile) -> list[str]:
         plugins = list(self._BASE_PLUGINS)
@@ -523,9 +531,6 @@ class GarakAdapter(ExternalEvalAdapter):
 
     _BASE_PROBES = ("promptinject", "dan", "encoding", "leakreplay")
     _ACTING_PROBES = ("xss", "packagehallucination", "malwaregen")
-
-    def available(self) -> bool:
-        return shutil.which("garak") is not None
 
     def probes(
         self,

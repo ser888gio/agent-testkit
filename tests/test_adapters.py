@@ -244,7 +244,7 @@ def _acting() -> AgentProfile:
 def _fake_run(monkeypatch, adapter, *, returncode=0, stderr="", report=None):
     """Stand in for the tool: record the argv, leave the report it would leave."""
     seen: dict = {}
-    monkeypatch.setattr(type(adapter), "available", lambda self: True)
+    monkeypatch.setattr(type(adapter), "_binary", lambda self: f"/usr/bin/{self.name}")
 
     def fake(argv, **kwargs):
         seen["argv"] = argv
@@ -277,7 +277,8 @@ def test_execute_runs_only_what_the_plan_selected(monkeypatch, tmp_path):
     # Scanning more than the plan chose would bill someone else's endpoint for
     # evidence nobody asked for.
     assert written["config"]["redteam"]["plugins"] == ["pii"]
-    assert seen["argv"][0] == "promptfoo"
+    # Spawned by resolved path, never by whatever "promptfoo" means on PATH now.
+    assert seen["argv"][0] == "/usr/bin/promptfoo"
     assert results, "the report should have normalized into results"
 
 
@@ -291,7 +292,7 @@ def test_execute_with_nothing_selected_runs_nothing(monkeypatch):
 
 def test_a_missing_tool_is_an_error_result_not_silence(monkeypatch):
     adapter = GarakAdapter()
-    monkeypatch.setattr(GarakAdapter, "available", lambda self: False)
+    monkeypatch.setattr(GarakAdapter, "_binary", lambda self: None)
 
     results = adapter.execute(_acting(), "https://agent.example")
 
@@ -319,7 +320,7 @@ def test_a_run_that_grades_nothing_reports_redacted_diagnostics(monkeypatch):
 
 def test_a_blown_budget_is_an_error_result(monkeypatch):
     adapter = GarakAdapter()
-    monkeypatch.setattr(GarakAdapter, "available", lambda self: True)
+    monkeypatch.setattr(GarakAdapter, "_binary", lambda self: "/usr/bin/garak")
 
     def timeout(argv, **kwargs):
         raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
