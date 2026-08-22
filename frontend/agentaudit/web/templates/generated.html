@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_components.html" import empty_state %}
+{% block title %}Generated - agentaudit{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Review queue</p>
+    <h1>Generated tests</h1>
+    <p class="page-subtitle">
+      Machine-authored attacks awaiting review. They run while provisional, then expire
+      unless promoted. Promoting one adds it to the reviewed baseline and freezes its ID,
+      which starts a fresh regression history for that test.
+    </p>
+  </div>
+</header>
+{% if not candidates %}
+{{ empty_state("Nothing to review", "Run `agentaudit evolve` to generate candidate attacks.") }}
+{% else %}
+<section class="panel">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col">Test</th>
+        <th scope="col">Category</th>
+        <th scope="col">Risk</th>
+        <th scope="col">Probe</th>
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in candidates %}
+      <tr data-testid="generated-row">
+        <td>
+          <code>{{ c.id }}</code>
+          {% if c.still_failing %}
+          <span class="badge badge-failed" title="This test is currently catching a defect.">catching a defect</span>
+          {% endif %}
+          <div class="muted">promotes to <code>{{ c.promoted_id }}</code></div>
+        </td>
+        <td>{{ c.category }}</td>
+        <td>{{ c.risk }}</td>
+        <td class="truncate">{{ c.input }}</td>
+        <td class="row-actions">
+          <form method="post" action="/generated/promote">
+            {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+            <input type="hidden" name="test_id" value="{{ c.id }}">
+            <button type="submit" data-testid="promote">Promote</button>
+          </form>
+          <form method="post" action="/generated/reject">
+            {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+            <input type="hidden" name="test_id" value="{{ c.id }}">
+            <button type="submit" class="button-secondary" data-testid="reject">Reject</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

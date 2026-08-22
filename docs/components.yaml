@@ -34,6 +34,8 @@ components:
       - Endpoint discovery and agent profiling
       - Test catalog metadata, ranking, and harness planning
       - Coverage archive: one elite attack per (category, style) cell
+      - Attack generation loop (opt-in, needs an attacker model)
+      - Generated-test promotion (human-gated) and coverage reporting
       - Adapters normalizing third-party eval reports (promptfoo, garak)
       - Test execution (single- and multi-turn), which never raises
       - Killable process isolation and sandbox RPC supervision
@@ -52,6 +54,7 @@ components:
       - backend/agentaudit/core/discovery.py    # discover() -> AgentProfile
       - backend/agentaudit/core/planner.py      # plan(), apply_plan()
       - backend/agentaudit/core/archive.py      # Archive.admit(), empty_cells()
+      - backend/agentaudit/core/evolve.py       # evolve(), build_generator()
       - backend/agentaudit/core/agent.py        # build_agent()
       - backend/agentaudit/core/sandbox.py      # build_sandbox(), register_sandbox()
       - backend/agentaudit/core/store.py        # Store

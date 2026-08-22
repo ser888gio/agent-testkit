@@ -138,3 +138,42 @@ stability across identical campaigns.
 Verified end to end against a stub OpenAI-compatible endpoint: three candidates generated
 into three *different* cells, persisted, then re-run with every `AGENTAUDIT_ATTACKER_*`
 variable unset — they pass offline, deterministically, with no network.
+
+## Promotion (two-tier)
+
+Generated tests are provisional. They live in the `generated` pack, marked
+`created_by="evolve"`, and run while provisional so they can prove themselves — but they
+are never folded into the reviewed baseline automatically.
+
+`/generated` is the review queue. **Promote** rewrites only the first id segment
+(`generated.tool_misuse.abc` -> `promoted.tool_misuse.abc`) and moves the row into the
+`promoted` pack; **Reject** deletes it. Both are `require_admin` + CSRF, because promotion
+mutates the audited baseline.
+
+Two details matter:
+
+- **Only the first segment moves.** `compliance.py:_pack_of` reads the ASI control off the
+  second segment, so preserving it keeps the mapping intact. Verified by a test.
+- **Promotion is the one moment an id changes, and it is deliberate.** Afterwards the id is
+  frozen. `regressions.py` keys history on `test_id`, so promotion starts a fresh
+  regression history for that test — the queue says so rather than letting a reviewer
+  discover it later.
+
+A candidate that is still catching a defect is flagged in the queue rather than expired.
+Retiring a live finding to save runtime is the one outcome retention must not produce.
+
+## Coverage report
+
+`agentaudit report --run <id> --format coverage` answers the question the other reports
+cannot: *what did you not test*. An absent finding and an absent test look identical in a
+pass/fail list, and only one of them is good news.
+
+It also **counts machine-authored evidence separately from reviewed evidence**. A generated
+test is real evidence, but no human has looked at it, so folding both into one number
+would let an unreviewed test move a compliance figure on its own. Origins are reported as
+hand-authored / promoted / generated, and a run containing generated results carries an
+explicit caveat.
+
+Unprobed cells are restricted to the categories the run actually touched — the full 9x25
+product would report an agent as uncovered for categories nobody intended to probe, which
+is noise rather than a finding.

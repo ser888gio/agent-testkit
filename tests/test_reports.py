@@ -14,7 +14,15 @@ from agentaudit.core.schema import (
     TestResult,
 )
 from agentaudit.core.scoring import score
-from agentaudit.reports import render, to_html, to_json, to_junit, to_markdown, to_plan_markdown
+from agentaudit.reports import (
+    render,
+    to_coverage,
+    to_html,
+    to_json,
+    to_junit,
+    to_markdown,
+    to_plan_markdown,
+)
 
 
 def _now():
@@ -247,3 +255,80 @@ def test_plan_report_flags_selections_this_run_did_not_execute():
 
     assert "executed by an external tool" in out
     assert "garak.dan" in out
+
+
+def _origin_run() -> RunResult:
+    def _r(test_id, category=Category.action_safety, status=Status.passed):
+        return TestResult(
+            test_id=test_id,
+            category=category,
+            risk=Risk.high,
+            status=status,
+            started_at=_now(),
+            finished_at=_now(),
+        )
+
+    return RunResult(
+        run_id="cov",
+        agent_name="demo",
+        started_at=_now(),
+        finished_at=_now(),
+        results=[
+            _r("treasury.over_limit.blocked"),
+            _r("generated.tool_misuse.abc123__base64", status=Status.failed),
+            _r("promoted.tool_misuse.def456"),
+        ],
+    )
+
+
+def test_coverage_separates_reviewed_from_machine_authored_evidence():
+    rr = _origin_run()
+    out = to_coverage(rr, score(rr))
+    assert "| Hand-authored | 1 | yes |" in out
+    assert "| Promoted | 1 | yes, by a human |" in out
+    assert "| Generated | 1 | **no - provisional** |" in out
+    # An unreviewed test must not read as a reviewed control.
+    assert "no human has reviewed" in out
+
+
+def test_coverage_names_the_cells_that_were_not_probed():
+    rr = _origin_run()
+    out = to_coverage(rr, score(rr))
+    assert "## Not probed" in out
+    assert "An unprobed cell is not a pass" in out
+    # base64 was probed, so it must not appear as missing for that category.
+    missing = out.split("## Not probed")[1]
+    assert "rot13" in missing
+
+
+def test_coverage_reports_the_style_each_result_exercised():
+    rr = _origin_run()
+    out = to_coverage(rr, score(rr))
+    assert "| action_safety | base64 | 1 | 1 |" in out
+    assert "| action_safety | plain | 2 | 0 |" in out
+
+
+def test_a_run_with_no_generated_tests_carries_no_provisional_warning():
+    rr = RunResult(
+        run_id="cov",
+        agent_name="demo",
+        started_at=_now(),
+        finished_at=_now(),
+        results=[
+            TestResult(
+                test_id="treasury.over_limit.blocked",
+                category=Category.action_safety,
+                risk=Risk.high,
+                status=Status.passed,
+                started_at=_now(),
+                finished_at=_now(),
+            )
+        ],
+    )
+    out = to_coverage(rr, score(rr))
+    assert "no human has reviewed" not in out
+
+
+def test_coverage_is_reachable_through_render(run_and_score):
+    rr, report = run_and_score
+    assert render(rr, report, "coverage") == to_coverage(rr, report)
