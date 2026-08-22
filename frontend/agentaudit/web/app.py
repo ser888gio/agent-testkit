@@ -18,6 +18,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
 
 import agentaudit
+from agentaudit.core import runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.attacks import split_variant
 from agentaudit.core.evolve import (
@@ -26,11 +27,11 @@ from agentaudit.core.evolve import (
     promotable,
     promoted_id,
 )
-from agentaudit.core.findings import failed_assertions
+from agentaudit.core.findings import order_by_failure
 from agentaudit.core.loader import LoaderError, discover
 from agentaudit.core.redaction import builtin_pattern_names
 from agentaudit.core.regressions import compare
-from agentaudit.core.schema import Category, Risk, Status, TestCase
+from agentaudit.core.schema import Category, Risk, TestCase
 from agentaudit.core.store import Store
 from agentaudit.web.auth import (
     LOGIN_STATE_COOKIE,
@@ -59,7 +60,6 @@ USER_PACK_ID = "user"
 
 _ENV_REFS_RE = re.compile(r"\$\{([A-Za-z_]\w*)\}")
 
-_NEVER_RUN = "never run"
 _ACCEPT_JSON = "application/json"
 
 
@@ -83,8 +83,6 @@ _env = Environment(
     autoescape=select_autoescape(["html"]),
 )
 
-_STATUS_RANK = {"failed": 0, "error": 0, "passed": 1, "skipped": 2}
-_BAD_STATUSES = {"failed", "error"}
 _STATUS_LABELS = {
     "all": "All statuses",
     "failed": "Failed",
@@ -206,137 +204,15 @@ def logout(request: Request) -> RedirectResponse:
     return response
 
 
-def _pct(value: float | int | None) -> int:
-    if value is None:
-        return 0
-    return int(float(value) * 100)
-
-
-def _short_date(value) -> str:
-    text = value.isoformat() if hasattr(value, "isoformat") else str(value or "")
-    return text[:16].replace("T", " ")
-
-
-def _duration_ms(started, finished) -> float | None:
-    try:
-        return max(0.0, (finished - started).total_seconds() * 1000)
-    except TypeError:
-        return None
-
-
-def _summary_total(summary: dict) -> int:
-    return sum(summary.get("by_status", {}).values())
-
-
-def _run_view(row) -> dict:
-    score = row.score
-    by_status = row.summary.get("by_status", {})
-    total = _summary_total(row.summary)
-    failed = by_status.get("failed", 0) + by_status.get("error", 0)
-    return {
-        "row": row,
-        "id": row.id,
-        "short_id": row.id[:8],
-        "agent_id": row.agent_id,
-        "started": _short_date(row.started_at),
-        # CLI runs have no principal; show that rather than inventing one.
-        "launched_by": row.created_by_email or row.created_by or "CLI",
-        "finished": _short_date(row.finished_at),
-        "status": row.status,
-        "by_status": by_status,
-        "score_percent": _pct(score.get("overall_score", 0)),
-        "pass_percent": _pct(score.get("pass_rate", 0)),
-        "critical_failures": score.get("critical_failures", 0),
-        "total": total,
-        "failed": failed,
-        "passed": by_status.get("passed", 0),
-        "skipped": by_status.get("skipped", 0),
-        "needs_attention": row.status in _BAD_STATUSES or score.get("critical_failures", 0) > 0,
-    }
-
-
-def _filter_rows(rows: list[dict], q: str = "", status: str = "all") -> list[dict]:
-    q = q.strip().lower()
-    filtered = []
-    for row in rows:
-        haystack = " ".join(
-            str(row.get(k, "")) for k in ("id", "agent_id", "test_id", "category")
-        ).lower()
-        if q and q not in haystack:
-            continue
-        if status != "all" and row.get("status") != status:
-            continue
-        filtered.append(row)
-    return filtered
-
-
-def _filter_run_rows(rows: list[dict], q: str = "", status: str = "all") -> list[dict]:
-    rows = _filter_rows(rows, q=q, status="all")
-    if status == "all":
-        return rows
-
-    filtered = []
-    for row in rows:
-        by_status = row.get("by_status", {})
-        failed_count = by_status.get("failed", 0) + by_status.get("error", 0)
-        if status == "passed" and row.get("status") == "passed" and failed_count == 0:
-            filtered.append(row)
-        elif status in {"failed", "error", "skipped"} and (
-            by_status.get(status, 0) > 0 or (status == "failed" and row.get("status") == "failed")
-        ):
-            filtered.append(row)
-    return filtered
-
-
 def _runs_page(request: Request, org_id: str) -> HTMLResponse:
-    store = get_store()
-    q = request.query_params.get("q", "")
-    status = request.query_params.get("status", "all")
-    agent = request.query_params.get("agent", "all")
-    sort = request.query_params.get("sort", "attention")
-
-    run_rows = [_run_view(r) for r in store.list_runs(org_id, limit=100)]
-    if agent != "all":
-        run_rows = [r for r in run_rows if r["agent_id"] == agent]
-    run_rows = _filter_run_rows(run_rows, q=q, status=status)
-
-    if sort == "score":
-        run_rows.sort(key=lambda r: (r["score_percent"], r["started"]))
-    elif sort == "agent":
-        run_rows.sort(key=lambda r: (r["agent_id"], r["started"]), reverse=True)
-    else:
-        run_rows.sort(
-            key=lambda r: (
-                not r["needs_attention"],
-                -r["critical_failures"],
-                r["status"] not in _BAD_STATUSES,
-                r["started"],
-            )
-        )
-
-    all_runs = [_run_view(r) for r in store.list_runs(org_id, limit=100)]
-    total_runs = len(all_runs)
-    failed_runs = sum(1 for r in all_runs if r["status"] in _BAD_STATUSES)
-    critical_failures = sum(r["critical_failures"] for r in all_runs)
-    avg_score = int(sum(r["score_percent"] for r in all_runs) / total_runs) if total_runs else 0
-    agents = sorted({r["agent_id"] for r in all_runs})
-    attention = [r for r in run_rows if r["needs_attention"]][:5]
-
-    return _render(
-        "dashboard.html",
-        runs=run_rows[:30],
-        all_runs=all_runs,
-        attention=attention,
-        filters={"q": q, "status": status, "agent": agent, "sort": sort},
-        agents=agents,
-        stats={
-            "total_runs": total_runs,
-            "failed_runs": failed_runs,
-            "critical_failures": critical_failures,
-            "avg_score": avg_score,
-        },
-        active="runs",
-    )
+    filters = {
+        "q": request.query_params.get("q", ""),
+        "status": request.query_params.get("status", "all"),
+        "agent": request.query_params.get("agent", "all"),
+        "sort": request.query_params.get("sort", "attention"),
+    }
+    view = runview.dashboard(get_store().list_runs(org_id, limit=100), **filters)
+    return _render("dashboard.html", **view, filters=filters, active="runs")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -419,7 +295,7 @@ def agent_detail(agent_id: str, principal: Principal = Depends(current_principal
     runs = store.list_runs(principal.org_id, agent_id)
     matrix = store.pass_fail_matrix(principal.org_id, agent_id)
     latest_run_id = runs[0].id if runs else None
-    run_views = [_run_view(r) for r in runs]
+    run_views = [runview.run_row(r) for r in runs]
     failures = [r for r in run_views if r["needs_attention"]]
     return _render(
         "agent_detail.html",
@@ -437,62 +313,23 @@ def get_packs_dir() -> Path:
     return Path(os.environ.get("AGENTAUDIT_PACKS", str(PACKAGE_DIR / "packs")))
 
 
-def _test_rows(store: Store, org_id: str) -> list[dict]:
-    """Authored tests plus tests observed in this org's runs.
+def _shipped_tests() -> list[tuple[str, TestCase]]:
+    """(pack_id, TestCase) for every YAML test in the shipped packs directory.
 
-    An authored test that has never run still belongs on the page; run history
-    supplies its latest status when a test id identifies exactly one authored
-    test. Test ids are only unique within a pack, so duplicate ids must remain
-    separate instead of silently overwriting one another.
-
-    Shipped packs come first so an authored test or run history for the same id
-    overwrites them, not the other way round.
+    AGENTAUDIT_PACKS may point somewhere that does not exist yet; an absent
+    packs directory means no shipped tests, not a 500. discover() also loads
+    Python test modules, which carry no metadata to render, so only YAML-backed
+    TestCases reach the library table.
     """
-    rows: dict[tuple[str | None, str], dict] = {}
-    # AGENTAUDIT_PACKS may point somewhere that does not exist yet; an absent
-    # packs directory means no shipped tests, not a 500.
     packs_root = get_packs_dir()
-    shipped = (
-        sorted(p for p in packs_root.iterdir() if _is_pack_dir(p)) if packs_root.is_dir() else []
-    )
-    for pack_dir in shipped:
-        for test in discover(str(pack_dir)):
-            # discover() also loads Python test modules, which carry no metadata
-            # to render; only YAML-backed TestCases belong in the library table.
-            if not isinstance(test, TestCase):
-                continue
-            rows[(pack_dir.name, test.id)] = {
-                "pack_id": pack_dir.name,
-                "test_id": test.id,
-                "id": test.id,
-                "category": test.category.value,
-                "risk": test.risk.value,
-                "status": _NEVER_RUN,
-                "latest_status": _NEVER_RUN,
-                "latest_run_id": None,
-                "latest_agent_id": None,
-                "run_count": 0,
-                "authored": False,
-            }
-    for t in store.list_authored_tests(org_id):
-        rows[(t["pack_id"], t["test_id"])] = {
-            **t,
-            "id": t["test_id"],
-            "status": _NEVER_RUN,
-            "latest_status": _NEVER_RUN,
-            "latest_run_id": None,
-            "latest_agent_id": None,
-            "run_count": 0,
-            "authored": True,
-        }
-    for t in store.list_tests(org_id):
-        matches = [key for key in rows if key[1] == t["test_id"]]
-        key = matches[0] if len(matches) == 1 else (None, t["test_id"])
-        row = rows.setdefault(key, {"authored": False, "pack_id": None})
-        row.update(t)
-        row["id"] = t["test_id"]
-        row["status"] = t["latest_status"]
-    return list(rows.values())
+    if not packs_root.is_dir():
+        return []
+    return [
+        (pack_dir.name, test)
+        for pack_dir in sorted(p for p in packs_root.iterdir() if _is_pack_dir(p))
+        for test in discover(str(pack_dir))
+        if isinstance(test, TestCase)
+    ]
 
 
 @app.get("/generated", response_class=HTMLResponse)
@@ -508,9 +345,7 @@ def generated_page(principal: Principal = Depends(current_principal)) -> HTMLRes
         rows = store.get_pack_tests(principal.org_id, GENERATED_PREFIX)
     except KeyError:
         rows = []
-    statuses = {
-        t["test_id"]: t["latest_status"] for t in store.list_tests(principal.org_id)
-    }
+    statuses = {t["test_id"]: t["latest_status"] for t in store.list_tests(principal.org_id)}
     return _render(
         "generated.html",
         candidates=promotable(rows, statuses),
@@ -574,20 +409,17 @@ def tests_page(request: Request, principal: Principal = Depends(current_principa
     status = request.query_params.get("status", "all")
     risk = request.query_params.get("risk", "all")
     category = request.query_params.get("category", "all")
-    rows = _test_rows(store, principal.org_id)
-    rows = _filter_rows(rows, q=q, status=status)
+    rows = runview.library(
+        _shipped_tests(),
+        store.list_authored_tests(principal.org_id),
+        store.list_tests(principal.org_id),
+    )
+    rows = runview.filter_rows(rows, q=q, status=status)
     if risk != "all":
         rows = [r for r in rows if r["risk"] == risk]
     if category != "all":
         rows = [r for r in rows if r["category"] == category]
-    rows.sort(
-        key=lambda t: (
-            _STATUS_RANK.get(t["latest_status"], 3),
-            {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(t["risk"], 4),
-            t["category"],
-            t["test_id"],
-        )
-    )
+    rows = runview.sort_library(rows)
     return _render(
         "tests.html",
         tests=rows,
@@ -751,73 +583,6 @@ def _load_run_or_404(org_id: str, run_id: str):
         raise HTTPException(status_code=404, detail=f"run '{run_id}' not found") from exc
 
 
-def _harness_view(run, report) -> dict:
-    categories = sorted({r.category.value for r in run.results})
-    assertions = sorted({a.name for r in run.results for a in r.assertion_results})
-    memory_results = [r for r in run.results if r.category == Category.memory_context]
-    skills = []
-    for category_score in report.category_scores:
-        category = category_score.category.value
-        related = [r for r in run.results if r.category.value == category]
-        skills.append(
-            {
-                "name": category.replace("_", " "),
-                "category": category,
-                "assertions": sorted({a.name for r in related for a in r.assertion_results}),
-                "passed": category_score.passed,
-                "total": category_score.total,
-                "score": _pct(category_score.score),
-            }
-        )
-
-    findings = []
-    for index, result in enumerate(
-        sorted(run.results, key=lambda r: (r.started_at, r.test_id)), start=1
-    ):
-        details = [a.detail for a in failed_assertions(result) if a.detail]
-        findings.append(
-            {
-                "step": index,
-                "test_id": result.test_id,
-                "category": result.category.value,
-                "risk": result.risk.value,
-                "status": result.status.value,
-                "latency_ms": result.latency_ms,
-                "started": str(result.started_at)[:19].replace("T", " "),
-                "assertions": result.assertion_results,
-                "summary": result.error or "; ".join(details) or "All assertions passed.",
-            }
-        )
-
-    return {
-        "summary": {
-            "gate": "PASS" if report.gate_passed else "BLOCK",
-            "overall_score": _pct(report.overall_score),
-            "pass_rate": _pct(report.pass_rate),
-            "critical_failures": report.critical_failures,
-            "passed": report.passed,
-            "total": report.total,
-        },
-        "context": {
-            "agent": run.agent_name,
-            "run_id": run.run_id,
-            "started": _short_date(run.started_at),
-            "finished": _short_date(run.finished_at),
-            "categories": categories,
-            "assertions": assertions,
-            "duration_ms": _duration_ms(run.started_at, run.finished_at),
-        },
-        "memory": {
-            "total": len(memory_results),
-            "passed": sum(r.status == Status.passed for r in memory_results),
-            "state_changes": sum(bool(r.sandbox_diff) for r in memory_results),
-            "results": sorted(memory_results, key=lambda r: (r.started_at, r.test_id)),
-        },
-        "skills": skills,
-        "findings": findings,
-    }
-
-
 @app.get("/harness", response_class=HTMLResponse)
 def latest_harness(principal: Principal = Depends(current_principal)) -> Response:
     latest_runs = get_store().list_runs(principal.org_id, limit=1)
@@ -837,41 +602,12 @@ def run_detail(
     status = request.query_params.get("status", "all")
     category = request.query_params.get("category", "all")
 
-    results = sorted(rr.results, key=lambda r: (_STATUS_RANK.get(r.status.value, 1), r.test_id))
-    result_rows = []
-    for r in results:
-        result_rows.append(
-            {
-                "id": r.test_id,
-                "test_id": r.test_id,
-                "category": r.category.value,
-                "risk": r.risk.value,
-                "status": r.status.value,
-                "latency_ms": r.latency_ms,
-                "result": r,
-            }
-        )
-    result_rows = _filter_rows(result_rows, q=q, status=status)
-    if category != "all":
-        result_rows = [r for r in result_rows if r["category"] == category]
-
-    matrix: dict[str, dict[str, str]] = {}
-    for r in rr.results:
-        matrix.setdefault(r.category.value, {})[r.test_id] = r.status.value
-    failures = [r for r in result_rows if r["status"] in _BAD_STATUSES]
-    duration = _duration_ms(rr.started_at, rr.finished_at)
-
     return _render(
         "run_detail.html",
         run=rr,
         report=report,
-        results=[r["result"] for r in result_rows],
-        result_rows=result_rows,
-        matrix=matrix,
-        failures=failures,
-        duration_ms=duration,
+        **runview.detail(rr, q=q, status=status, category=category),
         filters={"q": q, "status": status, "category": category},
-        categories=sorted(matrix),
         plan=get_store().get_run_plan(principal.org_id, run_id),
     )
 
@@ -883,7 +619,7 @@ def run_harness(run_id: str, principal: Principal = Depends(current_principal)) 
         "run_harness.html",
         run=run,
         report=report,
-        harness=_harness_view(run, report),
+        harness=runview.harness(run, report),
         active="harness",
     )
 
@@ -898,7 +634,7 @@ def test_detail(
     result = next((r for r in rr.results if r.test_id == test_id), None)
     if result is None:
         raise HTTPException(status_code=404, detail=f"test '{test_id}' not found in run '{run_id}'")
-    ordered = sorted(rr.results, key=lambda r: (_STATUS_RANK.get(r.status.value, 1), r.test_id))
+    ordered = order_by_failure(rr.results)
     idx = next(i for i, r in enumerate(ordered) if r.test_id == test_id)
     passed_assertions = sum(1 for a in result.assertion_results if a.passed)
     artifact_states = [
