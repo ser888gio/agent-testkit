@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import queue
-import re
 import sqlite3
 import threading
 import uuid
@@ -15,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agentaudit.core import credentials
 from agentaudit.core.artifacts import artifact_key
 from agentaudit.core.config import TargetConfig, load_target_dict
 from agentaudit.core.egress import EgressPolicy
@@ -230,108 +230,10 @@ _TERMINAL_JOB_STATES = ("done", "failed")
 
 Matrix = dict[str, dict[str, str]]
 
-_ENV_REFERENCE_RE = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
-_SENSITIVE_KEYS = {
-    "api_key",
-    "authorization",
-    "client_secret",
-    "credential",
-    "credentials",
-    "literals",
-    "password",
-    "proxy_authorization",
-    "secret",
-    "token",
-    "x_api_key",
-}
-_CREDENTIAL_PATTERN = re.compile(
-    r"(?:sk-[A-Za-z0-9_-]{8,}|(?:Bearer|Basic)\s+[A-Za-z0-9._-]+)",
-    re.IGNORECASE,
-)
-_SECRET_REF_RE = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
-
-
-def _is_sensitive_key(key: str) -> bool:
-    normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
-    return normalized in _SENSITIVE_KEYS or normalized.endswith(
-        ("_api_key", "_password", "_secret", "_token")
-    )
-
-
-def _is_secret_reference(value: object, *, authorization: bool = False) -> bool:
-    if isinstance(value, list):
-        return bool(value) and all(
-            _is_secret_reference(item, authorization=authorization) for item in value
-        )
-    if not isinstance(value, str):
-        return False
-    if authorization:
-        return bool(
-            re.fullmatch(
-                r"\s*(?:(?:Bearer|Basic)\s+)?\$\{[A-Za-z_][A-Za-z0-9_]*\}\s*",
-                value,
-                re.IGNORECASE,
-            )
-        )
-    return bool(re.fullmatch(r"\s*\$\{[A-Za-z_][A-Za-z0-9_]*\}\s*", value))
-
-
-def _check_sensitive_key(key_text: str, item: object, path: tuple[str, ...]) -> None:
-    if key_text == "secret_ref":
-        raise ValueError("secret_ref must be stored separately from config_json")
-    if _is_sensitive_key(key_text) and not _is_secret_reference(
-        item, authorization="authorization" in key_text.lower()
-    ):
-        location = ".".join((*path, key_text))
-        raise ValueError(f"literal credential is not allowed in config_json at {location}")
-
-
-def _validate_secret_safe_config(value: object, path: tuple[str, ...] = ()) -> None:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            key_text = str(key)
-            _check_sensitive_key(key_text, item, path)
-            _validate_secret_safe_config(item, (*path, key_text))
-        return
-    if isinstance(value, list):
-        for index, item in enumerate(value):
-            _validate_secret_safe_config(item, (*path, str(index)))
-        return
-    if isinstance(value, str):
-        if _CREDENTIAL_PATTERN.search(value):
-            location = ".".join(path) or "<root>"
-            raise ValueError(f"literal credential is not allowed in config_json at {location}")
-
-
-def _contains_secret_reference(value: object) -> bool:
-    if isinstance(value, dict):
-        return any(
-            (
-                _is_sensitive_key(str(key))
-                and _is_secret_reference(item, authorization="authorization" in str(key).lower())
-            )
-            or _contains_secret_reference(item)
-            for key, item in value.items()
-        )
-    if isinstance(value, list):
-        return any(_contains_secret_reference(item) for item in value)
-    return False
-
-
-def _replace_env_references(value: object) -> object:
-    if isinstance(value, str):
-        return _ENV_REFERENCE_RE.sub("agentaudit-secret-reference", value)
-    if isinstance(value, dict):
-        return {key: _replace_env_references(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_replace_env_references(item) for item in value]
-    return value
-
-
 def _validated_target_config(target_id: str, config: dict) -> None:
-    _validate_secret_safe_config(config)
+    credentials.scan_config(config)
     validated = load_target_dict(
-        _replace_env_references(config), source=f"stored target '{target_id}'"
+        credentials.mask_references(config), source=f"stored target '{target_id}'"
     )
     if validated.id != target_id:
         raise ValueError(f"target id {target_id!r} does not match config id {validated.id!r}")
@@ -494,9 +396,9 @@ class Store:
         """Store a target's raw (un-interpolated) config. `${ENV_VAR}` refs stay
         literal here so no resolved credential is ever persisted -- see T15."""
         _validated_target_config(target_id, config)
-        if _contains_secret_reference(config) and secret_ref is None:
+        if credentials.contains_reference(config) and secret_ref is None:
             raise ValueError("secret_ref is required when config_json contains secret references")
-        if secret_ref is not None and not _SECRET_REF_RE.fullmatch(secret_ref.strip()):
+        if secret_ref is not None and not credentials.is_secret_ref(secret_ref):
             raise ValueError("secret_ref must be an opaque scheme:// reference")
         hosts_json = None
         if allowed_hosts is not None:

@@ -22,6 +22,9 @@ the rest of the system consumes.
   verticals itself (`load_builtin_sandboxes`, by module name), so no caller carries a
   registration import; `sandbox_modules()` reports what a spawned child must import.
 - `store.py:Store` — the only SQLite access point in the repository.
+- `credentials.py` — what a credential looks like, and where one may appear. One
+  vocabulary with two uses: `Redactor` masks it out of evidence, `Store.save_target`
+  refuses to persist it in a config. Imports nothing from `agentaudit`.
 - `discovery.py:discover` — probes a live endpoint (through `runner.run`) into an `AgentProfile`.
 - `attacker.py:build_refining_strategy` — optional attacker model that writes each adaptive
   turn from the agent's actual reply. Off unless `refine: true` **and**
@@ -59,6 +62,10 @@ the rest of the system consumes.
   `redaction.py`, `runner.py` are runner-side. `scoring.py`, `store.py`, `compliance.py`,
   `regressions.py` are control-plane-side and must operate purely on already-redacted
   `RunResult`/`ScoreReport` values.
+- **Credential shapes live in `credentials.py`, not in the modules that use them.**
+  Adding a key format there fixes both the redactor and the config check; adding it to
+  only one is how `Basic ...` ended up refused at the config door and unmasked in
+  evidence. `tests/test_credentials.py` walks the vocabulary and asserts both halves.
 - **Redaction ordering is a security property.** `runner.py` redacts before building a
   `TestResult`; `store.py:save_run` re-applies the `Redactor` before writing. Do not remove
   either pass on the grounds that the other exists — the redundancy is deliberate.

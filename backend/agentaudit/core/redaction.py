@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from agentaudit.core.credentials import CREDENTIAL_PATTERNS
+
 _MASK_LITERAL = "«redacted»"
 
 
@@ -15,15 +17,21 @@ def _mask_named(name: str) -> str:
     return f"«redacted:{name}»"
 
 
-_BUILTIN_PATTERNS: list[tuple[str, str]] = [
-    ("api_key", r"sk-[A-Za-z0-9_-]{8,}"),
-    ("bearer", r"Bearer\s+[A-Za-z0-9._-]+"),
+# Personal data. Credential shapes are deliberately not listed here: they come
+# from `credentials.py`, which `store.py` also uses to refuse a literal
+# credential at the config door. One vocabulary, so teaching agentaudit a new
+# key format cannot mask it in evidence while still accepting it into a config.
+_PII_PATTERNS: list[tuple[str, str]] = [
     ("email", r"[\w.+-]+@[\w-]+\.[\w.-]+"),
     ("iban", r"[A-Z]{2}\d{2}[A-Z0-9]{10,30}"),
     ("card", r"\b(?:\d[ -]*?){13,16}\b"),
     ("account", r"\b\d{8,17}\b"),
     ("phone", r"\+?\d[\d ()-]{7,}\d"),
 ]
+
+# Credentials first, so a bearer token is masked whole rather than having its
+# tail eaten by the numeric `account` pattern.
+_BUILTIN_PATTERNS: list[tuple[str, str]] = [*CREDENTIAL_PATTERNS, *_PII_PATTERNS]
 
 
 def builtin_pattern_names() -> list[str]:
