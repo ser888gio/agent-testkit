@@ -21,6 +21,13 @@ from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.audit import execute as execute_audit
 from agentaudit.core.config import ConfigError, load_target, load_target_dict
 from agentaudit.core.discovery import discover as discover_profile
+from agentaudit.core.evolve import (
+    DEFAULT_KEEP_RUNS,
+    GENERATED_PREFIX,
+    EvolveBudget,
+    build_generator,
+)
+from agentaudit.core.evolve import evolve as run_evolution
 from agentaudit.core.loader import LoaderError, discover, filter_tests
 from agentaudit.core.planner import plan as build_plan
 from agentaudit.core.profile import HarnessPlan
@@ -204,6 +211,107 @@ def plan_cmd(
         typer.echo(harness.model_dump_json(indent=2))
     else:
         _print_plan(harness)
+
+
+@app.command("evolve")
+def evolve_cmd(
+    packs_dir: str = typer.Argument(...),
+    target: str | None = typer.Option(None, "--target"),
+    endpoint: str | None = typer.Option(
+        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+    ),
+    db: str | None = typer.Option(None, "--db"),
+    max_candidates: int = typer.Option(20, "--max-candidates", min=1),
+    max_kept: int = typer.Option(10, "--max-kept", min=1),
+    wall_clock: float = typer.Option(600.0, "--wall-clock", min=1.0),
+    keep_runs: int = typer.Option(
+        DEFAULT_KEEP_RUNS,
+        "--keep-runs",
+        min=0,
+        help="Runs a generated test survives before expiring unless promoted. 0 never expires.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print candidates and admission reasons without storing them."
+    ),
+) -> None:
+    """Generate new attacks against the target and keep the ones that are novel.
+
+    Needs an attacker model: set AGENTAUDIT_ATTACKER_ENDPOINT and
+    AGENTAUDIT_ATTACKER_MODEL. Any OpenAI-compatible endpoint works, including a
+    local Ollama (http://localhost:11434/v1/chat/completions), which keeps the
+    whole campaign on your machine.
+
+    Kept tests are provisional: they run for --keep-runs runs and then expire
+    unless a human promotes them into a pack.
+    """
+    generator = build_generator()
+    if generator is None:
+        missing = [
+            name
+            for name in ("AGENTAUDIT_ATTACKER_ENDPOINT", "AGENTAUDIT_ATTACKER_MODEL")
+            if not os.environ.get(name)
+        ]
+        typer.echo(
+            "error: evolution needs an attacker model. Set "
+            + " and ".join(missing)
+            + ".\n"
+            "       For a fully local campaign, point it at Ollama:\n"
+            "         AGENTAUDIT_ATTACKER_ENDPOINT="
+            "http://localhost:11434/v1/chat/completions\n"
+            "         AGENTAUDIT_ATTACKER_MODEL=llama3.1",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    cfg = _load_target_or_exit(target, endpoint)
+    seed_tests = _discover_tests_or_exit(packs_dir)
+    categories = sorted({t.category for t in seed_tests}, key=lambda c: c.value)
+
+    def run_fn(tests):
+        return execute_audit(cfg, tests).result
+
+    result = run_evolution(
+        generator,
+        run_fn,
+        categories=categories,
+        budget=EvolveBudget(
+            max_candidates=max_candidates, max_kept=max_kept, wall_clock_s=wall_clock
+        ),
+    )
+
+    for candidate in result.kept:
+        verdict = "LANDED" if candidate.landed else "held"
+        typer.echo(f"  + {candidate.test.id}  [{verdict}]")
+    for test_id, reason in result.rejected:
+        typer.echo(f"  - {test_id}: {reason}", err=True)
+    typer.echo(
+        f"generated {result.candidates_generated}, ran {result.runs_spent}, "
+        f"kept {len(result.kept)} ({result.stopped_because})"
+    )
+
+    if dry_run:
+        typer.echo("dry run: nothing stored", err=True)
+        return
+    if not result.kept:
+        return
+
+    store = Store(_resolve_db_path(db))
+    store.ensure_pack(DEFAULT_ORG, GENERATED_PREFIX, "Generated tests (provisional)")
+    stored = 0
+    for row in result.as_pack_rows():
+        try:
+            store.save_pack_test(DEFAULT_ORG, GENERATED_PREFIX, row, created_by="evolve")
+        except LoaderError:
+            # A duplicate id means this exact attack was already discovered.
+            # Content-derived ids make that a re-find, not an error.
+            continue
+        stored += 1
+    typer.echo(
+        f"stored {stored} test(s) in the '{GENERATED_PREFIX}' pack "
+        f"(expire after {keep_runs} run(s) unless promoted)"
+        if keep_runs
+        else f"stored {stored} test(s) in the '{GENERATED_PREFIX}' pack (never expire)"
+    )
 
 
 @app.command("run")
