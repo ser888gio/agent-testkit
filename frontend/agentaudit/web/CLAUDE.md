@@ -4,8 +4,9 @@ Imported as `agentaudit.web.*`. Served by `agentaudit ui` / `bash infra/dev.sh`.
 
 ## Entry points
 
-- `app.py` — the whole application: route handlers, run-harness endpoints, and the
-  `Store` queries that feed them. Templates in `templates/`, assets in `static/`.
+- `app.py` — routing, auth and the `Store` queries that feed the pages. The derivation
+  behind each page lives in `core/runview.py`. Templates in `templates/`, assets in
+  `static/`.
 - `/generated` — the review queue for machine-authored tests. Promotion mutates the
   audited baseline, so it is `require_admin` + CSRF like every other mutation. The id
   rewrite lives in `core/evolve.py:promoted_id`, not here.
@@ -37,8 +38,10 @@ Imported as `agentaudit.web.*`. Served by `agentaudit ui` / `bash infra/dev.sh`.
   target/pack files and execute Python test modules under the packs directory. Any change
   that widens the default bind, accepts a user-supplied path, or relaxes path validation is
   security-sensitive — see `.claude/rules/security-sensitive.md`.
-- **`app.py` is ~700 lines.** Prefer pushing new logic into `core/` where it is testable
-  without a `TestClient`, rather than growing this file.
+- **`app.py` holds routing, not derivation.** Render-ready views of a run come from
+  `core/runview.py` (`dashboard`, `library`, `detail`, `harness`); handlers read query
+  params, call one of those, and pick a template. Put new derivation there, where it is
+  testable without a `TestClient` (`tests/test_runview.py`), rather than growing this file.
 - Sandbox registration is import-triggered: the `agentaudit.domains.*.sandbox`
   `# noqa: F401` imports at the top of `app.py` are load-bearing. Do not "clean up" them.
 
