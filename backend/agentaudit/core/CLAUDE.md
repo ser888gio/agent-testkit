@@ -6,6 +6,9 @@ the rest of the system consumes.
 
 ## Entry points
 
+- `audit.py:execute` — the assembled run: discover → plan → attack expansion → run →
+  score. Every entry point that grades an agent (`cli.run_cmd`, `worker.execute_job`)
+  goes through it; neither may spell the sequence out again.
 - `runner.py:run` — the only execution path. Discovery → per-test sandbox reset → agent call
   (single- or multi-turn) → assertion evaluation → redaction → `RunResult`.
 - `isolation.py:IsolatedRunner` — spawned run supervisor, nested killable agent worker,

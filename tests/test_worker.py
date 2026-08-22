@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-import agentaudit.worker as worker_module
+import agentaudit.core.audit as audit_module
 from agentaudit.core.store import Store
 from agentaudit.worker import PermanentJobError, execute_job, main, work_once
 
@@ -111,9 +111,10 @@ def test_execute_job_raises_permanent_for_a_foreign_orgs_target(tmp_path):
 
 def test_infrastructure_faults_are_left_for_lease_expiry(tmp_path, monkeypatch):
     store, job_id = _store_with_job(tmp_path)
-    monkeypatch.setattr(
-        "agentaudit.worker.run_tests", lambda *a, **k: (_ for _ in ()).throw(OSError("disk gone"))
-    )
+    def _explode(*a, **k):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr("agentaudit.core.audit.run_tests", _explode)
 
     work_once(store, "w1", lease_seconds=-1)
 
@@ -168,13 +169,13 @@ def test_a_worker_run_persists_the_plan_that_selected_its_tests(tmp_path):
 def test_discovery_reuses_the_jobs_egress_decision(tmp_path, monkeypatch):
     """Discovery must not open a second execution path around the egress check."""
     seen: list[object] = []
-    real_run = worker_module.run_tests
+    real_run = audit_module.run_tests
 
     def spy(cfg, cases, **kwargs):
         seen.append(kwargs.get("endpoint", "MISSING"))
         return real_run(cfg, cases, **kwargs)
 
-    monkeypatch.setattr(worker_module, "run_tests", spy)
+    monkeypatch.setattr(audit_module, "run_tests", spy)
     store, _ = _store_with_job(tmp_path)
 
     work_once(store, "w1")
@@ -199,7 +200,7 @@ def test_per_org_cap_stops_one_partner_starving_another(tmp_path):
 
 def test_heartbeat_keeps_a_long_job_from_being_reclaimed(tmp_path, monkeypatch):
     store, job_id = _store_with_job(tmp_path)
-    monkeypatch.setattr("agentaudit.worker.run_tests", _slow_run)
+    monkeypatch.setattr("agentaudit.core.audit.run_tests", _slow_run)
 
     done = threading.Thread(target=work_once, args=(store, "w1"), kwargs={"lease_seconds": 4})
     done.start()
