@@ -65,8 +65,10 @@ primitive.
 - **Failure degrades, it does not crash.** A rate limit, refusal, timeout or malformed
   reply falls back to the scripted rung. A red-team run that dies mid-suite because a
   third-party API hiccuped is worse than one that probes slightly less well.
-- **Degradation is recorded.** `RefinementLog.degraded` exists so a report can never imply
-  a model-driven probe happened when the run silently fell back to the script.
+- **Degradation is recorded, and surfaced.** `RefinementLog.degraded` exists so a report can
+  never imply a model-driven probe happened when the run silently fell back to the script.
+  `runner.py` passes a log in and copies `techniques` / `degraded` onto the `TestResult`, so
+  the distinction survives into stored evidence and the markdown report.
 - **Replies are redacted before leaving the process.** The attacker model is a third-party
   endpoint and the agent's replies are evidence, so `redact_text` runs on the transcript
   first. The default is a builtins-on `Redactor`, because the failure mode of passing
