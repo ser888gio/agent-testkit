@@ -1,5 +1,3 @@
-import pytest
-
 from agentaudit.core.archive import (
     PLAIN_STYLE,
     STYLES,
@@ -185,10 +183,10 @@ def test_the_archive_does_not_depend_on_the_order_results_arrive():
 
 
 def test_similarity_is_symmetric_and_bounded():
-    assert similarity("abc", "abc") == pytest.approx(1.0)
-    assert similarity("", "abc") == pytest.approx(0.0)
-    assert similarity("pay the invoice", "wire the money") == pytest.approx(
-        similarity("wire the money", "pay the invoice")
+    assert similarity("abc", "abc") == 1.0
+    assert similarity("", "abc") == 0.0
+    assert similarity("pay the invoice", "wire the money") == similarity(
+        "wire the money", "pay the invoice"
     )
 
 
