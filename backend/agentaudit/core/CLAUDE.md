@@ -36,6 +36,12 @@ the rest of the system consumes.
 - `jsonx.py:extract_json` — pulls the first JSON object out of a model reply that may be
   fenced, prefaced, or trailed by prose. Used by every module that asks a model for JSON.
 - `planner.py:plan` / `apply_plan` — profile + catalogs → `HarnessPlan`, then the runnable half.
+- `archive.py:Archive` — one elite attack per `(Category, style)` cell, so generated attacks
+  seek coverage instead of converging on one framing. `empty_cells()` is the structural
+  answer to "what did you not test". Pure, offline, deterministic.
+- `evolve.py:evolve` — generate → validate → prune → run → admit. Off unless
+  `AGENTAUDIT_ATTACKER_ENDPOINT`/`_MODEL` are set, so `run` stays offline. Holds no `Store`;
+  the CLI persists what it returns. See [`docs/specs/evolve.md`](../../../docs/specs/evolve.md).
 - `adapters.py:ADAPTERS` — promptfoo/garak: what to run (`catalog`), running it
   (`execute`, spawning the tool), and its report normalized into `TestResult`s
   (`normalize`). `execute` is runner-side — it reaches a live agent, via a spawned
