@@ -44,6 +44,7 @@ components:
       - SQLite persistence (the only SQL in the repository)
     entry_points:
       - backend/agentaudit/core/audit.py        # execute() -- the assembled run every entry point uses
+      - backend/agentaudit/core/findings.py     # is_failure(), failures(), order_by_failure(), detail_for()
       - backend/agentaudit/core/runner.py       # run()
       - backend/agentaudit/core/isolation.py    # IsolatedRunner
       - backend/agentaudit/core/loader.py       # discover()
@@ -67,10 +68,12 @@ components:
       - "runner.py must never propagate an exception"
       - "redaction runs before TestResult construction and again in store.save_run"
       - "adapters.py results bypass runner.py, so normalize() redacts and applies the evidence policy itself"
+      - "adapters.py:execute spawns a third-party tool that resolves the endpoint itself; the egress pin does not bind it, so hosted callers leave external execution off"
       - "profile.py models carry no agent output: a HarnessPlan is persisted with the run"
       - "cli and worker assemble a run only through audit.execute(); neither repeats the sequence"
+      - "failure ordering, the failure predicate and failure detail come from findings.py; renderers only format"
     validation:
-      - python -m pytest tests/test_runner.py tests/test_assertions.py tests/test_schema.py tests/test_loader.py tests/test_scoring.py tests/test_store.py tests/test_redaction.py tests/test_config.py tests/test_agent.py tests/test_compliance.py tests/test_regressions.py tests/test_sandbox_core.py tests/test_audit.py
+      - python -m pytest tests/test_runner.py tests/test_assertions.py tests/test_schema.py tests/test_loader.py tests/test_scoring.py tests/test_store.py tests/test_redaction.py tests/test_config.py tests/test_agent.py tests/test_compliance.py tests/test_regressions.py tests/test_sandbox_core.py tests/test_audit.py tests/test_findings.py
     specs: docs/specs
 
   domains:

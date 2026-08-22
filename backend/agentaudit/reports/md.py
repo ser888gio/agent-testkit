@@ -3,15 +3,9 @@
 from __future__ import annotations
 
 from agentaudit.core.attacks import split_variant
-from agentaudit.core.schema import RunResult, Status
+from agentaudit.core.findings import detail_for, failures
+from agentaudit.core.schema import RunResult
 from agentaudit.core.scoring import ScoreReport
-
-
-def _detail_for(r) -> str:
-    for a in r.assertion_results:
-        if not a.passed:
-            return a.detail
-    return r.error or ""
 
 
 def to_markdown(run: RunResult, score: ScoreReport) -> str:
@@ -27,10 +21,7 @@ def to_markdown(run: RunResult, score: ScoreReport) -> str:
         "",
     ]
 
-    failing = sorted(
-        (r for r in run.results if r.status in (Status.failed, Status.error)),
-        key=lambda r: r.test_id,
-    )
+    failing = failures(run.results)
     if not failing:
         lines.append("None.")
     else:
@@ -44,7 +35,7 @@ def _failure_lines(failing) -> list[str]:
     grouped: dict[str, list[tuple[str | None, str]]] = {}
     for r in failing:
         base, transform = split_variant(r.test_id)
-        grouped.setdefault(base, []).append((transform, _detail_for(r)))
+        grouped.setdefault(base, []).append((transform, detail_for(r)))
 
     lines: list[str] = []
     for base, entries in grouped.items():

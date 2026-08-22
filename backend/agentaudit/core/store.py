@@ -8,6 +8,7 @@ import re
 import sqlite3
 import threading
 import uuid
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -353,12 +354,10 @@ def _sanitized_result_payload(result: TestResult, agent: TargetConfig) -> dict:
 
 
 def _summarize(run: RunResult) -> dict:
-    by_status: dict[str, int] = {}
-    by_category: dict[str, int] = {}
-    for r in run.results:
-        by_status[r.status.value] = by_status.get(r.status.value, 0) + 1
-        by_category[r.category.value] = by_category.get(r.category.value, 0) + 1
-    return {"by_status": by_status, "by_category": by_category}
+    return {
+        "by_status": dict(Counter(r.status.value for r in run.results)),
+        "by_category": dict(Counter(r.category.value for r in run.results)),
+    }
 
 
 class _SQLitePool:

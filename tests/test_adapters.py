@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 import pytest
 
@@ -141,7 +142,7 @@ def test_garak_probe_selection_respects_allow_and_block():
     assert adapter.probes(acting, allow=["dan"]) == ["dan"]
 
 
-def test_garak_command_is_returned_not_run():
+def test_garak_command_names_the_endpoint_and_selected_probes():
     argv = GarakAdapter().command("https://agent.example", ["dan"], report_prefix="run1")
     assert argv[0] == "garak"
     assert "https://agent.example" in argv
@@ -234,3 +235,99 @@ def test_adapter_catalogs_are_rankable_entries():
         # External tools drive the endpoint themselves: no sandbox prerequisite.
         assert all(e.requires == [] for e in entries)
         assert all(e.cost > 1 for e in entries)
+
+
+def _acting() -> AgentProfile:
+    return AgentProfile(id="a", tool_use=True)
+
+
+def _fake_run(monkeypatch, adapter, *, returncode=0, stderr="", report=None):
+    """Stand in for the tool: record the argv, leave the report it would leave."""
+    seen: dict = {}
+    monkeypatch.setattr(type(adapter), "_binary", lambda self: f"/usr/bin/{self.name}")
+
+    def fake(argv, **kwargs):
+        seen["argv"] = argv
+        seen["cwd"] = kwargs.get("cwd")
+        seen["timeout"] = kwargs.get("timeout")
+        if report is not None:
+            report(kwargs["cwd"])
+        return subprocess.CompletedProcess(argv, returncode, "", stderr)
+
+    monkeypatch.setattr("agentaudit.core.adapters.subprocess.run", fake)
+    return seen
+
+
+def test_execute_runs_only_what_the_plan_selected(monkeypatch, tmp_path):
+    adapter = PromptfooAdapter()
+    written: dict = {}
+
+    def leave_report(cwd):
+        written["config"] = json.loads(
+            (cwd / "promptfooconfig.json").read_text(encoding="utf-8")
+        )
+        (cwd / adapter._REPORT_NAME).write_text(json.dumps(PROMPTFOO_REPORT), "utf-8")
+
+    seen = _fake_run(monkeypatch, adapter, report=leave_report)
+
+    results = adapter.execute(
+        _acting(), "https://agent.example/chat", selected=["promptfoo.pii"]
+    )
+
+    # Scanning more than the plan chose would bill someone else's endpoint for
+    # evidence nobody asked for.
+    assert written["config"]["redteam"]["plugins"] == ["pii"]
+    # Spawned by resolved path, never by whatever "promptfoo" means on PATH now.
+    assert seen["argv"][0] == "/usr/bin/promptfoo"
+    assert results, "the report should have normalized into results"
+
+
+def test_execute_with_nothing_selected_runs_nothing(monkeypatch):
+    adapter = PromptfooAdapter()
+    seen = _fake_run(monkeypatch, adapter)
+
+    assert adapter.execute(_acting(), "https://agent.example", selected=[]) == []
+    assert "argv" not in seen
+
+
+def test_a_missing_tool_is_an_error_result_not_silence(monkeypatch):
+    adapter = GarakAdapter()
+    monkeypatch.setattr(GarakAdapter, "_binary", lambda self: None)
+
+    results = adapter.execute(_acting(), "https://agent.example")
+
+    assert [r.status for r in results] == [Status.error]
+    assert "not installed" in results[0].error
+
+
+def test_a_run_that_grades_nothing_reports_redacted_diagnostics(monkeypatch):
+    adapter = GarakAdapter()
+    _fake_run(
+        monkeypatch,
+        adapter,
+        returncode=2,
+        stderr="failed talking to sk-abcdefgh12345678",
+        report=lambda cwd: (cwd / "garak.report.jsonl").write_text("", "utf-8"),
+    )
+
+    results = adapter.execute(_acting(), "https://agent.example")
+
+    assert [r.status for r in results] == [Status.error]
+    # stderr is agent-adjacent text: it goes through the same redactor evidence does.
+    assert "sk-abcdefgh12345678" not in results[0].error
+    assert "exited 2" in results[0].error
+
+
+def test_a_blown_budget_is_an_error_result(monkeypatch):
+    adapter = GarakAdapter()
+    monkeypatch.setattr(GarakAdapter, "_binary", lambda self: "/usr/bin/garak")
+
+    def timeout(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr("agentaudit.core.adapters.subprocess.run", timeout)
+
+    results = adapter.execute(_acting(), "https://agent.example", timeout_s=30)
+
+    assert [r.status for r in results] == [Status.error]
+    assert "30s budget" in results[0].error

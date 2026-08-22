@@ -9,13 +9,18 @@ the rest of the system consumes.
 - `audit.py:execute` — the assembled run: discover → plan → attack expansion → run →
   score. Every entry point that grades an agent (`cli.run_cmd`, `worker.execute_job`)
   goes through it; neither may spell the sequence out again.
+- `findings.py` — what failed, in what order, and why. Every renderer, the dashboard and
+  the store derive failures through it; none of them re-derive.
 - `runner.py:run` — the only execution path. Discovery → per-test sandbox reset → agent call
   (single- or multi-turn) → assertion evaluation → redaction → `RunResult`.
 - `isolation.py:IsolatedRunner` — spawned run supervisor, nested killable agent worker,
-  sandbox RPC boundary, process-tree cleanup, and CPU/memory ceilings.
+  sandbox RPC boundary, process-tree cleanup, and CPU/memory ceilings. It owns the child's
+  deadline too (`run_test(test)` derives it); the runner keeps only lifecycle.
 - `loader.py:discover` — turns a packs directory into `TestCase` / `PythonTestCase` objects.
 - `agent.py:build_agent` — `TargetConfig` → `CallableAgent` or `HTTPAgent`.
-- `sandbox.py:build_sandbox` — name → registered `Sandbox` instance.
+- `sandbox.py:build_sandbox` — name → registered `Sandbox` instance. Loads the built-in
+  verticals itself (`load_builtin_sandboxes`, by module name), so no caller carries a
+  registration import; `sandbox_modules()` reports what a spawned child must import.
 - `store.py:Store` — the only SQLite access point in the repository.
 - `discovery.py:discover` — probes a live endpoint (through `runner.run`) into an `AgentProfile`.
 - `attacker.py:build_refining_strategy` — optional attacker model that writes each adaptive
@@ -31,7 +36,10 @@ the rest of the system consumes.
 - `jsonx.py:extract_json` — pulls the first JSON object out of a model reply that may be
   fenced, prefaced, or trailed by prose. Used by every module that asks a model for JSON.
 - `planner.py:plan` / `apply_plan` — profile + catalogs → `HarnessPlan`, then the runnable half.
-- `adapters.py:ADAPTERS` — promptfoo/garak report normalization into `TestResult`s.
+- `adapters.py:ADAPTERS` — promptfoo/garak: what to run (`catalog`), running it
+  (`execute`, spawning the tool), and its report normalized into `TestResult`s
+  (`normalize`). `execute` is runner-side — it reaches a live agent, via a spawned
+  process that does its own DNS, so the egress pin does not bind it.
 
 ## Local architecture constraints
 

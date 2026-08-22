@@ -23,7 +23,7 @@ yourself before reporting.
    closed. `EvidencePolicy` honoured independently of redaction.
 3. **Architectural boundaries.** `core` imports nothing from `domains`/`reports`/`web`/`cli`.
    `httpx` only in `core/agent.py`. SQL only in `core/store.py`. No `# noqa: F401` sandbox
-   registration import deleted as "dead code".
+   registration import deleted from `domains/__init__.py` as "dead code".
 4. **Missing tests.** New behaviour needs a case in `tests/test_<module>.py`. Failure paths
    matter more than happy paths here. Side-effect assertions beat text assertions.
 5. **Unnecessary scope.** Unrelated refactoring or reformatting.

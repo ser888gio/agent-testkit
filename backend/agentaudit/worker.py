@@ -18,10 +18,6 @@ import socket
 import threading
 import uuid
 
-# Registers the built-in sandboxes before `build_sandbox` is ever called, same
-# as cli.py and web/app.py. Not dead imports.
-import agentaudit.domains.email.sandbox  # noqa: F401
-import agentaudit.domains.treasury.sandbox  # noqa: F401
 from agentaudit.core.audit import execute as execute_audit
 from agentaudit.core.config import ConfigError, HTTPSpec, load_target_dict
 from agentaudit.core.egress import EgressError, EgressPolicy, validate_endpoint
@@ -138,25 +134,24 @@ def execute_job(store: Store, job: JobRow) -> str:
         )
     )
 
-    def announce(planned, harness, unexecuted):
-        if unexecuted:
-            log.info(
-                "job %s: %d selected test(s) belong to external tools and are not executed here",
-                job.id,
-                len(unexecuted),
-            )
-
     # The egress decision above binds every request the audit makes, discovery
-    # probes included.
+    # probes included. `external` stays off for exactly that reason: a spawned
+    # scanner re-resolves the hostname itself, so the pinned address would not
+    # bind it, and this worker runs partner endpoints.
     audit = execute_audit(
         target,
         tests,
         redactor=redactor,
         endpoint=endpoint,
         plan=True,
-        on_plan=announce,
     )
     result, report = audit.result, audit.report
+    if audit.unexecuted:
+        log.info(
+            "job %s: %d selected test(s) belong to external tools and are not executed here",
+            job.id,
+            len(audit.unexecuted),
+        )
     store.save_run(job.org_id, target, result, report, job.created_by, plan=audit.plan)
     return result.run_id
 

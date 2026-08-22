@@ -20,8 +20,12 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess  # nosec B404 - argv lists only, resolved binary, never a shell
+import tempfile
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from agentaudit.core.profile import AgentProfile, TestCatalogEntry
@@ -180,13 +184,34 @@ def _evidence(policy: EvidencePolicy, request: Any, response: Any) -> tuple[Any,
 
 
 class ExternalEvalAdapter(ABC):
-    """One third-party eval engine, expressed in agentaudit terms."""
+    """One third-party eval engine, expressed in agentaudit terms.
+
+    Selection and evidence cross the same seam: the planner ranks what
+    `catalog()` offers, `execute()` runs exactly what was selected, and
+    `normalize()` turns the tool's own report into redacted `TestResult`s.
+
+    **Weaker egress guarantee.** A spawned tool opens its own connections and
+    re-resolves the hostname itself, so it cannot inherit the address
+    `core/egress.py` pins for the in-process agent: between agentaudit's check
+    and the tool's own lookup, DNS can answer differently. That is true of every
+    adapter, not one of them, which is why it is stated here. A caller whose
+    threat model needs the pin -- a hosted worker running partner endpoints --
+    must not enable external execution.
+    """
 
     name: str
 
-    @abstractmethod
+    # One external run's wall-clock ceiling. A scanner with no budget is an
+    # unbounded amount of traffic aimed at someone else's endpoint.
+    timeout_s: float = 900.0
+
+    def _binary(self) -> str | None:
+        """Absolute path to the backing tool, or None when it is not installed."""
+        return shutil.which(self.name)
+
     def available(self) -> bool:
         """Is the backing tool installed and runnable on this machine?"""
+        return self._binary() is not None
 
     @abstractmethod
     def catalog(self, profile: AgentProfile) -> list[TestCatalogEntry]:
@@ -202,18 +227,145 @@ class ExternalEvalAdapter(ABC):
     ) -> list[TestResult]:
         """Turn one report from the tool into redacted agentaudit results."""
 
+    @abstractmethod
+    def _items(self, profile: AgentProfile) -> list[str]:
+        """The tool's own unit of work -- a plugin, a probe module -- for this agent."""
+
+    @abstractmethod
+    def _invocation(
+        self, profile: AgentProfile, endpoint: str, items: list[str], work_dir: Path
+    ) -> list[str]:
+        """Write whatever the tool needs into `work_dir` and return its argv."""
+
+    @abstractmethod
+    def _report(self, work_dir: Path) -> Any:
+        """The report the run left in `work_dir`, in the form `normalize` takes."""
+
+    def selected_items(
+        self, profile: AgentProfile, selected: Sequence[str] | None
+    ) -> list[str]:
+        """The tool's units of work, narrowed to what the plan selected.
+
+        A run that scanned more than the plan chose would be evidence nobody
+        asked for, billed to someone else's endpoint.
+        """
+        items = self._items(profile)
+        if selected is None:
+            return items
+        wanted = set(selected)
+        return [item for item in items if _safe_id(self.name, item) in wanted]
+
+    def execute(
+        self,
+        profile: AgentProfile,
+        endpoint: str,
+        *,
+        selected: Sequence[str] | None = None,
+        evidence: EvidencePolicy | None = None,
+        timeout_s: float | None = None,
+    ) -> list[TestResult]:
+        """Run the tool against `endpoint` and return redacted results.
+
+        Never raises: a missing binary, a non-zero exit, a blown budget or an
+        unreadable report all come back as an `ERROR` result, the same bargain
+        `runner.run` makes. A selection with no evidence at all would read as
+        coverage that does not exist.
+        """
+        evidence = evidence or EvidencePolicy()
+        started_at = datetime.now(timezone.utc)
+        items = self.selected_items(profile, selected)
+        if not items:
+            return []
+        binary = self._binary()
+        if binary is None:
+            return [
+                self._failure(
+                    f"{self.name} is not installed on this runner", evidence, started_at
+                )
+            ]
+
+        budget = timeout_s or self.timeout_s
+        with tempfile.TemporaryDirectory(prefix=f"agentaudit-{self.name}-") as tmp:
+            work_dir = Path(tmp)
+            try:
+                argv = self._invocation(profile, endpoint, items, work_dir)
+                if not argv or argv[0] != self.name:
+                    raise ValueError(f"{self.name} adapter built a foreign invocation")
+                # The only executable ever spawned is this adapter's own tool, at
+                # the path `_binary()` resolved. Everything after argv[0] is a
+                # value argument in a list -- no shell, so no word splitting and
+                # nothing for an endpoint string to escape into.
+                completed = subprocess.run(  # nosec B603 - resolved binary, argv list, no shell
+                    [binary, *argv[1:]],
+                    cwd=work_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=budget,
+                    check=False,
+                )
+                raw = self._report(work_dir)
+            except subprocess.TimeoutExpired:
+                return [
+                    self._failure(
+                        f"{self.name} exceeded its {budget:.0f}s budget",
+                        evidence,
+                        started_at,
+                    )
+                ]
+            except Exception as exc:  # noqa: BLE001 - execution must never raise
+                return [self._failure(f"{type(exc).__name__}: {exc}", evidence, started_at)]
+
+            try:
+                results = self.normalize(raw, evidence=evidence, started_at=started_at)
+            except Exception as exc:  # noqa: BLE001 - a bad report is evidence too
+                return [
+                    self._failure(
+                        f"unreadable {self.name} report: {exc}", evidence, started_at
+                    )
+                ]
+
+            if results:
+                return results
+            # The tool ran and graded nothing. Its own diagnostics are the only
+            # clue, and they are agent-adjacent text, so they are redacted and
+            # trimmed before they become evidence.
+            tail = Redactor(evidence.redact).redact_text(completed.stderr or "")[-500:]
+            return [
+                self._failure(
+                    f"{self.name} exited {completed.returncode} with no results: {tail}",
+                    evidence,
+                    started_at,
+                )
+            ]
+
+    def _failure(
+        self, detail: str, evidence: EvidencePolicy, started_at: datetime
+    ) -> TestResult:
+        """A selection that produced no evidence, recorded as an error, not a pass."""
+        return TestResult(
+            test_id=_safe_id(self.name, "run"),
+            category=Category.reliability,
+            risk=Risk.high,
+            status=Status.error,
+            assertion_results=[],
+            request=None,
+            response=None,
+            error=Redactor(evidence.redact).redact_text(detail),
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+        )
+
 
 class PromptfooAdapter(ExternalEvalAdapter):
     """promptfoo as a declarative red-team backend behind the agentaudit runtime."""
 
     name = "promptfoo"
 
+    _REPORT_NAME = "promptfoo-report.json"
+
     # Plugins worth running for an agent that only talks, versus one that acts.
     _BASE_PLUGINS = ("harmful", "prompt-extraction", "pii", "hallucination")
     _ACTING_PLUGINS = ("excessive-agency", "rbac", "bola", "ssrf", "tool-discovery")
-
-    def available(self) -> bool:
-        return shutil.which("promptfoo") is not None
 
     def _plugins(self, profile: AgentProfile) -> list[str]:
         plugins = list(self._BASE_PLUGINS)
@@ -230,6 +382,7 @@ class PromptfooAdapter(ExternalEvalAdapter):
         *,
         header_env: dict[str, str] | None = None,
         num_tests: int = 5,
+        plugins: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         """A promptfoo config for this agent.
 
@@ -258,10 +411,37 @@ class PromptfooAdapter(ExternalEvalAdapter):
             ],
             "redteam": {
                 "purpose": profile.purpose or f"{profile.domain} agent",
-                "plugins": self._plugins(profile),
+                "plugins": list(plugins) if plugins is not None else self._plugins(profile),
                 "numTests": num_tests,
             },
         }
+
+    def _items(self, profile: AgentProfile) -> list[str]:
+        return self._plugins(profile)
+
+    def _invocation(
+        self, profile: AgentProfile, endpoint: str, items: list[str], work_dir: Path
+    ) -> list[str]:
+        config = work_dir / "promptfooconfig.json"
+        config.write_text(
+            json.dumps(self.to_config(profile, endpoint, plugins=items), indent=2),
+            encoding="utf-8",
+        )
+        # `redteam run` generates and evaluates in one pass. Caching is off so a
+        # rerun is fresh evidence rather than a replay of the last one.
+        return [
+            "promptfoo",
+            "redteam",
+            "run",
+            "-c",
+            config.name,
+            "-o",
+            self._REPORT_NAME,
+            "--no-cache",
+        ]
+
+    def _report(self, work_dir: Path) -> Any:
+        return json.loads((work_dir / self._REPORT_NAME).read_text(encoding="utf-8"))
 
     def catalog(self, profile: AgentProfile) -> list[TestCatalogEntry]:
         entries = []
@@ -345,11 +525,12 @@ class GarakAdapter(ExternalEvalAdapter):
     # reporting threshold.
     HIT_THRESHOLD = 0.5
 
+    # A probe module is many generations against the endpoint, so the shared
+    # 15-minute default would time out a sweep that was working fine.
+    timeout_s = 3600.0
+
     _BASE_PROBES = ("promptinject", "dan", "encoding", "leakreplay")
     _ACTING_PROBES = ("xss", "packagehallucination", "malwaregen")
-
-    def available(self) -> bool:
-        return shutil.which("garak") is not None
 
     def probes(
         self,
@@ -386,6 +567,20 @@ class GarakAdapter(ExternalEvalAdapter):
             "--report_prefix",
             report_prefix,
         ]
+
+    def _items(self, profile: AgentProfile) -> list[str]:
+        return self.probes(profile)
+
+    def _invocation(
+        self, profile: AgentProfile, endpoint: str, items: list[str], work_dir: Path
+    ) -> list[str]:
+        return self.command(endpoint, items, report_prefix=str(work_dir / "garak"))
+
+    def _report(self, work_dir: Path) -> Any:
+        reports = sorted(work_dir.glob("*.report.jsonl"))
+        if not reports:
+            raise FileNotFoundError("garak left no report file")
+        return reports[-1].read_text(encoding="utf-8")
 
     def catalog(self, profile: AgentProfile) -> list[TestCatalogEntry]:
         entries = []

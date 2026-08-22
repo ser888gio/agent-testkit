@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -95,3 +97,24 @@ def test_register_and_build_sandbox_round_trip():
 def test_build_unknown_sandbox_raises():
     with pytest.raises(KeyError, match="unknown sandbox 'nope'"):
         build_sandbox("nope")
+
+
+def test_the_registry_loads_its_own_builtins():
+    """A fresh interpreter that never imported a domain still gets the built-ins.
+
+    Run out of process on purpose: in-process another test's import would have
+    filled the registry already, which is exactly the accident this replaces.
+    """
+    code = (
+        "from agentaudit.core.sandbox import build_sandbox, sandbox_modules;"
+        "print(build_sandbox('treasury').name);"
+        "print(','.join(sandbox_modules()))"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+
+    name, modules = proc.stdout.split()
+    assert name == "treasury"
+    # What the spawned child imports to see the same registry.
+    assert "agentaudit.domains.treasury.sandbox" in modules.split(",")
