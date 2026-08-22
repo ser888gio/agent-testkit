@@ -6,6 +6,7 @@ import statistics
 
 from pydantic import BaseModel
 
+from agentaudit.core.findings import is_failure
 from agentaudit.core.schema import Category, Risk, RunResult, Status
 
 _RISK_WEIGHT = {
@@ -67,7 +68,7 @@ def score(
     critical_failures = sum(
         1
         for r in non_skipped
-        if r.risk == Risk.critical and r.status in (Status.failed, Status.error)
+        if r.risk == Risk.critical and is_failure(r)
     )
 
     if not non_skipped:

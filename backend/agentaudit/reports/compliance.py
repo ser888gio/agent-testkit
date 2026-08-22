@@ -10,9 +10,9 @@ import json
 
 from agentaudit.core.attacks import split_variant
 from agentaudit.core.compliance import UNCOVERED, controls_for
+from agentaudit.core.findings import detail_for, is_failure
 from agentaudit.core.schema import RunResult, Status
 from agentaudit.core.scoring import ScoreReport
-from agentaudit.reports.md import _detail_for
 
 _DISCLAIMER = (
     "agentaudit produces **technical readiness evidence for the risk-management file, "
@@ -37,7 +37,7 @@ def _rollup(results):
             slot["nist"].add(ctrl.nist_ai_rmf)
             if r.status == Status.passed:
                 slot["covered"] += 1
-            elif r.status in (Status.failed, Status.error):
+            elif is_failure(r):
                 # Base id, deduplicated: N encodings of one bypass are one control
                 # gap, not N. Which encoding got through stays in the failure narrative.
                 base, _ = split_variant(r.test_id)
@@ -57,7 +57,7 @@ def _critical_fail_lines(critical_fail: list) -> list[str]:
         "",
     ]
     for r in critical_fail:
-        lines.append(f"- FAIL {r.test_id}: {_detail_for(r)}")
+        lines.append(f"- FAIL {r.test_id}: {detail_for(r)}")
     lines.append("")
     return lines
 
@@ -95,7 +95,7 @@ def _owasp_lines(results, *, axis: str, title: str, column: str) -> list[str]:
     grouped = _by_owasp_code(results, axis)
     for code in sorted(grouped):
         rs = grouped[code]
-        failed = [r.test_id for r in rs if r.status in (Status.failed, Status.error)]
+        failed = [r.test_id for r in rs if is_failure(r)]
         covered = any(r.status == Status.passed for r in rs)
         status = "gap" if failed else ("covered" if covered else "not tested")
         lines.append(f"| {code} | {', '.join(r.test_id for r in rs)} | {status} |")
@@ -106,9 +106,7 @@ def _owasp_lines(results, *, axis: str, title: str, column: str) -> list[str]:
 def to_compliance(run: RunResult, score: ScoreReport) -> str:
     results = run.results
     critical_fail = [
-        r
-        for r in results
-        if r.risk.value == "critical" and r.status in (Status.failed, Status.error)
+        r for r in results if r.risk.value == "critical" and is_failure(r)
     ]
 
     lines = [
@@ -168,6 +166,6 @@ def to_compliance_json(run: RunResult, score: ScoreReport) -> str:
         for code, rs in _by_owasp_code(run.results, axis).items():
             payload[axis][code] = {
                 "tests": [r.test_id for r in rs],
-                "gaps": [r.test_id for r in rs if r.status in (Status.failed, Status.error)],
+                "gaps": [r.test_id for r in rs if is_failure(r)],
             }
     return json.dumps(payload, indent=2)

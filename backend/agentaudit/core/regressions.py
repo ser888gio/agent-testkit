@@ -6,10 +6,9 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from agentaudit.core.findings import FAILING
 from agentaudit.core.schema import Risk, RunResult, Status, TestResult
 from agentaudit.core.scoring import ScoreReport
-
-_BAD = (Status.failed, Status.error)
 
 
 @dataclass
@@ -47,8 +46,8 @@ def _classify(
 ) -> None:
     after_status = after_result.status
     was_ok = before_status is None or before_status == Status.passed
-    is_bad = after_status in _BAD
-    was_bad = before_status in _BAD
+    is_bad = after_status in FAILING
+    was_bad = before_status in FAILING
     is_ok = after_status == Status.passed
 
     if was_ok and is_bad:

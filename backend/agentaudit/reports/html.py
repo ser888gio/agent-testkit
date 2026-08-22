@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import html as _html
 
-from agentaudit.core.schema import RunResult, Status
+from agentaudit.core.findings import is_failure, order_by_failure
+from agentaudit.core.schema import RunResult
 from agentaudit.core.scoring import ScoreReport
-
-_FAILURE_RANK = {Status.failed: 0, Status.error: 0, Status.passed: 1, Status.skipped: 2}
 
 _STYLE = """
 body { font-family: sans-serif; margin: 2rem; color: #222; }
@@ -29,9 +28,7 @@ def _failure_section(r) -> str:
 
 
 def to_html(run: RunResult, score: ScoreReport) -> str:
-    ordered = sorted(
-        run.results, key=lambda r: (_FAILURE_RANK.get(r.status, 1), r.test_id)
-    )
+    ordered = order_by_failure(run.results)
 
     rows = "".join(
         f"<tr><td>{_html.escape(r.test_id)}</td>"
@@ -40,7 +37,7 @@ def to_html(run: RunResult, score: ScoreReport) -> str:
         for r in ordered
     )
 
-    failures = [r for r in ordered if r.status in (Status.failed, Status.error)]
+    failures = [r for r in ordered if is_failure(r)]
     failure_html = "".join(_failure_section(r) for r in failures) or "<p>None</p>"
 
     return f"""<!doctype html>

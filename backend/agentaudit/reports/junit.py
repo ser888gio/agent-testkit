@@ -4,17 +4,9 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 
+from agentaudit.core.findings import detail_for, order_by_failure
 from agentaudit.core.schema import RunResult, Status
 from agentaudit.core.scoring import ScoreReport
-
-_FAILURE_RANK = {Status.failed: 0, Status.error: 0, Status.passed: 1, Status.skipped: 2}
-
-
-def _first_failing_detail(results) -> str:
-    for a in results:
-        if not a.passed:
-            return a.detail
-    return ""
 
 
 def to_junit(run: RunResult, score: ScoreReport) -> str:
@@ -36,7 +28,7 @@ def to_junit(run: RunResult, score: ScoreReport) -> str:
         },
     )
 
-    ordered = sorted(results, key=lambda r: (_FAILURE_RANK.get(r.status, 1), r.test_id))
+    ordered = order_by_failure(results)
     for r in ordered:
         tc = ET.SubElement(
             suite,
@@ -48,7 +40,7 @@ def to_junit(run: RunResult, score: ScoreReport) -> str:
             },
         )
         if r.status == Status.failed:
-            detail = _first_failing_detail(r.assertion_results) or "assertion failed"
+            detail = detail_for(r) or "assertion failed"
             ET.SubElement(tc, "failure", {"message": detail})
         elif r.status == Status.error:
             ET.SubElement(tc, "error", {"message": r.error or "error"})

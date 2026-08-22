@@ -114,7 +114,7 @@ agentaudit/              config/*.yaml (targets) · packs/ (YAML test packs)
 backend/agentaudit/
   cli.py               Typer CLI (the `agentaudit` console script)
   core/                audit · agent · sandbox · schema · loader · runner · assertions
-                       scoring · redaction · compliance · regressions · store
+                       findings · scoring · redaction · compliance · regressions · store
                        profile · discovery · catalog · planner · adapters
                        adaptive · attacker · judge · jsonx
   domains/             treasury/ · email/  (Sandbox subclasses + demo agents)
