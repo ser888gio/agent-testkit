@@ -33,6 +33,7 @@ components:
       - Test discovery and loading from YAML/JSON/Python packs
       - Endpoint discovery and agent profiling
       - Test catalog metadata, ranking, and harness planning
+      - Coverage archive: one elite attack per (category, style) cell
       - Adapters normalizing third-party eval reports (promptfoo, garak)
       - Test execution (single- and multi-turn), which never raises
       - Killable process isolation and sandbox RPC supervision
@@ -50,6 +51,7 @@ components:
       - backend/agentaudit/core/loader.py       # discover()
       - backend/agentaudit/core/discovery.py    # discover() -> AgentProfile
       - backend/agentaudit/core/planner.py      # plan(), apply_plan()
+      - backend/agentaudit/core/archive.py      # Archive.admit(), empty_cells()
       - backend/agentaudit/core/agent.py        # build_agent()
       - backend/agentaudit/core/sandbox.py      # build_sandbox(), register_sandbox()
       - backend/agentaudit/core/store.py        # Store
