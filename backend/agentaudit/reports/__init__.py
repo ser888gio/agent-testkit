@@ -5,6 +5,7 @@ from __future__ import annotations
 from agentaudit.core.schema import RunResult
 from agentaudit.core.scoring import ScoreReport
 from agentaudit.reports.compliance import to_compliance, to_compliance_json
+from agentaudit.reports.coverage import to_coverage
 from agentaudit.reports.html import to_html
 from agentaudit.reports.json import to_json
 from agentaudit.reports.junit import to_junit
@@ -18,6 +19,7 @@ _RENDERERS = {
     "md": to_markdown,
     "compliance": to_compliance,
     "compliance-json": to_compliance_json,
+    "coverage": to_coverage,
 }
 
 
@@ -37,5 +39,6 @@ __all__ = [
     "to_plan_markdown",
     "to_compliance",
     "to_compliance_json",
+    "to_coverage",
     "render",
 ]

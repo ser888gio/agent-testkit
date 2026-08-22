@@ -6,6 +6,9 @@ Imported as `agentaudit.web.*`. Served by `agentaudit ui` / `bash infra/dev.sh`.
 
 - `app.py` — the whole application: route handlers, run-harness endpoints, and the
   `Store` queries that feed them. Templates in `templates/`, assets in `static/`.
+- `/generated` — the review queue for machine-authored tests. Promotion mutates the
+  audited baseline, so it is `require_admin` + CSRF like every other mutation. The id
+  rewrite lives in `core/evolve.py:promoted_id`, not here.
 - `templates/base.html` + `_components.html` — shared layout and partials; new pages should
   extend/include these rather than restating markup.
 - `_status_fragment.html` + `static/poll.js` — the polling pattern used for in-progress runs.

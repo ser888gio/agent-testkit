@@ -20,6 +20,12 @@ from pydantic import ValidationError
 import agentaudit
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.attacks import split_variant
+from agentaudit.core.evolve import (
+    GENERATED_PREFIX,
+    PROMOTED_PREFIX,
+    promotable,
+    promoted_id,
+)
 from agentaudit.core.findings import failed_assertions
 from agentaudit.core.loader import LoaderError, discover
 from agentaudit.core.redaction import builtin_pattern_names
@@ -140,6 +146,12 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+_ERROR_TEMPLATE = "error.html"
+
+
+def _error(message: str, status_code: int) -> HTMLResponse:
+    return _render(_ERROR_TEMPLATE, status_code=status_code, message=message)
 
 
 def _render(template_name: str, status_code: int = 200, **context) -> HTMLResponse:
@@ -481,6 +493,78 @@ def _test_rows(store: Store, org_id: str) -> list[dict]:
         row["id"] = t["test_id"]
         row["status"] = t["latest_status"]
     return list(rows.values())
+
+
+@app.get("/generated", response_class=HTMLResponse)
+def generated_page(principal: Principal = Depends(current_principal)) -> HTMLResponse:
+    """Machine-authored tests awaiting a human decision.
+
+    Generated tests are provisional on purpose: they are evidence a model
+    produced, and nothing machine-authored should reach the audited baseline
+    without someone looking at it.
+    """
+    store = get_store()
+    try:
+        rows = store.get_pack_tests(principal.org_id, GENERATED_PREFIX)
+    except KeyError:
+        rows = []
+    statuses = {
+        t["test_id"]: t["latest_status"] for t in store.list_tests(principal.org_id)
+    }
+    return _render(
+        "generated.html",
+        candidates=promotable(rows, statuses),
+        active="generated",
+        principal=principal,
+        csrf_token=principal.csrf_token,
+    )
+
+
+@app.post("/generated/promote")
+def promote_test(
+    test_id: str = Form(...),
+    principal: Principal = Depends(require_admin),
+) -> Response:
+    """Move one generated test into the reviewed pack.
+
+    This mutates the audited baseline, so it is admin-gated and CSRF-protected
+    like every other mutation here. The id changes exactly once, here, and is
+    frozen afterwards -- which starts a fresh regression history for the test.
+    """
+    store = get_store()
+    try:
+        rows = store.get_pack_tests(principal.org_id, GENERATED_PREFIX)
+    except KeyError:
+        return _error("No generated tests.", 404)
+
+    row = next((r for r in rows if r.get("id") == test_id), None)
+    if row is None:
+        return _error(f"Unknown test {test_id}.", 404)
+
+    promoted = {**row, "id": promoted_id(test_id)}
+    store.ensure_pack(principal.org_id, PROMOTED_PREFIX, "Promoted tests (reviewed)")
+    try:
+        store.save_pack_test(
+            principal.org_id,
+            PROMOTED_PREFIX,
+            promoted,
+            created_by=principal.subject,
+            created_by_email=principal.email,
+        )
+    except LoaderError as exc:
+        return _error(str(exc), 400)
+    store.delete_pack_test(principal.org_id, GENERATED_PREFIX, test_id)
+    return RedirectResponse(url="/generated", status_code=303)
+
+
+@app.post("/generated/reject")
+def reject_test(
+    test_id: str = Form(...),
+    principal: Principal = Depends(require_admin),
+) -> Response:
+    store = get_store()
+    store.delete_pack_test(principal.org_id, GENERATED_PREFIX, test_id)
+    return RedirectResponse(url="/generated", status_code=303)
 
 
 @app.get("/tests", response_class=HTMLResponse)
@@ -1070,7 +1154,7 @@ async def http_error(request: Request, exc: HTTPException) -> Response:
             next_url += f"?{request.url.query}"
         return RedirectResponse(f"/login?next={quote(next_url, safe='')}", status_code=303)
     return _render(
-        "error.html",
+        _ERROR_TEMPLATE,
         status_code=exc.status_code,
         display_status=exc.status_code,
         detail=exc.detail,

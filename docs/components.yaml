@@ -35,6 +35,7 @@ components:
       - Test catalog metadata, ranking, and harness planning
       - Coverage archive: one elite attack per (category, style) cell
       - Attack generation loop (opt-in, needs an attacker model)
+      - Generated-test promotion (human-gated) and coverage reporting
       - Adapters normalizing third-party eval reports (promptfoo, garak)
       - Test execution (single- and multi-turn), which never raises
       - Killable process isolation and sandbox RPC supervision
