@@ -15,6 +15,7 @@ from agentaudit.core.schema import (
 )
 from agentaudit.core.scoring import score
 from agentaudit.reports import (
+    FORMATS,
     render,
     to_coverage,
     to_html,
@@ -332,3 +333,20 @@ def test_a_run_with_no_generated_tests_carries_no_provisional_warning():
 def test_coverage_is_reachable_through_render(run_and_score):
     rr, report = run_and_score
     assert render(rr, report, "coverage") == to_coverage(rr, report)
+
+
+def test_plan_is_a_format_like_any_other():
+    """`plan` used to sit outside `render`, so every caller branched on it."""
+    assert "plan" in FORMATS
+    assert render(_run(), score(_run()), "plan", plan=None).startswith("This run was launched")
+
+
+def test_unknown_format_lists_plan_among_the_valid_ones():
+    with pytest.raises(ValueError, match="plan"):
+        render(_run(), score(_run()), "nope")
+
+
+def test_render_ignores_plan_for_result_formats():
+    """The six renderers that predate the argument must not see it."""
+    rr = _run()
+    assert render(rr, score(rr), "json") == render(rr, score(rr), "json", plan=None)

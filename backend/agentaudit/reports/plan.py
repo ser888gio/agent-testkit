@@ -1,8 +1,10 @@
 """Harness plan report: what was selected, why, and what was left untested.
 
-Separate from `render(run, score, fmt)` on purpose. A plan is not a result, and
-threading an optional plan through every existing renderer would change a
-contract six modules depend on to serve one of them.
+A plan is not a result, so it is not one of the `_RENDERERS` that take
+`(run, score)` -- threading an optional plan through all of them would change a
+contract six modules depend on to serve one of them. `reports.render` dispatches
+`plan` separately and lists it in `FORMATS`, so callers still pick a format
+string and never branch on which one they picked.
 """
 
 from __future__ import annotations

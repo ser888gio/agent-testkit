@@ -35,7 +35,6 @@ from agentaudit.core.regressions import compare
 from agentaudit.core.schema import Category
 from agentaudit.core.store import DEFAULT_ORG, Store
 from agentaudit.reports import render as render_report
-from agentaudit.reports import to_plan_markdown
 
 DEFAULT_DB_PATH = "database/agentaudit.db"
 
@@ -460,14 +459,13 @@ def report_cmd(
         typer.echo(f"error: run '{run}' not found", err=True)
         raise typer.Exit(2) from exc
 
-    if format == "plan":
-        content = to_plan_markdown(store.get_run_plan(DEFAULT_ORG, run))
-    else:
-        try:
-            content = render_report(rr, report, format)
-        except ValueError as exc:
-            typer.echo(f"error: {exc}", err=True)
-            raise typer.Exit(2) from exc
+    try:
+        content = render_report(
+            rr, report, format, plan=store.get_run_plan(DEFAULT_ORG, run)
+        )
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
 
     if out:
         Path(out).write_text(content, encoding="utf-8")
