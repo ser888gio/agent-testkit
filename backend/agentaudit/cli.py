@@ -234,6 +234,15 @@ def run_cmd(
         False, "--plan", help="Profile the target first and run only the tests it justifies."
     ),
     max_tests: int | None = typer.Option(None, "--max-tests", min=1),
+    external: bool = typer.Option(
+        False,
+        "--external",
+        help=(
+            "Also run the third-party tools the plan selected (promptfoo, garak). "
+            "They dial the endpoint themselves, so agentaudit's pinned address "
+            "does not bind them."
+        ),
+    ),
 ) -> None:
     db = _resolve_db_path(db)
     cfg = _load_target_or_exit(target, endpoint)
@@ -267,11 +276,6 @@ def run_cmd(
         total = len(planned)
         if harness is not None:
             _print_plan(harness)
-        if unexecuted:
-            typer.echo(
-                f"note: {len(unexecuted)} selected test(s) belong to external tools and are "
-                f"not executed by this run: {', '.join(u.test_id for u in unexecuted)}"
-            )
         if format != "json":
             typer.echo(f"running {total} test(s) against {cfg.id}...", err=True)
 
@@ -285,12 +289,23 @@ def run_cmd(
         plan=use_plan,
         max_tests=max_tests,
         attack_transforms=transforms,
+        external=external,
         fail_under=fail_under,
         block_on_critical=block_on_critical,
         on_plan=announce,
         on_test=progress if format != "json" else None,
     )
     rr, report = audit.result, audit.report
+
+    # Reported after the run, not before: with --external some of these were
+    # executed after all, and a plan claiming coverage the run cannot show is
+    # the thing worth being precise about.
+    if audit.unexecuted:
+        typer.echo(
+            f"note: {len(audit.unexecuted)} selected test(s) belong to external tools and "
+            f"are not executed by this run: "
+            f"{', '.join(u.test_id for u in audit.unexecuted)}"
+        )
 
     if use_plan and not rr.results:
         typer.echo("warning: the plan selected no runnable local tests", err=True)

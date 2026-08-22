@@ -27,6 +27,16 @@ class _StubAdapter(ExternalEvalAdapter):
     def normalize(self, raw, *, evidence=None, started_at=None):
         return []
 
+    # The planner only ranks; execution is exercised in tests/test_adapters.py.
+    def _items(self, profile):
+        return ["probe"]
+
+    def _invocation(self, profile, endpoint, items, work_dir):
+        return [self.name, *items]
+
+    def _report(self, work_dir):
+        return []
+
 
 def _test_case(test_id, **kwargs):
     kwargs.setdefault("category", Category.prompt_injection)

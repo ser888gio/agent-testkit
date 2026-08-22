@@ -134,25 +134,24 @@ def execute_job(store: Store, job: JobRow) -> str:
         )
     )
 
-    def announce(planned, harness, unexecuted):
-        if unexecuted:
-            log.info(
-                "job %s: %d selected test(s) belong to external tools and are not executed here",
-                job.id,
-                len(unexecuted),
-            )
-
     # The egress decision above binds every request the audit makes, discovery
-    # probes included.
+    # probes included. `external` stays off for exactly that reason: a spawned
+    # scanner re-resolves the hostname itself, so the pinned address would not
+    # bind it, and this worker runs partner endpoints.
     audit = execute_audit(
         target,
         tests,
         redactor=redactor,
         endpoint=endpoint,
         plan=True,
-        on_plan=announce,
     )
     result, report = audit.result, audit.report
+    if audit.unexecuted:
+        log.info(
+            "job %s: %d selected test(s) belong to external tools and are not executed here",
+            job.id,
+            len(audit.unexecuted),
+        )
     store.save_run(job.org_id, target, result, report, job.created_by, plan=audit.plan)
     return result.run_id
 

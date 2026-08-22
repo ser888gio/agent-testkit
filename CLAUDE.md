@@ -55,9 +55,9 @@ Keep the story honest when describing this codebase:
 - **Current repo** - fixed packs and sandboxes, solid black-box execution, solid
   evidence/reporting foundations, plus a first adaptive layer: endpoint probing into an
   `AgentProfile`, a metadata catalog with explainable ranking, a planner that records why
-  each test was selected and what was left untested, and adapters normalizing promptfoo and
-  garak reports. Adapter-selected tests are ranked and their invocation generated, but they
-  are still executed out of band.
+  each test was selected and what was left untested, and adapters that rank, run and
+  normalize promptfoo and garak. External execution is opt-in (`agentaudit run --external`)
+  because a spawned tool dials the endpoint itself and is not bound by the pinned address.
 - **Target product** - automated agent discovery, generated harnesses, dynamic test
   planning, adaptive iterative attacks, risk-aware coverage, and a stronger assurance
   narrative.
@@ -67,7 +67,7 @@ The practical framing for contributors is:
 > This repo is the execution and evidence core of a larger adaptive agent assurance
 > platform.
 
-Suggested next product milestones (1-3 and 5 shipped; see
+Suggested next product milestones (1-3, 5 and 6 shipped; see
 [`IMPLEMENTATION-TESTS-PLAN.md`](IMPLEMENTATION-TESTS-PLAN.md) for the full roadmap):
 
 1. ~~`AgentProfile` model.~~ — `core/profile.py`, `core/discovery.py`
@@ -75,8 +75,8 @@ Suggested next product milestones (1-3 and 5 shipped; see
 3. ~~Planner that ranks tests from profile plus risk.~~ — `core/planner.py`
 4. Iterative attack loop with branching and retries.
 5. ~~Reporting that explains why a test was selected for a given agent.~~ — `reports/plan.py`
-6. Adapter *execution*: today `core/adapters.py` normalizes promptfoo/garak reports and
-   generates their config/argv, but agentaudit does not spawn either tool.
+6. ~~Adapter *execution*: run the external tools the planner selected and merge their
+   evidence into the run.~~ — `ExternalEvalAdapter.execute`, `core/audit.py:run_external`
 
 **Non-obvious structural fact:** the `agentaudit` package is physically split across four
 top-level directories and reassembled by an explicit setuptools package map

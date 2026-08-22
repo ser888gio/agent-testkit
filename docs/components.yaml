@@ -68,6 +68,7 @@ components:
       - "runner.py must never propagate an exception"
       - "redaction runs before TestResult construction and again in store.save_run"
       - "adapters.py results bypass runner.py, so normalize() redacts and applies the evidence policy itself"
+      - "adapters.py:execute spawns a third-party tool that resolves the endpoint itself; the egress pin does not bind it, so hosted callers leave external execution off"
       - "profile.py models carry no agent output: a HarnessPlan is persisted with the run"
       - "cli and worker assemble a run only through audit.execute(); neither repeats the sequence"
       - "failure ordering, the failure predicate and failure detail come from findings.py; renderers only format"

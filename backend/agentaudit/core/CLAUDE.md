@@ -36,7 +36,10 @@ the rest of the system consumes.
 - `jsonx.py:extract_json` — pulls the first JSON object out of a model reply that may be
   fenced, prefaced, or trailed by prose. Used by every module that asks a model for JSON.
 - `planner.py:plan` / `apply_plan` — profile + catalogs → `HarnessPlan`, then the runnable half.
-- `adapters.py:ADAPTERS` — promptfoo/garak report normalization into `TestResult`s.
+- `adapters.py:ADAPTERS` — promptfoo/garak: what to run (`catalog`), running it
+  (`execute`, spawning the tool), and its report normalized into `TestResult`s
+  (`normalize`). `execute` is runner-side — it reaches a live agent, via a spawned
+  process that does its own DNS, so the egress pin does not bind it.
 
 ## Local architecture constraints
 

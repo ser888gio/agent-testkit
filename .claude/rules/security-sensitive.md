@@ -30,6 +30,19 @@ Changes to these files need explicit care and a passing `tests/test_security_p0.
 redaction — it can drop evidence entirely (`None`) even after redaction. Both must be
 honoured; neither substitutes for the other.
 
+## External tool execution
+
+`ExternalEvalAdapter.execute` spawns promptfoo or garak, which open their own connections
+and re-resolve the endpoint hostname. `ValidatedEndpoint.pinned_url` therefore does **not**
+bind them: between agentaudit's check and the tool's own lookup, DNS can answer differently.
+
+- Off by default. The CLI opts in with `agentaudit run --external`; the worker never does,
+  because it runs partner-supplied endpoints.
+- Do not enable it from `worker.py`, or from any hosted path, without solving the pinning
+  problem first — enabling it there reopens the SSRF hole `core/egress.py` exists to close.
+- Generated configs interpolate `{{env.VAR}}`, never a literal credential.
+- Tool stderr is agent-adjacent text: redact it before it becomes evidence.
+
 ## Secrets in config
 
 `TargetConfig` interpolates `${ENV_VAR}` at load time so tokens never sit in a committed
