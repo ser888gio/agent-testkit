@@ -382,12 +382,13 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
     """
     import os
 
-    from agentaudit import worker as worker_module
+    from agentaudit.core import audit as audit_module
     from agentaudit.core.store import Store
+    from agentaudit.worker import work_once
 
     monkeypatch.setenv("PARTNER_TOKEN", SECRET)
     seen: set[str] = set()
-    real_run = worker_module.run_tests
+    real_run = audit_module.run_tests
 
     def spy(target, tests, **kwargs):
         # Sampled on every execution, discovery probes included: each one is a
@@ -395,7 +396,7 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
         seen.update(k for k, v in os.environ.items() if v == SECRET)
         return real_run(target, tests, **kwargs)
 
-    monkeypatch.setattr(worker_module, "run_tests", spy)
+    monkeypatch.setattr(audit_module, "run_tests", spy)
     store = Store(str(tmp_path / "env.db"))
     store.save_target(
         "org-a",
@@ -426,7 +427,7 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
     )
     store.enqueue_job("org-a", "echo-target", "p1")
 
-    worker_module.work_once(store, "w1")
+    work_once(store, "w1")
 
     # PARTNER_TOKEN is the deployment's own provisioning, which the worker read
     # from. It must not have grown a second copy under the config's var name.

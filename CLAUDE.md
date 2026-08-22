@@ -92,7 +92,7 @@ one entry per subpackage). This replaced the earlier implicit namespace-package 
 
 Where things live:
 
-- **Business logic / test engine** — `backend/agentaudit/core/` (runner, assertions, scoring, loader)
+- **Business logic / test engine** — `backend/agentaudit/core/` (audit, runner, assertions, scoring, loader)
 - **Domain fakes (sandboxes)** — `backend/agentaudit/domains/` (treasury: bank+invoices; email: inbox+contacts+outbound ledger)
 - **Persistence** — `backend/agentaudit/core/store.py` (SQLite, `agentaudit.db`)
 - **HTTP surface** — `frontend/agentaudit/web/app.py` (FastAPI dashboard + Jinja2 templates)
@@ -113,7 +113,7 @@ Generated / vendored — **never edit by hand:** `dist/`, `agentaudit.egg-info/`
 agentaudit/              config/*.yaml (targets) · packs/ (YAML test packs)
 backend/agentaudit/
   cli.py               Typer CLI (the `agentaudit` console script)
-  core/                agent · sandbox · schema · loader · runner · assertions
+  core/                audit · agent · sandbox · schema · loader · runner · assertions
                        scoring · redaction · compliance · regressions · store
                        profile · discovery · catalog · planner · adapters
                        adaptive · attacker · judge · jsonx

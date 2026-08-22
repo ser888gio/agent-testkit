@@ -22,17 +22,15 @@ from sqlalchemy import create_engine
 import agentaudit.domains.email.sandbox  # noqa: F401
 import agentaudit.domains.treasury.sandbox  # noqa: F401
 from agentaudit.core.adapters import ADAPTERS
-from agentaudit.core.attacks import TRANSFORMS, expand
+from agentaudit.core.attacks import TRANSFORMS
+from agentaudit.core.audit import execute as execute_audit
 from agentaudit.core.config import ConfigError, load_target, load_target_dict
 from agentaudit.core.discovery import discover as discover_profile
 from agentaudit.core.loader import LoaderError, discover, filter_tests
-from agentaudit.core.planner import apply_plan
 from agentaudit.core.planner import plan as build_plan
 from agentaudit.core.profile import HarnessPlan
 from agentaudit.core.regressions import compare
-from agentaudit.core.runner import run as run_tests
 from agentaudit.core.schema import Category
-from agentaudit.core.scoring import score
 from agentaudit.core.store import DEFAULT_ORG, Store
 from agentaudit.reports import render as render_report
 from agentaudit.reports import to_plan_markdown
@@ -253,48 +251,58 @@ def run_cmd(
         typer.echo("warning: no tests discovered", err=True)
         raise typer.Exit(2)
 
-    harness = None
-    if use_plan:
-        harness = build_plan(
-            discover_profile(cfg),
-            tests,
-            adapters=list(ADAPTERS.values()),
-            max_tests=max_tests,
-            attack_transforms=[n.strip() for n in (attack or "").split(",") if n.strip()],
+    if max_tests is not None and not use_plan:
+        typer.echo("error: --max-tests only applies with --plan", err=True)
+        raise typer.Exit(2)
+
+    transforms = [n.strip() for n in (attack or "").split(",") if n.strip()]
+    unknown = [n for n in transforms if n not in TRANSFORMS]
+    if unknown:
+        typer.echo(
+            f"error: unknown attack transform(s): {', '.join(unknown)}. "
+            f"Available: {', '.join(sorted(TRANSFORMS))}.",
+            err=True,
         )
-        tests, unexecuted = apply_plan(harness, tests)
-        _print_plan(harness)
+        raise typer.Exit(2)
+
+    total = 0
+
+    def announce(planned, harness, unexecuted) -> None:
+        nonlocal total
+        total = len(planned)
+        if harness is not None:
+            _print_plan(harness)
         if unexecuted:
             typer.echo(
                 f"note: {len(unexecuted)} selected test(s) belong to external tools and are "
                 f"not executed by this run: {', '.join(u.test_id for u in unexecuted)}"
             )
-        if not tests:
-            typer.echo("warning: the plan selected no runnable local tests", err=True)
-            raise typer.Exit(2)
-    elif max_tests is not None:
-        typer.echo("error: --max-tests only applies with --plan", err=True)
-        raise typer.Exit(2)
+        if format != "json":
+            typer.echo(f"running {total} test(s) against {cfg.id}...", err=True)
 
-    if attack:
-        try:
-            tests = expand(tests, [n.strip() for n in attack.split(",") if n.strip()])
-        except ValueError as exc:
-            typer.echo(f"error: {exc}", err=True)
-            raise typer.Exit(2) from exc
-
-    total = len(tests)
     # Progress is chatter: emit it only for the human-facing table format.
     def progress(index: int, test) -> None:
         typer.echo(f"  [{index + 1}/{total}] {test.id}", err=True)
 
-    if format != "json":
-        typer.echo(f"running {total} test(s) against {cfg.id}...", err=True)
-    rr = run_tests(cfg, tests, on_test=progress if format != "json" else None)
-    report = score(rr, fail_under=fail_under, block_on_critical=block_on_critical)
+    audit = execute_audit(
+        cfg,
+        tests,
+        plan=use_plan,
+        max_tests=max_tests,
+        attack_transforms=transforms,
+        fail_under=fail_under,
+        block_on_critical=block_on_critical,
+        on_plan=announce,
+        on_test=progress if format != "json" else None,
+    )
+    rr, report = audit.result, audit.report
+
+    if use_plan and not rr.results:
+        typer.echo("warning: the plan selected no runnable local tests", err=True)
+        raise typer.Exit(2)
 
     store = Store(db)
-    store.save_run(DEFAULT_ORG, cfg, rr, report, plan=harness)
+    store.save_run(DEFAULT_ORG, cfg, rr, report, plan=audit.plan)
 
     if format == "json":
         typer.echo(
