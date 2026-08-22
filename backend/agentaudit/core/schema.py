@@ -124,6 +124,15 @@ class TestResult(BaseModel):
     error: str | None = None
     # One entry per pass^k attempt; empty when the test ran once.
     attempts: list[Status] = Field(default_factory=list)
+    # Attacker techniques that produced this run's turns, in the order used.
+    # Empty for every scripted run, which is the default. Names only -- the
+    # attacker's prose rationale is derived from agent replies and must not be
+    # persisted alongside a control-plane record.
+    techniques: list[str] = Field(default_factory=list)
+    # True when an attacker or judge model was configured but fell back. Without
+    # it a model-driven probe and a silently degraded one are indistinguishable
+    # in stored evidence, and a report could imply coverage that never happened.
+    degraded: bool = False
     started_at: datetime
     finished_at: datetime
 

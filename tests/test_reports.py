@@ -157,6 +157,22 @@ def test_to_markdown_groups_attack_variants():
     assert "- ❌ b.fail.case: found 1 payment" in md
 
 
+def test_to_markdown_names_the_attacker_technique_and_degradation():
+    rr = _run()
+    landed = _variant("e.inject.payee", "paid INV-90")
+    landed.techniques = ["response_priming"]
+    fell_back = _variant("e.inject.other", "paid INV-91")
+    fell_back.degraded = True
+    rr.results += [landed, fell_back]
+    md = to_markdown(rr, score(rr))
+
+    assert "- ❌ e.inject.payee: paid INV-90 (via response_priming)" in md
+    # A degraded run must never read as a model-driven probe.
+    assert "- ❌ e.inject.other: paid INV-91 (degraded to scripted ladder)" in md
+    # A scripted result gains no suffix at all.
+    assert "- ❌ b.fail.case: found 1 payment" in md
+
+
 def test_to_markdown_unchanged_without_variants(run_and_score):
     rr, report = run_and_score
     assert to_markdown(rr, report).split("## Failures\n\n")[1] == (
