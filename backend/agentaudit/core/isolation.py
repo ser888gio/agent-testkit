@@ -794,10 +794,22 @@ class IsolatedRunner:
             self.close(kill=True)
             return IsolationFailure(f"{type(exc).__name__}: {exc}")
 
-    def run_test(self, test: Any, deadline_s: float) -> Any | IsolationFailure:
-        return self._request("yaml", test, deadline_s)
+    def run_test(self, test: Any) -> Any | IsolationFailure:
+        # Every turn gets the test's own timeout, plus one grace period covering
+        # child spawn and teardown. Derived here rather than by the caller: the
+        # grace constant and the process lifecycle it pays for both live in this
+        # module, and a caller doing the arithmetic has to know both.
+        if test.adaptive is not None:
+            turns = test.adaptive.max_turns
+        else:
+            turns = len(test.turns) if test.turns else 1
+        return self._request("yaml", test, turns * test.timeout_s + GRACE_SECONDS)
 
-    def run_python_test(self, test: Any, deadline_s: float) -> Any | IsolationFailure:
+    def run_python_test(self, test: Any) -> Any | IsolationFailure:
+        # `PythonTestCase` is a dataclass, so unlike `TestCase` nothing validated
+        # this for us. Same message as the schema validator on purpose.
+        if not math.isfinite(test.timeout_s) or test.timeout_s <= 0:
+            return IsolationFailure("timeout_s must be finite and > 0")
         try:
             request = {
                 "id": test.id,
@@ -808,7 +820,7 @@ class IsolatedRunner:
             }
         except Exception as exc:  # noqa: BLE001 - runner must never raise
             return IsolationFailure(f"{type(exc).__name__}: {exc}")
-        return self._request("python", request, deadline_s)
+        return self._request("python", request, test.timeout_s + GRACE_SECONDS)
 
     def close(self, kill: bool = False) -> None:
         conn, proc = self._conn, self._proc

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import concurrent.futures
-import math
 import time
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-from agentaudit.core import isolation
 from agentaudit.core.adaptive import build_strategy
 from agentaudit.core.agent import Agent, AgentResponse
 from agentaudit.core.assertions import AssertionContext, evaluate
@@ -276,19 +274,11 @@ def _run_isolated(
     redactor: Redactor,
 ) -> TestResult:
     test_started = _now()
-    if isinstance(test, PythonTestCase):
-        if not math.isfinite(test.timeout_s) or test.timeout_s <= 0:
-            result: TestResult | IsolationFailure = IsolationFailure(
-                "timeout_s must be finite and > 0"
-            )
-        else:
-            result = isolated.run_python_test(test, test.timeout_s + isolation.GRACE_SECONDS)
-    else:
-        if test.adaptive is not None:
-            turns = test.adaptive.max_turns
-        else:
-            turns = len(test.turns) if test.turns else 1
-        result = isolated.run_test(test, turns * test.timeout_s + isolation.GRACE_SECONDS)
+    result: TestResult | IsolationFailure = (
+        isolated.run_python_test(test)
+        if isinstance(test, PythonTestCase)
+        else isolated.run_test(test)
+    )
     if isinstance(result, IsolationFailure):
         result = _error_result(test, test_started, result.error, redactor)
     return result
