@@ -17,7 +17,9 @@ the rest of the system consumes.
   sandbox RPC boundary, process-tree cleanup, and CPU/memory ceilings.
 - `loader.py:discover` — turns a packs directory into `TestCase` / `PythonTestCase` objects.
 - `agent.py:build_agent` — `TargetConfig` → `CallableAgent` or `HTTPAgent`.
-- `sandbox.py:build_sandbox` — name → registered `Sandbox` instance.
+- `sandbox.py:build_sandbox` — name → registered `Sandbox` instance. Loads the built-in
+  verticals itself (`load_builtin_sandboxes`, by module name), so no caller carries a
+  registration import; `sandbox_modules()` reports what a spawned child must import.
 - `store.py:Store` — the only SQLite access point in the repository.
 - `discovery.py:discover` — probes a live endpoint (through `runner.run`) into an `AgentProfile`.
 - `attacker.py:build_refining_strategy` — optional attacker model that writes each adaptive

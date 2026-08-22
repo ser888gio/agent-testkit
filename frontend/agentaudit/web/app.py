@@ -18,12 +18,6 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import ValidationError
 
 import agentaudit
-
-# Eagerly import built-in domains so their sandboxes are registered before
-# `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
-# "feat/runner" section, for why this matters).
-import agentaudit.domains.email.sandbox  # noqa: F401
-import agentaudit.domains.treasury.sandbox  # noqa: F401
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.attacks import split_variant
 from agentaudit.core.findings import failed_assertions

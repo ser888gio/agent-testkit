@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import agentaudit.domains.treasury.sandbox  # noqa: F401 - registers "treasury"
 from agentaudit.core.compliance import UNCOVERED, controls_for
 from agentaudit.core.config import CallableSpec, TargetConfig
 from agentaudit.core.loader import discover

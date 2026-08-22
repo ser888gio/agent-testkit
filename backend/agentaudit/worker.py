@@ -18,10 +18,6 @@ import socket
 import threading
 import uuid
 
-# Registers the built-in sandboxes before `build_sandbox` is ever called, same
-# as cli.py and web/app.py. Not dead imports.
-import agentaudit.domains.email.sandbox  # noqa: F401
-import agentaudit.domains.treasury.sandbox  # noqa: F401
 from agentaudit.core.audit import execute as execute_audit
 from agentaudit.core.config import ConfigError, HTTPSpec, load_target_dict
 from agentaudit.core.egress import EgressError, EgressPolicy, validate_endpoint

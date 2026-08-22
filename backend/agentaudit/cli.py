@@ -16,11 +16,6 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine
 
-# Eagerly import built-in domains so their sandboxes are registered before
-# `build_sandbox` is ever called (see docs/notes/errors-and-improvements.md,
-# "feat/runner" section, for why this matters).
-import agentaudit.domains.email.sandbox  # noqa: F401
-import agentaudit.domains.treasury.sandbox  # noqa: F401
 from agentaudit.core.adapters import ADAPTERS
 from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.audit import execute as execute_audit

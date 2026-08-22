@@ -232,8 +232,9 @@ before declaring done.
 - **Compliance fails closed.** Empty or all-skipped runs are `INCOMPLETE`, never a pass.
   It is technical evidence, not a CE/compliance determination.
 - **New verticals are additive.** A new domain is a `Sandbox` subclass decorated with
-  `@register_sandbox("name")` under `backend/agentaudit/domains/`. It requires no change to
-  `core/`.
+  `@register_sandbox("name")` under `backend/agentaudit/domains/`, plus one import line in
+  `domains/__init__.py`. It requires no change to `core/`: `build_sandbox` imports that
+  package by name, so entry points carry no registration imports.
 - **Test placement:** repo tests live in `tests/`, one file per module
   (`tests/test_<module>.py`). Product test *content* lives in `agentaudit/packs/` as YAML and
   is data, not pytest.

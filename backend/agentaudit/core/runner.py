@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import math
-import sys
 import time
 import uuid
 from collections.abc import Callable
@@ -22,7 +21,7 @@ from agentaudit.core.isolation import IsolatedRunner, IsolationFailure
 from agentaudit.core.judge import build_judge
 from agentaudit.core.loader import PythonTestCase
 from agentaudit.core.redaction import EvidencePolicy, Redactor
-from agentaudit.core.sandbox import SANDBOXES, Sandbox
+from agentaudit.core.sandbox import Sandbox, sandbox_modules
 from agentaudit.core.schema import (
     AssertionResult,
     RunResult,
@@ -271,15 +270,6 @@ def _error_result(
     )
 
 
-def _sandbox_modules() -> tuple[str, ...]:
-    # Pass registered sandbox module names to the spawned interpreter. Named,
-    # not imported, so core keeps no dependency edge to domain packages while
-    # third-party Sandbox registrations work too.
-    modules = {sandbox_type.__module__ for sandbox_type in SANDBOXES.values()}
-    modules.update(name for name in list(sys.modules) if name.startswith("agentaudit.domains."))
-    return tuple(sorted(modules))
-
-
 def _run_isolated(
     isolated: IsolatedRunner,
     test: TestCase | PythonTestCase,
@@ -335,7 +325,7 @@ def run(
     sandbox owner snapshots timeout evidence.
     """
     redactor = redactor or Redactor(target.evidence.redact)
-    isolated = IsolatedRunner(target, redactor, endpoint, _sandbox_modules())
+    isolated = IsolatedRunner(target, redactor, endpoint, sandbox_modules())
 
     started = _now()
     results: list[TestResult] = []
