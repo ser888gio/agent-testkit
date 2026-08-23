@@ -1004,30 +1004,8 @@ def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
     assert "never run" in body
 
 
-def test_authored_duplicate_ids_from_different_packs_remain_distinct(tmp_path, monkeypatch):
-    # Isolate the merge logic from the shipped packs the library also lists.
-    empty_packs = tmp_path / "packs"
-    empty_packs.mkdir()
-    monkeypatch.setenv("AGENTAUDIT_PACKS", str(empty_packs))
-    from agentaudit.web.app import _test_rows
-
-    class FakeStore:
-        def list_authored_tests(self, _org_id):
-            return [
-                {"pack_id": "one", "test_id": "shared.id", "category": "reliability",
-                 "risk": "low", "created_by": None, "created_by_email": None},
-                {"pack_id": "two", "test_id": "shared.id", "category": "security",
-                 "risk": "high", "created_by": None, "created_by_email": None},
-            ]
-
-        def list_tests(self, _org_id):
-            return []
-
-    rows = _test_rows(FakeStore(), DEFAULT_ORG)
-    assert {(row["pack_id"], row["test_id"]) for row in rows} == {
-        ("one", "shared.id"),
-        ("two", "shared.id"),
-    }
+# The library merge rule moved to tests/test_runview.py with core/runview.py:
+# it is a function call now, not a FakeStore behind an env var.
 
 
 # --- T10: one long-lived Store, not one connection per request -------------

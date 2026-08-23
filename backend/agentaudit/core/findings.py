@@ -25,7 +25,7 @@ FAILING = (Status.failed, Status.error)
 
 # Failures first, then everything else, skipped last. The reader is here for the
 # failures; a report that buries them under fifty passes is a worse report.
-_RANK = {Status.failed: 0, Status.error: 0, Status.passed: 1, Status.skipped: 2}
+RANK = {Status.failed: 0, Status.error: 0, Status.passed: 1, Status.skipped: 2}
 
 
 def is_failure(result: TestResult) -> bool:
@@ -39,7 +39,7 @@ def failures(results: Iterable[TestResult]) -> list[TestResult]:
 
 def order_by_failure(results: Iterable[TestResult]) -> list[TestResult]:
     """Every result, failures first, ties broken by test id."""
-    return sorted(results, key=lambda r: (_RANK.get(r.status, 1), r.test_id))
+    return sorted(results, key=lambda r: (RANK.get(r.status, 1), r.test_id))
 
 
 def failed_assertions(result: TestResult) -> list[AssertionResult]:
