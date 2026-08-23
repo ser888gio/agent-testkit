@@ -8,7 +8,7 @@ import sqlite3
 import threading
 import uuid
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     lease_owner TEXT,
     lease_expires_at TEXT,
     heartbeat_at TEXT,
+    test_ids_json TEXT,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -225,6 +226,9 @@ class JobRow:
     lease_owner: str | None
     lease_expires_at: str | None
     heartbeat_at: str | None
+    # JSON list of selected test ids, or None for "the whole pack". Defaulted
+    # because `SELECT *` feeds JobRow(**dict(row)) and older rows predate it.
+    test_ids_json: str | None = None
 
 
 JOB_STATES = ("queued", "running", "done", "failed")
@@ -395,15 +399,35 @@ class JobQueue:
         *,
         created_by: str | None = None,
         priority: int = 0,
+        test_ids: Sequence[str] | None = None,
     ) -> str:
+        """Queue a run.
+
+        `test_ids` restricts the run to a subset of the pack. None means the
+        whole pack, which is what an unselected run has always meant. An empty
+        selection is rejected rather than silently running everything: a run of
+        nothing is a mistake, and scoring it as a pass would be evidence of
+        coverage that never happened.
+        """
+        if test_ids is not None and not test_ids:
+            raise ValueError("test_ids must name at least one test, or be None for the whole pack")
         job_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
         with self._store._connection() as conn, conn:
             self._store._ensure_org(conn, org_id, now)
             conn.execute(
                 "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
-                "priority, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)",
-                (job_id, org_id, target_id, pack_id, created_by, priority, now),
+                "priority, created_at, test_ids_json) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)",
+                (
+                    job_id,
+                    org_id,
+                    target_id,
+                    pack_id,
+                    created_by,
+                    priority,
+                    now,
+                    json.dumps(list(test_ids)) if test_ids is not None else None,
+                ),
             )
         return job_id
 

@@ -294,6 +294,20 @@ def connect_agent_page(principal: Principal = Depends(current_principal)) -> HTM
     pack_roots = sorted(
         p.relative_to(root).as_posix() for p in (PACKAGE_DIR / "packs").iterdir() if _is_pack_dir(p)
     )
+    # Every pack's tests, so the picker needs no fetch: the packs directory is
+    # small and already walked on this page. Python test modules carry no id to
+    # check off, so only YAML-backed cases are selectable.
+    pack_tests = {}
+    for rel in pack_roots:
+        try:
+            cases = discover(str(root / rel))
+        except LoaderError:
+            continue
+        pack_tests[rel] = [
+            {"id": t.id, "category": t.category.value, "risk": t.risk.value}
+            for t in cases
+            if isinstance(t, TestCase)
+        ]
     # Default to whatever this org last launched -- derived, not a stored
     # preference. Jobs record the target's yaml `id` and the pack directory
     # name (_import_first_party), so map the path options back the same way.
@@ -318,6 +332,7 @@ def connect_agent_page(principal: Principal = Depends(current_principal)) -> HTM
         pack_roots=pack_roots,
         default_target=default_target,
         default_pack=default_pack,
+        pack_tests=pack_tests,
         csrf_token=principal.csrf_token,
         active="agents",
     )
@@ -868,14 +883,41 @@ def _first_party_hosts(raw: dict) -> list[str] | None:
 def run_again(
     target: str = Form(...),
     packs: str = Form(...),
+    test_ids: list[str] = Form([]),
     # Read by require_admin off the form body; unused here.
     csrf_token: str = Form(""),  # noqa: ARG001
     principal: Principal = Depends(require_admin),
 ) -> RedirectResponse:
-    """Queue a run. The worker executes it; this handler never blocks on an agent."""
+    """Queue a run. The worker executes it; this handler never blocks on an agent.
+
+    `test_ids` narrows the run to part of the pack. The ids are checked against
+    the pack that was just imported rather than trusted from the form: a
+    submitted id naming a test in someone else's pack must not select it.
+    Selecting every test is stored as no selection, so the job stays a plain
+    whole-pack run.
+    """
     store = get_store()
     target_id, pack_id = _import_first_party(store, principal.org_id, target, packs)
-    job_id = store.jobs.enqueue(principal.org_id, target_id, pack_id, created_by=principal.subject)
+
+    selection: list[str] | None = None
+    if test_ids:
+        available = {row["id"] for row in store.get_pack_tests(principal.org_id, pack_id)}
+        unknown = sorted(set(test_ids) - available)
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown test(s) for this pack: {', '.join(unknown)}",
+            )
+        if set(test_ids) != available:
+            selection = sorted(set(test_ids))
+
+    job_id = store.jobs.enqueue(
+        principal.org_id,
+        target_id,
+        pack_id,
+        created_by=principal.subject,
+        test_ids=selection,
+    )
     return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 

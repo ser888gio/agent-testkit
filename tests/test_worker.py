@@ -309,3 +309,68 @@ def test_profile_is_none_before_discovery_and_unknown_target_raises(tmp_path):
     assert store.get_target_profile("org-a", "worker-target") is None
     with pytest.raises(KeyError):
         store.get_target_profile("org-a", "nope")
+
+
+_SECOND_TEST = {
+    "id": "w.second.case",
+    "category": "reliability",
+    "input": "hi",
+    "assertions": [{"name": "status_ok"}],
+}
+
+
+def _store_with_two_tests(tmp_path, **kw) -> tuple[Store, str]:
+    store = Store(str(tmp_path / "selection.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST, _SECOND_TEST])
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1", **kw)
+    return store, job_id
+
+
+def test_a_job_runs_only_the_tests_it_selected(tmp_path):
+    store, job_id = _store_with_two_tests(tmp_path, test_ids=["w.second.case"])
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    rr, _report = store.get_run("org-a", job.run_id)
+    assert [r.test_id for r in rr.results] == ["w.second.case"]
+
+
+def test_no_selection_still_runs_the_whole_pack(tmp_path):
+    store, job_id = _store_with_two_tests(tmp_path)
+
+    work_once(store, "w1")
+
+    rr, _report = store.get_run("org-a", store.jobs.get("org-a", job_id).run_id)
+    assert {r.test_id for r in rr.results} == {"w.pass.case", "w.second.case"}
+
+
+def test_selecting_a_test_outside_the_pack_fails_loudly(tmp_path):
+    """Silently running less would report a pass for tests that never ran."""
+    store, job_id = _store_with_two_tests(tmp_path, test_ids=["w.pass.case", "ghost.case"])
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "failed"
+    assert "ghost.case" in job.error
+    assert job.run_id is None
+
+
+def test_an_empty_selection_is_rejected_at_enqueue(tmp_path):
+    """A run of nothing scored as a pass is evidence of coverage that never happened."""
+    store = Store(str(tmp_path / "empty-selection.db"))
+
+    with pytest.raises(ValueError, match="at least one test"):
+        store.jobs.enqueue("org-a", "t", "p", test_ids=[])
+
+
+def test_selection_survives_the_queue(tmp_path):
+    """The worker resolves jobs from the database alone, so the choice must persist."""
+    store, job_id = _store_with_two_tests(tmp_path, test_ids=["w.second.case"])
+
+    import json as _json
+
+    assert _json.loads(store.jobs.get("org-a", job_id).test_ids_json) == ["w.second.case"]

@@ -11,6 +11,7 @@ off the tenant-reachable path entirely.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -162,6 +163,28 @@ def execute_discovery(store: Store, job: JobRow) -> None:
     log.info("job %s: profiled target %s", job.id, job.target_id)
 
 
+def _apply_selection(job: JobRow, tests: list) -> list:
+    """Narrow a pack to the tests the job selected.
+
+    A selection naming ids the pack does not contain is a permanent failure
+    rather than a quietly smaller run: the caller asked for coverage that does
+    not exist, and silently running less would report a pass for tests that
+    never executed.
+    """
+    if not job.test_ids_json:
+        return tests
+    wanted = set(json.loads(job.test_ids_json))
+    selected = [t for t in tests if getattr(t, "id", None) in wanted]
+    missing = wanted - {getattr(t, "id", None) for t in tests}
+    if missing:
+        raise PermanentJobError(
+            f"selected test(s) not in pack '{job.pack_id}': {', '.join(sorted(missing))}"
+        )
+    if not selected:
+        raise PermanentJobError("test selection matched no tests")
+    return selected
+
+
 def execute_job(store: Store, job: JobRow) -> str | None:
     """Resolve, run, score, and persist one claimed job. Returns the run id.
 
@@ -179,6 +202,8 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         raise PermanentJobError(f"unknown pack: {exc}") from exc
     except (LoaderError, ValueError) as exc:
         raise PermanentJobError(str(exc)) from exc
+
+    tests = _apply_selection(job, tests)
 
     # The egress decision above binds every request the audit makes, discovery
     # probes included. `external` stays off for exactly that reason: a spawned

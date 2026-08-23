@@ -59,3 +59,30 @@ document.addEventListener("DOMContentLoaded", () => {
     tick();
   });
 });
+
+// Show only the selected pack's tests in the run form's picker. The form posts
+// one pack, so offering another pack's tests invites a selection the server
+// must reject. Progressive enhancement: with JS off every group stays visible
+// and the server still validates the ids against the pack it loads.
+document.addEventListener("DOMContentLoaded", function () {
+  var packSelect = document.querySelector('select[name="packs"]');
+  var groups = document.querySelectorAll(".test-picker-group");
+  if (!packSelect || groups.length === 0) {
+    return;
+  }
+  var sync = function () {
+    groups.forEach(function (group) {
+      var mine = group.getAttribute("data-pack") === packSelect.value;
+      group.hidden = !mine;
+      if (!mine) {
+        // Uncheck what is no longer offered, so switching packs cannot submit
+        // a stale selection the user can no longer see.
+        group.querySelectorAll('input[type="checkbox"]').forEach(function (box) {
+          box.checked = false;
+        });
+      }
+    });
+  };
+  packSelect.addEventListener("change", sync);
+  sync();
+});

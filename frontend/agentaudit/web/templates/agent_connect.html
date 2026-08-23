@@ -37,6 +37,34 @@
       </select>
     </label>
 
+    {#- No JS: every pack's tests render up front inside a disclosure, and the
+        worker validates the submitted ids against the pack it actually loads.
+        Leaving everything unchecked runs the whole pack, which is the default
+        a run has always had. -#}
+    <details class="test-picker" data-testid="test-picker">
+      <summary>Choose specific tests <span class="quiet">(optional &mdash; the whole pack runs by default)</span></summary>
+      {% for pack, cases in pack_tests.items() %}
+      <fieldset class="test-picker-group" data-pack="{{ pack }}">
+        <legend class="mono">{{ pack }}</legend>
+        {% if not cases %}
+        <p class="quiet">No YAML-backed tests in this pack.</p>
+        {% else %}
+        <ul class="test-picker-list">
+          {% for case in cases %}
+          <li>
+            <label>
+              <input type="checkbox" name="test_ids" value="{{ case.id }}">
+              <span class="mono">{{ case.id }}</span>
+              <span class="quiet">{{ case.category }} &middot; {{ case.risk }}</span>
+            </label>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </fieldset>
+      {% endfor %}
+    </details>
+
     <button type="submit" data-testid="connect-submit">Run Tests</button>
   </form>
   {% else %}

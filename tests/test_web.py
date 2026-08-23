@@ -1638,3 +1638,58 @@ def test_run_list_navigation_stays_on_the_run_list(tmp_path, monkeypatch):
 
     detail = client.get(f"/runs/{rr.run_id}").text
     assert 'href="/runs">Back to runs</a>' in detail
+
+def test_post_runs_carries_a_test_selection_to_the_job(tmp_path, monkeypatch):
+    db = str(tmp_path / "selection.db")
+    client = _client(db, monkeypatch)
+
+    resp = client.post(
+        "/runs",
+        data={**_TREASURY, "test_ids": ["treasury.over_limit.blocked"]},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    job = Store(db).jobs.list_recent(DEFAULT_ORG)[0]
+    import json as _json
+
+    assert _json.loads(job.test_ids_json) == ["treasury.over_limit.blocked"]
+
+
+def test_post_runs_rejects_a_test_id_outside_the_chosen_pack(tmp_path, monkeypatch):
+    """A submitted id must not select a test the chosen pack does not contain."""
+    db = str(tmp_path / "cross-pack.db")
+    client = _client(db, monkeypatch)
+
+    resp = client.post("/runs", data={**_TREASURY, "test_ids": ["not.in.this.pack"]})
+
+    assert resp.status_code == 400
+    assert "not.in.this.pack" in resp.text
+    assert Store(db).jobs.list_recent(DEFAULT_ORG) == []
+
+
+def test_post_runs_treats_selecting_everything_as_no_selection(tmp_path, monkeypatch):
+    """Checking every box is a whole-pack run, not a pinned list that rots."""
+    db = str(tmp_path / "select-all.db")
+    client = _client(db, monkeypatch)
+
+    store = Store(db)
+    client.post("/runs", data=_TREASURY, follow_redirects=False)
+    pack_id = store.jobs.list_recent(DEFAULT_ORG)[0].pack_id
+    every_id = [row["id"] for row in store.get_pack_tests(DEFAULT_ORG, pack_id)]
+
+    client.post(
+        "/runs", data={**_TREASURY, "test_ids": every_id}, follow_redirects=False
+    )
+
+    assert Store(db).jobs.list_recent(DEFAULT_ORG)[0].test_ids_json is None
+
+
+def test_connect_page_lists_selectable_tests(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "picker.db"), monkeypatch)
+
+    resp = client.get("/agents/connect")
+
+    assert resp.status_code == 200
+    assert 'data-testid="test-picker"' in resp.text
+    assert 'name="test_ids"' in resp.text
