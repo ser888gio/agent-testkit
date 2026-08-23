@@ -425,7 +425,7 @@ def test_worker_never_puts_a_resolved_secret_into_os_environ(tmp_path, monkeypat
             }
         ],
     )
-    store.enqueue_job("org-a", "echo-target", "p1")
+    store.jobs.enqueue("org-a", "echo-target", "p1")
 
     work_once(store, "w1")
 
@@ -470,11 +470,11 @@ def test_resolved_secret_is_added_to_the_run_redactor(tmp_path, monkeypatch):
             }
         ],
     )
-    job_id = store.enqueue_job("org-a", "echo-target", "p1")
+    job_id = store.jobs.enqueue("org-a", "echo-target", "p1")
 
     work_once(store, "w1")
 
-    job = store.get_job("org-a", job_id)
+    job = store.jobs.get("org-a", job_id)
     assert job.state == "done", job.error
     run, _report = store.get_run("org-a", job.run_id)
     assert SECRET not in run.model_dump_json()

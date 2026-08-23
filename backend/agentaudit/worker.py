@@ -2,7 +2,7 @@
 
 N workers need no coordination and no broker. Each one claims with a lease and
 heartbeats while it works; if it dies, the lease expires and another worker
-reclaims the job (`Store.reclaim_jobs`).
+reclaims the job (`Store.jobs.reclaim`).
 
 The worker resolves targets and packs from the database only. It never reads a
 filesystem path a tenant supplied, which is what keeps `loader.load_python_module`
@@ -49,7 +49,7 @@ def _heartbeat(store: Store, job_id: str, owner: str, stop: threading.Event, lea
     # Extend well inside the lease so one slow beat does not lose the job.
     interval = max(lease / 4, 1.0)
     while not stop.wait(interval):
-        if not store.heartbeat_job(job_id, owner, lease_seconds=lease):
+        if not store.jobs.heartbeat(job_id, owner, lease_seconds=lease):
             log.warning("job %s: lease lost, another worker owns it now", job_id)
             return
 
@@ -164,7 +164,7 @@ def work_once(
     max_per_org: int | None = DEFAULT_MAX_PER_ORG,
 ) -> JobRow | None:
     """Claim and process at most one job. Returns it, or None if the queue was empty."""
-    job = store.claim_job(owner, lease_seconds=lease_seconds, max_per_org=max_per_org)
+    job = store.jobs.claim(owner, lease_seconds=lease_seconds, max_per_org=max_per_org)
     if job is None:
         return None
 
@@ -178,7 +178,7 @@ def work_once(
     except PermanentJobError as exc:
         error = _safe_job_error(store, job, str(exc))
         log.warning("job %s failed permanently: %s", job.id, error)
-        store.release_job(job.id, owner, state="failed", error=error)
+        store.jobs.release(job.id, owner, state="failed", error=error)
     except Exception:
         # Infrastructure fault. Deliberately not released: the lease expires and
         # `reclaim_jobs` retries it, up to the attempt ceiling. Releasing it as
@@ -188,7 +188,7 @@ def work_once(
         # putting secrets in logs.
         log.error("job %s hit an infrastructure fault; leaving it to lease expiry", job.id)
     else:
-        store.release_job(job.id, owner, state="done", run_id=run_id)
+        store.jobs.release(job.id, owner, state="done", run_id=run_id)
     finally:
         stop.set()
         beat.join(timeout=5)
@@ -219,7 +219,7 @@ def main(
     log.info("worker %s polling", owner)
     try:
         while not stop.is_set():
-            store.reclaim_jobs(max_attempts=max_attempts)
+            store.jobs.reclaim(max_attempts=max_attempts)
             job = work_once(store, owner, lease_seconds=lease_seconds, max_per_org=max_per_org)
             if job is None:
                 stop.wait(poll_seconds)
