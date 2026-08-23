@@ -11,7 +11,7 @@ from agentaudit.core.runner import run
 from agentaudit.core.schema import Assertion, Category
 from agentaudit.core.schema import TestCase as SchemaTestCase
 from agentaudit.core.scoring import score
-from agentaudit.core.store import DEFAULT_ORG, Store
+from agentaudit.core.store import DEFAULT_ORG, DISCOVERY_PACK_ID, Store
 
 MODULE = "tests.test_web"
 
@@ -1086,6 +1086,17 @@ def test_store_serves_concurrent_threads(tmp_path):
 
 # ---- T13: async submission -----------------------------------------------
 
+_TARGET_CONFIG = {
+    "id": "treasury-demo",
+    "agent": {"type": "callable", "callable": "tests.test_web:_noop_agent"},
+    "sandbox": "treasury",
+}
+
+
+def _noop_agent():
+    return lambda input, sandbox: "ok"
+
+
 _TREASURY = {
     "target": "agentaudit/config/treasury-agent.yaml",
     "packs": "agentaudit/packs/treasury",
@@ -1501,3 +1512,67 @@ def test_the_queue_is_empty_when_nothing_was_generated(tmp_path, monkeypatch):
     resp = client.get("/generated")
     assert resp.status_code == 200
     assert "Nothing to review" in resp.text
+
+
+def test_post_discover_queues_a_job_without_dialling_the_endpoint(tmp_path, monkeypatch):
+    """The web process must never probe an agent in a request handler."""
+    db = str(tmp_path / "discover.db")
+    store = Store(db)
+    store.save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
+    client = _client(db, monkeypatch)
+
+    resp = client.post("/agents/treasury-demo/discover", follow_redirects=False)
+
+    assert resp.status_code == 303
+    jobs = Store(db).jobs.list_recent(DEFAULT_ORG)
+    assert len(jobs) == 1
+    assert jobs[0].pack_id == DISCOVERY_PACK_ID
+    assert jobs[0].state == "queued"
+    # Queued, not executed: no profile has been written yet.
+    assert Store(db).get_target_profile(DEFAULT_ORG, "treasury-demo") is None
+
+
+def test_post_discover_404s_for_an_unknown_target(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "discover-404.db"), monkeypatch)
+
+    assert client.post("/agents/nope/discover").status_code == 404
+
+
+def test_agent_detail_renders_a_stored_profile(tmp_path, monkeypatch):
+    db = str(tmp_path / "profile-view.db")
+    store = Store(db)
+    store.save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
+    store.save_target_profile(
+        DEFAULT_ORG,
+        "treasury-demo",
+        AgentProfile(
+            id="treasury-demo",
+            purpose="reviews and pays supplier invoices",
+            domain="treasury",
+            sandbox="treasury",
+            tool_use=True,
+            side_effects=["money_movement"],
+            notes=["answered a trivial probe in 12 ms"],
+        ),
+    )
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents/treasury-demo")
+
+    assert resp.status_code == 200
+    assert 'data-testid="agent-profile"' in resp.text
+    assert "reviews and pays supplier invoices" in resp.text
+    assert "money_movement" in resp.text
+    assert "answered a trivial probe in 12 ms" in resp.text
+
+
+def test_agent_detail_without_a_profile_offers_to_make_one(tmp_path, monkeypatch):
+    db = str(tmp_path / "no-profile-view.db")
+    Store(db).save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents/treasury-demo")
+
+    assert resp.status_code == 200
+    assert "Never profiled" in resp.text
+    assert 'data-testid="discover-submit"' in resp.text

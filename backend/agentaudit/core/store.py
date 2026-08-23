@@ -19,7 +19,7 @@ from agentaudit.core.artifacts import artifact_key
 from agentaudit.core.config import TargetConfig, load_target_dict
 from agentaudit.core.egress import EgressPolicy
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
-from agentaudit.core.profile import HarnessPlan
+from agentaudit.core.profile import AgentProfile, HarnessPlan
 from agentaudit.core.redaction import Redactor
 from agentaudit.core.schema import RunResult, TestResult
 from agentaudit.core.scoring import ScoreReport
@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS targets (
     created_at TEXT NOT NULL,
     secret_ref TEXT,
     allowed_hosts TEXT,
+    profile_json TEXT,
+    profiled_at TEXT,
     PRIMARY KEY (org_id, id),
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
@@ -229,6 +231,14 @@ JOB_STATES = ("queued", "running", "done", "failed")
 _TERMINAL_JOB_STATES = ("done", "failed")
 
 Matrix = dict[str, dict[str, str]]
+
+# A discovery job carries no pack: it probes the endpoint and writes a profile.
+# `jobs.pack_id` is NOT NULL, so the kind rides in a reserved id rather than a
+# new column -- the queue, lease, retry and status machinery then works
+# unchanged for both kinds. The leading "__" cannot collide with a pack id,
+# which is a filesystem-derived name.
+DISCOVERY_PACK_ID = "__discovery__"
+
 
 def _validated_target_config(target_id: str, config: dict) -> None:
     credentials.scan_config(config)
@@ -396,6 +406,17 @@ class JobQueue:
                 (job_id, org_id, target_id, pack_id, created_by, priority, now),
             )
         return job_id
+
+    def enqueue_discovery(
+        self, org_id: str, target_id: str, *, created_by: str | None = None
+    ) -> str:
+        """Queue a profile refresh for one target.
+
+        Deliberately a job rather than an inline call: discovery dials a live
+        endpoint, and the web process must not make outbound requests in a
+        request handler -- see `worker.execute_discovery`.
+        """
+        return self.enqueue(org_id, target_id, DISCOVERY_PACK_ID, created_by=created_by)
 
     def claim(
         self, owner: str, *, lease_seconds: int = 60, max_per_org: int | None = None
@@ -626,6 +647,37 @@ class Store:
         if row is None:
             raise KeyError(target_id)
         return json.loads(row["allowed_hosts"]) if row["allowed_hosts"] else []
+
+    def save_target_profile(self, org_id: str, target_id: str, profile: AgentProfile) -> None:
+        """Replace what discovery knows about a target.
+
+        A profile describes the agent, so re-discovering overwrites rather than
+        appends. `AgentProfile` carries only shapes, booleans and names -- never
+        agent output -- so it needs no redaction pass of its own; see
+        `core/discovery.py` for the fence that keeps it that way.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE targets SET profile_json = ?, profiled_at = ? "
+                "WHERE org_id = ? AND id = ?",
+                (profile.model_dump_json(), now, org_id, target_id),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(target_id)
+
+    def get_target_profile(self, org_id: str, target_id: str) -> tuple[AgentProfile, str] | None:
+        """The stored profile and when it was taken, or None if never discovered."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT profile_json, profiled_at FROM targets WHERE org_id = ? AND id = ?",
+                (org_id, target_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(target_id)
+        if not row["profile_json"]:
+            return None
+        return AgentProfile.model_validate_json(row["profile_json"]), row["profiled_at"]
 
     def list_targets(self, org_id: str) -> list[TargetRow]:
         with self._connection() as conn:

@@ -3,9 +3,10 @@
 {% block content %}
 <header class="page-header">
   <div>
-    <p class="eyebrow">Queued run</p>
+    <p class="eyebrow">{{ "Queued discovery" if discovery else "Queued run" }}</p>
     <h1>Job <span class="mono">{{ job.id[:8] }}</span></h1>
-    <p class="page-subtitle">{{ job.target_id }} &middot; {{ job.pack_id }}</p>
+    <p class="page-subtitle">{{ job.target_id }} &middot;
+      {% if discovery %}profiling the endpoint{% else %}{{ job.pack_id }}{% endif %}</p>
   </div>
 </header>
 
@@ -20,5 +21,6 @@
     <span class="spinner" aria-hidden="true"></span> {{ job.state }}
   </p>
   {% if job.run_id %}<p><a href="/runs/{{ job.run_id }}">View the run</a></p>{% endif %}
+  {% if discovery %}<p><a href="/agents/{{ job.target_id | urlencode }}">View the agent profile</a></p>{% endif %}
 </section>
 {% endblock %}

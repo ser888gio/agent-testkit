@@ -73,7 +73,7 @@ def test_unknown_target_fails_permanently_without_burning_retries(tmp_path):
 
     job = store.jobs.get("org-a", job_id)
     assert job.state == "failed"
-    assert "unknown target or pack" in job.error
+    assert "unknown target" in job.error
     assert store.jobs.reclaim() == 0
 
 
@@ -239,3 +239,73 @@ def test_main_stops_when_signalled(tmp_path):
 
     assert not thread.is_alive()
     assert check.jobs.get("org-a", job_id).state == "done"
+
+
+def test_a_discovery_job_writes_a_profile_and_no_run(tmp_path):
+    """Discovery produces a profile, not evidence: `runs` must stay untouched."""
+    store = Store(str(tmp_path / "discovery.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    job_id = store.jobs.enqueue_discovery("org-a", "worker-target")
+
+    assert work_once(store, "w1").id == job_id
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    # A discovery job has no run to point at.
+    assert job.run_id is None
+    assert store.list_runs("org-a") == []
+
+    stored = store.get_target_profile("org-a", "worker-target")
+    assert stored is not None
+    profile, profiled_at = stored
+    assert profile.id == "worker-target"
+    assert profile.interface == "callable"
+    assert profiled_at
+
+
+def test_discovery_probes_carry_the_bound_endpoint(tmp_path, monkeypatch):
+    """The discovery job owes the same egress decision a run does."""
+    import agentaudit.worker as worker_module
+
+    seen: list[object] = []
+    real_run = worker_module.run_tests
+
+    def spy(cfg, cases, **kwargs):
+        seen.append(kwargs.get("endpoint", "MISSING"))
+        return real_run(cfg, cases, **kwargs)
+
+    monkeypatch.setattr(worker_module, "run_tests", spy)
+    store = Store(str(tmp_path / "discovery-egress.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    store.jobs.enqueue_discovery("org-a", "worker-target")
+
+    work_once(store, "w1")
+
+    assert seen, "expected the discovery job to probe"
+    assert "MISSING" not in seen
+
+
+def test_rediscovery_replaces_the_stored_profile(tmp_path):
+    """A profile describes the agent now, so it overwrites rather than appends."""
+    store = Store(str(tmp_path / "rediscovery.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+
+    store.jobs.enqueue_discovery("org-a", "worker-target")
+    work_once(store, "w1")
+    first = store.get_target_profile("org-a", "worker-target")
+
+    store.jobs.enqueue_discovery("org-a", "worker-target")
+    work_once(store, "w2")
+    second = store.get_target_profile("org-a", "worker-target")
+
+    assert first is not None and second is not None
+    assert second[1] >= first[1]
+
+
+def test_profile_is_none_before_discovery_and_unknown_target_raises(tmp_path):
+    store = Store(str(tmp_path / "no-profile.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+
+    assert store.get_target_profile("org-a", "worker-target") is None
+    with pytest.raises(KeyError):
+        store.get_target_profile("org-a", "nope")
