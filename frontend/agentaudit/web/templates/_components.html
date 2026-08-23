@@ -3,8 +3,10 @@
 {%- endmacro %}
 
 {% macro score_bar(value, label="") -%}
+{#- Score carries pass/fail signal, not brand color: red below 50, amber below 80. -#}
+{% set tone = "var(--fail-text)" if value < 50 else ("var(--warn-text)" if value < 80 else "var(--pass-text)") %}
 <span class="score-bar" role="progressbar" aria-label="{{ label or 'Score' }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ value }}">
-  <span style="width: {{ value }}%"></span>
+  <span style="width: {{ value }}%; --tone: {{ tone }}"></span>
 </span>
 {%- endmacro %}
 
