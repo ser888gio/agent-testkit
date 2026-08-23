@@ -501,7 +501,7 @@ def test_store_close_rejects_future_checkouts():
 
 
 def _queue(store: Store, org: str = "org-a", **kw) -> str:
-    return store.enqueue_job(org, "target-1", "pack-1", **kw)
+    return store.jobs.enqueue(org, "target-1", "pack-1", **kw)
 
 
 def test_claim_takes_highest_priority_then_oldest():
@@ -509,8 +509,8 @@ def test_claim_takes_highest_priority_then_oldest():
     low = _queue(store)
     high = _queue(store, priority=5)
 
-    first = store.claim_job("worker-1")
-    second = store.claim_job("worker-2")
+    first = store.jobs.claim("worker-1")
+    second = store.jobs.claim("worker-2")
 
     assert [first.id, second.id] == [high, low]
     assert first.state == "running"
@@ -523,8 +523,8 @@ def test_claim_returns_none_when_queue_is_empty():
     store = Store(":memory:")
     _queue(store)
 
-    assert store.claim_job("worker-1") is not None
-    assert store.claim_job("worker-2") is None
+    assert store.jobs.claim("worker-1") is not None
+    assert store.jobs.claim("worker-2") is None
 
 
 def test_two_concurrent_workers_never_double_claim(tmp_path):
@@ -535,7 +535,7 @@ def test_two_concurrent_workers_never_double_claim(tmp_path):
 
     def worker(name: str) -> None:
         barrier.wait()
-        job = store.claim_job(name)
+        job = store.jobs.claim(name)
         if job is not None:
             claimed.append(job)
 
@@ -551,33 +551,33 @@ def test_two_concurrent_workers_never_double_claim(tmp_path):
 def test_heartbeat_extends_only_the_holders_lease():
     store = Store(":memory:")
     _queue(store)
-    job = store.claim_job("worker-1")
+    job = store.jobs.claim("worker-1")
     before = job.heartbeat_at
 
-    assert store.heartbeat_job(job.id, "worker-1") is True
-    assert store.heartbeat_job(job.id, "worker-2") is False
-    assert store.get_job("org-a", job.id).heartbeat_at >= before
+    assert store.jobs.heartbeat(job.id, "worker-1") is True
+    assert store.jobs.heartbeat(job.id, "worker-2") is False
+    assert store.jobs.get("org-a", job.id).heartbeat_at >= before
 
 
 def test_heartbeating_job_is_not_reclaimed():
     store = Store(":memory:")
     _queue(store)
-    job = store.claim_job("worker-1", lease_seconds=-1)
-    store.heartbeat_job(job.id, "worker-1", lease_seconds=60)
+    job = store.jobs.claim("worker-1", lease_seconds=-1)
+    store.jobs.heartbeat(job.id, "worker-1", lease_seconds=60)
 
-    assert store.reclaim_jobs() == 0
-    assert store.get_job("org-a", job.id).state == "running"
+    assert store.jobs.reclaim() == 0
+    assert store.jobs.get("org-a", job.id).state == "running"
 
 
 def test_expired_lease_is_requeued_and_reclaimable():
     store = Store(":memory:")
     _queue(store)
-    job = store.claim_job("worker-1", lease_seconds=-1)
+    job = store.jobs.claim("worker-1", lease_seconds=-1)
 
-    assert store.reclaim_jobs() == 1
-    assert store.get_job("org-a", job.id).state == "queued"
+    assert store.jobs.reclaim() == 1
+    assert store.jobs.get("org-a", job.id).state == "queued"
 
-    retaken = store.claim_job("worker-2")
+    retaken = store.jobs.claim("worker-2")
     assert retaken.id == job.id
     assert retaken.attempt_count == 2
 
@@ -586,10 +586,10 @@ def test_reclaim_fails_a_job_past_the_attempt_ceiling():
     store = Store(":memory:")
     job_id = _queue(store)
     for _ in range(2):
-        store.claim_job("worker-1", lease_seconds=-1)
-        store.reclaim_jobs(max_attempts=2)
+        store.jobs.claim("worker-1", lease_seconds=-1)
+        store.jobs.reclaim(max_attempts=2)
 
-    job = store.get_job("org-a", job_id)
+    job = store.jobs.get("org-a", job_id)
     assert job.state == "failed"
     assert job.error == "lease expired"
     assert job.finished_at is not None
@@ -598,44 +598,44 @@ def test_reclaim_fails_a_job_past_the_attempt_ceiling():
 def test_release_requires_the_lease_and_records_the_run():
     store = Store(":memory:")
     _queue(store)
-    job = store.claim_job("worker-1")
+    job = store.jobs.claim("worker-1")
 
-    assert store.release_job(job.id, "worker-2", state="done") is False
-    assert store.release_job(job.id, "worker-1", state="done", run_id="run-9") is True
+    assert store.jobs.release(job.id, "worker-2", state="done") is False
+    assert store.jobs.release(job.id, "worker-1", state="done", run_id="run-9") is True
 
-    done = store.get_job("org-a", job.id)
+    done = store.jobs.get("org-a", job.id)
     assert (done.state, done.run_id, done.lease_owner) == ("done", "run-9", None)
     assert done.heartbeat_at is not None
-    assert store.release_job(job.id, "worker-1", state="done") is False
+    assert store.jobs.release(job.id, "worker-1", state="done") is False
 
 
 def test_release_rejects_a_non_terminal_state():
     store = Store(":memory:")
     _queue(store)
-    job = store.claim_job("worker-1")
+    job = store.jobs.claim("worker-1")
 
     with pytest.raises(ValueError, match="terminal|one of"):
-        store.release_job(job.id, "worker-1", state="running")
+        store.jobs.release(job.id, "worker-1", state="running")
 
 
 def test_jobs_are_scoped_to_the_calling_org():
     store = Store(":memory:")
     job_id = _queue(store, org="org-a")
 
-    assert store.list_jobs("org-b") == []
-    assert len(store.list_jobs("org-a")) == 1
+    assert store.jobs.list_recent("org-b") == []
+    assert len(store.jobs.list_recent("org-a")) == 1
     with pytest.raises(KeyError):
-        store.get_job("org-b", job_id)
+        store.jobs.get("org-b", job_id)
 
 
 def test_list_jobs_filters_by_state():
     store = Store(":memory:")
     _queue(store)
     _queue(store)
-    store.claim_job("worker-1")
+    store.jobs.claim("worker-1")
 
-    assert len(store.list_jobs("org-a", state="queued")) == 1
-    assert len(store.list_jobs("org-a", state="running")) == 1
+    assert len(store.jobs.list_recent("org-a", state="queued")) == 1
+    assert len(store.jobs.list_recent("org-a", state="running")) == 1
 
 
 def test_invalid_job_state_is_rejected_by_the_schema():
