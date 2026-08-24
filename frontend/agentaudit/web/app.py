@@ -739,8 +739,16 @@ def test_detail(
         (s for s in (plan.selected if plan else []) if s.test_id in (test_id, base_id)),
         None,
     )
+    # Whether this is a new break or a standing one -- the question a single
+    # run cannot answer. Scoped to this agent: the same test failing against a
+    # different agent is a different fact.
+    history = get_store().test_history(
+        principal.org_id, test_id, agent_id=rr.agent_name, limit=20
+    )
     return _render(
         "test_detail.html",
+        history=history,
+        history_failures=sum(1 for h in history if h["status"] in ("failed", "error")),
         run=rr,
         result=result,
         selection=selection,

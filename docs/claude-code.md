@@ -80,7 +80,7 @@ bash tools/validate.sh              # lint the repo + full suite (default)
 suite when a contract file (`schema.py`, `config.py`, `assertions.py`) or build config
 changes. Use `--base <ref>` to scope against a branch point.
 
-The full suite is 493 tests in about 150 seconds — mostly process spawn, since every
+The full suite is 708 tests in roughly 3-6 minutes — mostly process spawn, since every
 `runner.run` starts a sandbox supervisor plus a nested agent worker. Use `--affected` for
 tight loops and run the default before finishing.
 

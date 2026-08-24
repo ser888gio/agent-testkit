@@ -1317,6 +1317,39 @@ class Store:
                 entry["failed"] += r["n"]
         return sorted(by_risk.values(), key=lambda e: order.get(e["risk"], 9))
 
+    def test_history(
+        self, org_id: str, test_id: str, *, agent_id: str | None = None, limit: int = 20
+    ) -> list[dict]:
+        """Every recorded outcome for one test, newest first.
+
+        Answers the question a single run cannot: is this a new break or a
+        standing one. Joined against `runs` for the timestamp because
+        `test_results` carries no clock of its own.
+        """
+        sql = (
+            "SELECT tr.run_id, tr.status, tr.risk, r.agent_id, r.started_at "
+            "FROM test_results tr JOIN runs r ON r.id = tr.run_id AND r.org_id = tr.org_id "
+            "WHERE tr.org_id = ? AND tr.test_id = ?"
+        )
+        params: list = [org_id, test_id]
+        if agent_id is not None:
+            sql += " AND r.agent_id = ?"
+            params.append(agent_id)
+        sql += " ORDER BY r.started_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "run_id": r["run_id"],
+                "agent_id": r["agent_id"],
+                "started_at": r["started_at"],
+                "status": r["status"],
+                "risk": r["risk"],
+            }
+            for r in rows
+        ]
+
     def pass_fail_matrix(self, org_id: str, agent_id: str) -> Matrix:
         with self._connection() as conn:
             latest = conn.execute(

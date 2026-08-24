@@ -86,7 +86,7 @@ trampoline error; `python -m pytest` and `uv run ... python -m pytest` both work
 python -m pytest
 ```
 
-The full suite is 493 tests and about 150 seconds, so prefer `bash tools/validate.sh
+The full suite is 708 tests and roughly 3-6 minutes, so prefer `bash tools/validate.sh
 --affected` while iterating and run the full suite before declaring done.
 
 Lint with:

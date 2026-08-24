@@ -1726,3 +1726,29 @@ def test_job_page_renders_a_progress_meter(tmp_path, monkeypatch):
     assert 'data-testid="run-progress"' in resp.text
     assert 'aria-valuenow="1"' in resp.text
     assert 'aria-valuemax="2"' in resp.text
+
+
+def test_test_detail_shows_cross_run_history(tmp_path, monkeypatch):
+    """A single run cannot say whether this is a new break or a standing one."""
+    db = str(tmp_path / "history.db")
+    _seed_store(db)
+    _seed_store(db)
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}/tests/b.fail.case")
+
+    assert resp.status_code == 200
+    assert 'data-testid="test-history"' in resp.text
+    assert "of the last 3 runs" in resp.text
+
+
+def test_test_detail_history_names_a_first_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "first-run.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}/tests/b.fail.case")
+
+    assert resp.status_code == 200
+    assert "First recorded run" in resp.text
