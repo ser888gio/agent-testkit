@@ -129,3 +129,45 @@ document.addEventListener("DOMContentLoaded", function () {
   packSelect.addEventListener("change", sync);
   sync();
 });
+
+// Theme toggle. The saved theme is stamped onto <html> by an inline script in
+// base.html before first paint; this only handles the click and keeps the
+// button's pressed state in sync.
+document.addEventListener("DOMContentLoaded", function () {
+  var button = document.querySelector(".theme-toggle");
+  if (!button) {
+    return;
+  }
+  var root = document.documentElement;
+
+  // With no explicit choice the stylesheet follows the OS, so resolve against
+  // the media query to decide what the *next* click should switch to.
+  var current = function () {
+    var set = root.getAttribute("data-theme");
+    if (set === "light" || set === "dark") {
+      return set;
+    }
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  };
+
+  var sync = function () {
+    var theme = current();
+    button.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
+    button.setAttribute("aria-label", theme === "light"
+      ? "Switch to dark theme"
+      : "Switch to light theme");
+  };
+
+  button.addEventListener("click", function () {
+    var next = current() === "light" ? "dark" : "light";
+    root.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem("aa-theme", next);
+    } catch (e) {
+      // Storage blocked: the theme still applies for this page view.
+    }
+    sync();
+  });
+
+  sync();
+});
