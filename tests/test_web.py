@@ -1624,3 +1624,17 @@ def test_analytics_sparkline_carries_one_point_per_run(tmp_path, monkeypatch):
     points = _re.search(r'class="chart-line" points="([^"]*)"', resp.text)
     assert points, "expected a plotted trend line"
     assert len(points.group(1).split()) >= 1
+
+
+def test_run_list_navigation_stays_on_the_run_list(tmp_path, monkeypatch):
+    """Analytics took over /, so a control on the run list must not send you there."""
+    db = str(tmp_path / "nav.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    runs = client.get("/runs").text
+    # The filter Reset returns to an unfiltered run list, not to analytics.
+    assert '<a class="button-secondary" href="/runs">Reset</a>' in runs
+
+    detail = client.get(f"/runs/{rr.run_id}").text
+    assert 'href="/runs">Back to runs</a>' in detail
