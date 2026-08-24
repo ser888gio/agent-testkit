@@ -1698,7 +1698,7 @@ def test_connect_page_lists_selectable_tests(tmp_path, monkeypatch):
 def test_job_status_reports_live_progress(tmp_path, monkeypatch):
     db = str(tmp_path / "progress.db")
     store = Store(db)
-    job_id = store.enqueue_job(DEFAULT_ORG, "t", "p")
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
     store.jobs.start_progress(job_id, 4)
     store.jobs.record_progress(job_id, "a.case", "passed")
     store.jobs.record_progress(job_id, "b.case", "failed")
@@ -1715,7 +1715,7 @@ def test_job_status_reports_live_progress(tmp_path, monkeypatch):
 def test_job_page_renders_a_progress_meter(tmp_path, monkeypatch):
     db = str(tmp_path / "progress-view.db")
     store = Store(db)
-    job_id = store.enqueue_job(DEFAULT_ORG, "t", "p")
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
     store.jobs.start_progress(job_id, 2)
     store.jobs.record_progress(job_id, "a.case", "passed")
     client = _client(db, monkeypatch)

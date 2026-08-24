@@ -448,3 +448,20 @@ def test_a_failing_progress_callback_does_not_lose_the_run(tmp_path):
     assert job.state == "done"
     rr, _report = store.get_run("org-a", job.run_id)
     assert len(rr.results) == 2
+
+
+def test_job_progress_is_not_readable_by_another_org(tmp_path):
+    """The progress writers are worker-scoped by design; the read side is not.
+
+    `JobQueue.start_progress`/`record_progress` take no org_id on purpose -- they
+    join the `claim_job`/`release_job` family, whose authority is the lease, not
+    a tenant claim. What must hold is that no other org can read the result.
+    """
+    store = Store(str(tmp_path / "progress-tenancy.db"))
+    job_id = store.jobs.enqueue("org-a", "t", "p")
+    store.jobs.start_progress(job_id, 5)
+    store.jobs.record_progress(job_id, "x.case", "failed")
+
+    assert store.jobs.get("org-a", job_id).tests_done == 1
+    with pytest.raises(KeyError):
+        store.jobs.get("org-b", job_id)
