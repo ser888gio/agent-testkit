@@ -724,6 +724,127 @@ pre {
   font-size: 0.78rem;
 }
 
+.history-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-strip a {
+  text-decoration: none;
+}
+
+.history-strip .badge {
+  min-width: 1.6rem;
+  justify-content: center;
+  text-align: center;
+}
+
+.history-legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+}
+
+.run-progress {
+  margin-top: 1rem;
+}
+
+.progress-meter {
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-hover);
+  transition: width 240ms ease;
+}
+
+.progress-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.test-picker {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  padding: 0.75rem 0.9rem;
+}
+
+.test-picker summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.test-picker-group {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0 0;
+}
+
+.test-picker-group legend {
+  padding: 0;
+  color: var(--ink-subtle);
+  font-size: 0.8rem;
+}
+
+.test-picker-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Beats `.test-form label`, which stacks its children in a column. */
+.test-picker .test-picker-list label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.test-picker-list input[type="checkbox"] {
+  /* The global `input { width: 100% }` rule would blow the row apart. */
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* Only the selected pack's tests are offered: the form submits one pack, so
+   showing the others invites a selection the server must reject. */
+.test-picker-group[hidden] { display: none; }
+
 .bar-list {
   display: grid;
   gap: 0.7rem;

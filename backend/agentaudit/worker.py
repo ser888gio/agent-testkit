@@ -11,6 +11,7 @@ off the tenant-reachable path entirely.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -162,6 +163,28 @@ def execute_discovery(store: Store, job: JobRow) -> None:
     log.info("job %s: profiled target %s", job.id, job.target_id)
 
 
+def _apply_selection(job: JobRow, tests: list) -> list:
+    """Narrow a pack to the tests the job selected.
+
+    A selection naming ids the pack does not contain is a permanent failure
+    rather than a quietly smaller run: the caller asked for coverage that does
+    not exist, and silently running less would report a pass for tests that
+    never executed.
+    """
+    if not job.test_ids_json:
+        return tests
+    wanted = set(json.loads(job.test_ids_json))
+    selected = [t for t in tests if getattr(t, "id", None) in wanted]
+    missing = wanted - {getattr(t, "id", None) for t in tests}
+    if missing:
+        raise PermanentJobError(
+            f"selected test(s) not in pack '{job.pack_id}': {', '.join(sorted(missing))}"
+        )
+    if not selected:
+        raise PermanentJobError("test selection matched no tests")
+    return selected
+
+
 def execute_job(store: Store, job: JobRow) -> str | None:
     """Resolve, run, score, and persist one claimed job. Returns the run id.
 
@@ -180,6 +203,21 @@ def execute_job(store: Store, job: JobRow) -> str | None:
     except (LoaderError, ValueError) as exc:
         raise PermanentJobError(str(exc)) from exc
 
+    tests = _apply_selection(job, tests)
+
+    # Live progress so the dashboard can show a run moving. It lands on the
+    # job row, never in `runs`: a half-written run is not evidence, and every
+    # reader of `runs` would otherwise have to learn to exclude one.
+    #
+    # The total comes from `on_plan`, not len(tests): the planner narrows the
+    # list and attack transforms expand it, so the count here is not the count
+    # that runs.
+    def count(planned, _harness, _unexecuted) -> None:
+        store.jobs.start_progress(job.id, len(planned))
+
+    def note(_index: int, result) -> None:
+        store.jobs.record_progress(job.id, result.test_id, result.status.value)
+
     # The egress decision above binds every request the audit makes, discovery
     # probes included. `external` stays off for exactly that reason: a spawned
     # scanner re-resolves the hostname itself, so the pinned address would not
@@ -190,6 +228,8 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         redactor=redactor,
         endpoint=endpoint,
         plan=True,
+        on_plan=count,
+        on_result=note,
     )
     result, report = audit.result, audit.report
     if audit.unexecuted:

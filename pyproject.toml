@@ -89,4 +89,6 @@ select = ["E", "F", "I", "B", "UP"]
 known-first-party = ["agentaudit"]
 
 [tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["typer.Option", "fastapi.Depends"]
+# FastAPI dependency defaults are the framework's declaration syntax, not
+# mutable state shared between calls; B008 does not apply to them.
+extend-immutable-calls = ["typer.Option", "fastapi.Depends", "fastapi.Form"]

@@ -4,7 +4,7 @@ import time
 import pytest
 
 import agentaudit.core.audit as audit_module
-from agentaudit.core.store import Store
+from agentaudit.core.store import JobQueue, Store
 from agentaudit.worker import PermanentJobError, execute_job, main, work_once
 
 MODULE = "tests.test_worker"
@@ -309,3 +309,159 @@ def test_profile_is_none_before_discovery_and_unknown_target_raises(tmp_path):
     assert store.get_target_profile("org-a", "worker-target") is None
     with pytest.raises(KeyError):
         store.get_target_profile("org-a", "nope")
+
+
+_SECOND_TEST = {
+    "id": "w.second.case",
+    "category": "reliability",
+    "input": "hi",
+    "assertions": [{"name": "status_ok"}],
+}
+
+
+def _store_with_two_tests(tmp_path, **kw) -> tuple[Store, str]:
+    store = Store(str(tmp_path / "selection.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST, _SECOND_TEST])
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1", **kw)
+    return store, job_id
+
+
+def test_a_job_runs_only_the_tests_it_selected(tmp_path):
+    store, job_id = _store_with_two_tests(tmp_path, test_ids=["w.second.case"])
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    rr, _report = store.get_run("org-a", job.run_id)
+    assert [r.test_id for r in rr.results] == ["w.second.case"]
+
+
+def test_no_selection_still_runs_the_whole_pack(tmp_path):
+    store, job_id = _store_with_two_tests(tmp_path)
+
+    work_once(store, "w1")
+
+    rr, _report = store.get_run("org-a", store.jobs.get("org-a", job_id).run_id)
+    assert {r.test_id for r in rr.results} == {"w.pass.case", "w.second.case"}
+
+
+def test_selecting_a_test_outside_the_pack_fails_loudly(tmp_path):
+    """Silently running less would report a pass for tests that never ran."""
+    store, job_id = _store_with_two_tests(tmp_path, test_ids=["w.pass.case", "ghost.case"])
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "failed"
+    assert "ghost.case" in job.error
+    assert job.run_id is None
+
+
+def test_an_empty_selection_is_rejected_at_enqueue(tmp_path):
+    """A run of nothing scored as a pass is evidence of coverage that never happened."""
+    store = Store(str(tmp_path / "empty-selection.db"))
+
+    with pytest.raises(ValueError, match="at least one test"):
+        store.jobs.enqueue("org-a", "t", "p", test_ids=[])
+
+
+def test_selection_survives_the_queue(tmp_path):
+    """The worker resolves jobs from the database alone, so the choice must persist."""
+    store, job_id = _store_with_two_tests(tmp_path, test_ids=["w.second.case"])
+
+    import json as _json
+
+    assert _json.loads(store.jobs.get("org-a", job_id).test_ids_json) == ["w.second.case"]
+
+
+def test_a_running_job_reports_progress_without_writing_a_run(tmp_path):
+    """The whole point of progress-on-the-job: `runs` stays untouched mid-flight."""
+    store, job_id = _store_with_two_tests(tmp_path)
+    seen: list[tuple[int, int, list]] = []
+
+    real_record = store.jobs.record_progress
+
+    def spy(jid, test_id, status):
+        real_record(jid, test_id, status)
+        job = store.jobs.get("org-a", jid)
+        # Mid-run: progress is visible, but no run exists to be mistaken for
+        # evidence and no score has been computed.
+        seen.append((job.tests_done, job.tests_total, store.list_runs("org-a")))
+
+    store.jobs.record_progress = spy
+    work_once(store, "w1")
+
+    assert seen, "expected per-test progress"
+    assert [s[0] for s in seen] == [1, 2], "tests_done must climb"
+    assert all(s[1] == 2 for s in seen), "total is known up front"
+    assert all(s[2] == [] for s in seen), "no run may exist while one is in flight"
+
+    # The run lands exactly once, at the end.
+    assert len(store.list_runs("org-a")) == 1
+
+
+def test_progress_records_each_outcome(tmp_path):
+    store, job_id = _store_with_two_tests(tmp_path)
+
+    work_once(store, "w1")
+
+    import json as _json
+
+    recent = _json.loads(store.jobs.get("org-a", job_id).progress_json)
+    assert {e["test_id"] for e in recent} == {"w.pass.case", "w.second.case"}
+    assert all(e["status"] in ("passed", "failed", "error", "skipped") for e in recent)
+
+
+def test_progress_window_is_bounded(tmp_path):
+    """A long run must not grow the job row without bound."""
+    store = Store(str(tmp_path / "window.db"))
+    store.jobs.enqueue("org-a", "t", "p")
+    job_id = store.jobs.list_recent("org-a")[0].id
+    store.jobs.start_progress(job_id, 100)
+
+    for i in range(JobQueue.PROGRESS_WINDOW + 5):
+        store.jobs.record_progress(job_id, f"t.{i}", "passed")
+
+    import json as _json
+
+    job = store.jobs.get("org-a", job_id)
+    recent = _json.loads(job.progress_json)
+    assert len(recent) == JobQueue.PROGRESS_WINDOW
+    # The window keeps the newest, and the counter still sees everything.
+    assert recent[-1]["test_id"] == f"t.{JobQueue.PROGRESS_WINDOW + 4}"
+    assert job.tests_done == JobQueue.PROGRESS_WINDOW + 5
+
+
+def test_a_failing_progress_callback_does_not_lose_the_run(tmp_path):
+    """Evidence matters; a dropped status update does not."""
+    store, job_id = _store_with_two_tests(tmp_path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("progress backend down")
+
+    store.jobs.record_progress = boom
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    rr, _report = store.get_run("org-a", job.run_id)
+    assert len(rr.results) == 2
+
+
+def test_job_progress_is_not_readable_by_another_org(tmp_path):
+    """The progress writers are worker-scoped by design; the read side is not.
+
+    `JobQueue.start_progress`/`record_progress` take no org_id on purpose -- they
+    join the `claim_job`/`release_job` family, whose authority is the lease, not
+    a tenant claim. What must hold is that no other org can read the result.
+    """
+    store = Store(str(tmp_path / "progress-tenancy.db"))
+    job_id = store.jobs.enqueue("org-a", "t", "p")
+    store.jobs.start_progress(job_id, 5)
+    store.jobs.record_progress(job_id, "x.case", "failed")
+
+    assert store.jobs.get("org-a", job_id).tests_done == 1
+    with pytest.raises(KeyError):
+        store.jobs.get("org-b", job_id)

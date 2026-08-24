@@ -8,7 +8,7 @@ import sqlite3
 import threading
 import uuid
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -128,6 +128,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     lease_owner TEXT,
     lease_expires_at TEXT,
     heartbeat_at TEXT,
+    test_ids_json TEXT,
+    tests_total INTEGER,
+    tests_done INTEGER NOT NULL DEFAULT 0,
+    progress_json TEXT,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -225,6 +229,14 @@ class JobRow:
     lease_owner: str | None
     lease_expires_at: str | None
     heartbeat_at: str | None
+    # JSON list of selected test ids, or None for "the whole pack". Defaulted
+    # because `SELECT *` feeds JobRow(**dict(row)) and older rows predate it.
+    test_ids_json: str | None = None
+    # Live progress while the worker runs. Operational state, not evidence:
+    # discarded once the run lands in `runs`.
+    tests_total: int | None = None
+    tests_done: int = 0
+    progress_json: str | None = None
 
 
 JOB_STATES = ("queued", "running", "done", "failed")
@@ -395,15 +407,35 @@ class JobQueue:
         *,
         created_by: str | None = None,
         priority: int = 0,
+        test_ids: Sequence[str] | None = None,
     ) -> str:
+        """Queue a run.
+
+        `test_ids` restricts the run to a subset of the pack. None means the
+        whole pack, which is what an unselected run has always meant. An empty
+        selection is rejected rather than silently running everything: a run of
+        nothing is a mistake, and scoring it as a pass would be evidence of
+        coverage that never happened.
+        """
+        if test_ids is not None and not test_ids:
+            raise ValueError("test_ids must name at least one test, or be None for the whole pack")
         job_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
         with self._store._connection() as conn, conn:
             self._store._ensure_org(conn, org_id, now)
             conn.execute(
                 "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
-                "priority, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)",
-                (job_id, org_id, target_id, pack_id, created_by, priority, now),
+                "priority, created_at, test_ids_json) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)",
+                (
+                    job_id,
+                    org_id,
+                    target_id,
+                    pack_id,
+                    created_by,
+                    priority,
+                    now,
+                    json.dumps(list(test_ids)) if test_ids is not None else None,
+                ),
             )
         return job_id
 
@@ -467,6 +499,39 @@ class JobQueue:
             if cursor.rowcount != 1:
                 return None
             return _job_by_id(conn, candidate["id"])
+
+    # How many recent outcomes a job carries. Enough to see the run moving
+    # without turning an operational row into a second copy of the evidence.
+    PROGRESS_WINDOW = 12
+
+    def start_progress(self, job_id: str, total: int) -> None:
+        """Record how many tests the job is about to run."""
+        with self._store._connection() as conn, conn:
+            conn.execute(
+                "UPDATE jobs SET tests_total = ?, tests_done = 0, progress_json = NULL "
+                "WHERE id = ?",
+                (total, job_id),
+            )
+
+    def record_progress(self, job_id: str, test_id: str, status: str) -> None:
+        """Append one completed test to a job's live progress.
+
+        Best-effort operational state: it carries a test id and a status word,
+        never agent output, so it needs no redaction pass. The window is capped
+        so a long run cannot grow this row without bound.
+        """
+        with self._store._connection() as conn, conn:
+            row = conn.execute(
+                "SELECT progress_json FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return
+            recent = json.loads(row["progress_json"]) if row["progress_json"] else []
+            recent.append({"test_id": test_id, "status": status})
+            conn.execute(
+                "UPDATE jobs SET tests_done = tests_done + 1, progress_json = ? WHERE id = ?",
+                (json.dumps(recent[-self.PROGRESS_WINDOW :]), job_id),
+            )
 
     def heartbeat(self, job_id: str, owner: str, *, lease_seconds: int = 60) -> bool:
         """Extend the lease. False means the lease was lost -- stop working."""
@@ -1251,6 +1316,39 @@ class Store:
             if r["status"] in ("failed", "error"):
                 entry["failed"] += r["n"]
         return sorted(by_risk.values(), key=lambda e: order.get(e["risk"], 9))
+
+    def test_history(
+        self, org_id: str, test_id: str, *, agent_id: str | None = None, limit: int = 20
+    ) -> list[dict]:
+        """Every recorded outcome for one test, newest first.
+
+        Answers the question a single run cannot: is this a new break or a
+        standing one. Joined against `runs` for the timestamp because
+        `test_results` carries no clock of its own.
+        """
+        sql = (
+            "SELECT tr.run_id, tr.status, tr.risk, r.agent_id, r.started_at "
+            "FROM test_results tr JOIN runs r ON r.id = tr.run_id AND r.org_id = tr.org_id "
+            "WHERE tr.org_id = ? AND tr.test_id = ?"
+        )
+        params: list = [org_id, test_id]
+        if agent_id is not None:
+            sql += " AND r.agent_id = ?"
+            params.append(agent_id)
+        sql += " ORDER BY r.started_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "run_id": r["run_id"],
+                "agent_id": r["agent_id"],
+                "started_at": r["started_at"],
+                "status": r["status"],
+                "risk": r["risk"],
+            }
+            for r in rows
+        ]
 
     def pass_fail_matrix(self, org_id: str, agent_id: str) -> Matrix:
         with self._connection() as conn:

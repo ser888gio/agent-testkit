@@ -97,4 +97,38 @@
   <div class="panel-header"><h2>Sandbox diff</h2></div>
   <pre>{{ result.sandbox_diff or "No sandbox changes were recorded." }}</pre>
 </section>
+
+<section class="panel" aria-labelledby="history-title" data-testid="test-history">
+  <div class="panel-header">
+    <div>
+      <h2 id="history-title">History for this test</h2>
+      <p>
+        {% if history | length < 2 %}
+        First recorded run of this test against {{ run.agent_name }}.
+        {% elif history_failures == 0 %}
+        Passed every one of the last {{ history | length }} runs against {{ run.agent_name }}.
+        {% else %}
+        Failed {{ history_failures }} of the last {{ history | length }} runs against {{ run.agent_name }}.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+  {#- A strip of outcomes reads as a pattern faster than a table: a standing
+      break and a fresh regression look different at a glance. -#}
+  <ol class="history-strip">
+    {% for entry in history | reverse %}
+    <li>
+      <a href="/runs/{{ entry.run_id }}/tests/{{ test_id | urlencode }}"
+         title="{{ entry.started_at[:16] | replace('T', ' ') }} - {{ entry.status }}">
+        {{ status_badge(entry.status, entry.status[:1] | upper) }}
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="quiet history-legend">
+    <span>{{ history[-1].started_at[:10] if history else "" }}</span>
+    <span>oldest to newest</span>
+    <span>{{ history[0].started_at[:10] if history else "" }}</span>
+  </p>
+</section>
 {% endblock %}
