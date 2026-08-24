@@ -84,10 +84,37 @@ jobs:
       - name: Build source and wheel distributions
         run: uv build
 
+  docs:
+    name: Build docs site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: website
+
+      # onBrokenLinks: throw means a broken internal doc link fails here.
+      - name: Build site
+        run: npm run build
+        working-directory: website
+
   required:
     name: Required
     if: ${{ always() }}
-    needs: [tests, lint, package]
+    needs: [tests, lint, package, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -97,7 +124,9 @@ jobs:
           TESTS_RESULT: ${{ needs.tests.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
         run: |
           test "$TESTS_RESULT" = "success"
           test "$LINT_RESULT" = "success"
           test "$PACKAGE_RESULT" = "success"
+          test "$DOCS_RESULT" = "success"

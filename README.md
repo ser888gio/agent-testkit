@@ -17,29 +17,34 @@ box (no prompts/tools/source shared) and checks the side effects against a fake 
 > phishing/exfiltration), an OWASP Agentic Top 10 attack pack, and an EU AI Act / ISO 42001
 > / NIST evidence report. See [Limits](#limits) before you rely on it.
 
+**Documentation:** the full user guide — install, quickstart, concepts, guides, and CLI /
+assertion reference — is a Docusaurus site in [`website/`](website/). Build it locally with
+`cd website && npm install && npm start`.
+
 ## Test your agent in two minutes
 
-Install, then point it at your agent's URL. `agentaudit/packs/core` is 14 domain-agnostic
-tests — prompt injection, data leakage, robustness, reliability, latency, response
-contract — that need no sandbox:
+Install, then point it at your agent's URL. The `core` pack is 20 domain-agnostic
+tests — prompt injection, jailbreak, data leakage, robustness, reliability, latency,
+response contract — that need no sandbox:
 
 ```bash
 git clone https://github.com/ser888gio/agent-testkit.git
 cd agent-testkit
 pip install -e .
-agentaudit run agentaudit/packs/core --endpoint https://your-agent.example.com/chat
+agentaudit run core --endpoint https://your-agent.example.com/chat
 ```
 
 ```text
-agentaudit run - target: your-agent.example.com   (14 tests)
+agentaudit run - target: your-agent.example.com   (20 tests)
 CATEGORY              PASS  FAIL   ERR  SKIP
-data_leakage             1     1     0     0
+data_leakage             3     1     0     0
 endpoint_contract        3     0     0     0
+jailbreak                3     1     0     0
 performance              1     0     0     0
-prompt_injection         0     2     0     0
+prompt_injection         4     2     0     0
 reliability              6     0     0     0
 --------------------------------------------
-Overall (weighted): 62%   Pass rate: 79%   Critical failures: 0
+Overall (weighted): 71%   Pass rate: 80%   Critical failures: 0
 ```
 
 `--endpoint` assumes the common shape: `POST {"input": "..."}` returning `{"text": "..."}`.
@@ -65,7 +70,7 @@ The exit code is the CI gate — non-zero when the run fails its threshold or a 
 safety test fails. Every run is persisted to `agentaudit.db` (SQLite):
 
 ```bash
-agentaudit run agentaudit/packs/core --endpoint https://your-agent.example.com/chat --format json
+agentaudit run core --endpoint https://your-agent.example.com/chat --format json
 agentaudit report --run <run_id> --format md   # or: json, junit, html, compliance, plan
 agentaudit ui                                   # dashboard at http://127.0.0.1:8000
 ```
@@ -82,7 +87,7 @@ Write a target config instead of `--endpoint`:
 cp agentaudit/config/my-agent.example.yaml agentaudit/config/my-agent.yaml
 # edit endpoint / request shape / response path, then:
 export AGENT_TOKEN=...
-agentaudit run agentaudit/packs/core --target agentaudit/config/my-agent.yaml
+agentaudit run core --target agentaudit/config/my-agent.yaml
 ```
 
 ```yaml
@@ -159,7 +164,7 @@ and only apply to agents in those domains. Testing a payments or email agent mea
 Add `--compliance` to any run:
 
 ```bash
-agentaudit run agentaudit/packs/core --endpoint https://your-agent.example.com/chat --compliance
+agentaudit run core --endpoint https://your-agent.example.com/chat --compliance
 agentaudit report --run <run_id> --format compliance        # Markdown, grouped by EU article
 agentaudit report --run <run_id> --format compliance-json   # machine-readable for GRC
 ```
@@ -212,6 +217,9 @@ plan and [`CLAUDE.md`](CLAUDE.md#product-direction) for the current-repo-vs-targ
 ## Development
 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, validation commands, PR checklist.
+- [`website/`](website/) — the user-facing documentation site (Docusaurus, Node 20+).
+  `npm install && npm run build` from that directory; `onBrokenLinks: throw` means a
+  broken internal link fails the build.
 - [`docs/README.md`](docs/README.md) — documentation map (architecture, specs, diagrams,
   research, archived planning notes).
 - [`docs/architecture.md`](docs/architecture.md) — control plane vs runner, execution modes,

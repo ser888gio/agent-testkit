@@ -6,7 +6,7 @@ import json
 import os
 from importlib.resources import files
 from ipaddress import ip_address
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 import typer
@@ -176,9 +176,33 @@ def _load_target_or_exit(target: str | None, endpoint: str | None = None):
         raise typer.Exit(2) from exc
 
 
+def _resolve_packs_dir(packs_dir: str) -> str:
+    """Resolve a pack argument to a directory, falling back to the shipped packs.
+
+    A path that exists relative to the cwd wins, so a local pack directory always
+    shadows a shipped one of the same name. Otherwise a bare name like `core` is
+    looked up under AGENTAUDIT_PACKS or the installed `agentaudit.packs` package,
+    so the CLI works outside a clone.
+    """
+    if Path(packs_dir).is_dir():
+        return packs_dir
+    root = os.environ.get("AGENTAUDIT_PACKS")
+    base = Path(root) if root else Path(str(files("agentaudit.packs")))
+    # Accept both `core` and the repo-relative `agentaudit/packs/core`, and keep
+    # any subpath so `core/endpoint_contract` still selects one category.
+    rel = PurePosixPath(packs_dir.replace("\\", "/"))
+    parts = rel.parts
+    if parts[:2] == ("agentaudit", "packs"):
+        parts = parts[2:]
+    if not parts:
+        return packs_dir
+    candidate = base.joinpath(*parts)
+    return str(candidate) if candidate.is_dir() else packs_dir
+
+
 def _discover_tests_or_exit(packs_dir: str):
     try:
-        return discover(packs_dir)
+        return discover(_resolve_packs_dir(packs_dir))
     except LoaderError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
