@@ -47,7 +47,7 @@ def _spy(monkeypatch) -> list[dict]:
     """Replace the runner so the assembly can be observed without spawning one."""
     seen: list[dict] = []
 
-    def fake_run(cfg, cases, *, redactor=None, endpoint=None, on_test=None):
+    def fake_run(cfg, cases, *, redactor=None, endpoint=None, on_test=None, on_result=None):
         seen.append({"cases": list(cases), "redactor": redactor, "endpoint": endpoint})
         now = datetime.now(timezone.utc)
         return RunResult(

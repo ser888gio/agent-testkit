@@ -17,9 +17,23 @@
   <p id="run-status"
      data-poll-url="/jobs/{{ job.id }}/status"
      data-poll-redirect="/runs/"
+     data-progress-target="run-progress"
      aria-live="polite">
     <span class="spinner" aria-hidden="true"></span> {{ job.state }}
   </p>
+
+  {#- Live progress off the job row. A run is written once, when it finishes,
+      so nothing here reads a half-written run. -#}
+  <div id="run-progress" class="run-progress" data-testid="run-progress"
+       {% if not job.tests_total %}hidden{% endif %}>
+    <div class="progress-meter" role="progressbar" aria-label="Tests completed"
+         aria-valuemin="0" aria-valuenow="{{ job.tests_done }}"
+         aria-valuemax="{{ job.tests_total or 0 }}">
+      <span class="progress-fill"
+            style="width: {% if job.tests_total %}{{ (job.tests_done / job.tests_total * 100) | round | int }}{% else %}0{% endif %}%"></span>
+    </div>
+    <ul class="progress-list"></ul>
+  </div>
   {% if job.run_id %}<p><a href="/runs/{{ job.run_id }}">View the run</a></p>{% endif %}
   {% if discovery %}<p><a href="/agents/{{ job.target_id | urlencode }}">View the agent profile</a></p>{% endif %}
 </section>

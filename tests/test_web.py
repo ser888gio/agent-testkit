@@ -1693,3 +1693,36 @@ def test_connect_page_lists_selectable_tests(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert 'data-testid="test-picker"' in resp.text
     assert 'name="test_ids"' in resp.text
+
+
+def test_job_status_reports_live_progress(tmp_path, monkeypatch):
+    db = str(tmp_path / "progress.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    store.jobs.start_progress(job_id, 4)
+    store.jobs.record_progress(job_id, "a.case", "passed")
+    store.jobs.record_progress(job_id, "b.case", "failed")
+    client = _client(db, monkeypatch)
+
+    payload = client.get(f"/jobs/{job_id}/status").json()
+
+    assert payload["tests_done"] == 2
+    assert payload["tests_total"] == 4
+    assert [e["test_id"] for e in payload["recent"]] == ["a.case", "b.case"]
+    assert [e["status"] for e in payload["recent"]] == ["passed", "failed"]
+
+
+def test_job_page_renders_a_progress_meter(tmp_path, monkeypatch):
+    db = str(tmp_path / "progress-view.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    store.jobs.start_progress(job_id, 2)
+    store.jobs.record_progress(job_id, "a.case", "passed")
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/jobs/{job_id}")
+
+    assert resp.status_code == 200
+    assert 'data-testid="run-progress"' in resp.text
+    assert 'aria-valuenow="1"' in resp.text
+    assert 'aria-valuemax="2"' in resp.text

@@ -93,6 +93,7 @@ def execute(
     block_on_critical: bool = True,
     on_plan: Callable[[list[Any], HarnessPlan | None, list[SelectedTest]], None] | None = None,
     on_test: Callable[[int, Any], None] | None = None,
+    on_result: Callable[[int, Any], None] | None = None,
 ) -> AuditRun:
     """Assemble and grade one run.
 
@@ -133,7 +134,14 @@ def execute(
     if on_plan is not None:
         on_plan(tests, harness, unexecuted)
 
-    result = run_tests(target, tests, redactor=redactor, endpoint=endpoint, on_test=on_test)
+    result = run_tests(
+        target,
+        tests,
+        redactor=redactor,
+        endpoint=endpoint,
+        on_test=on_test,
+        on_result=on_result,
+    )
 
     if external and harness is not None and unexecuted:
         external_results, unexecuted = run_external(target, harness, unexecuted)
