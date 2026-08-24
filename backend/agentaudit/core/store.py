@@ -19,7 +19,7 @@ from agentaudit.core.artifacts import artifact_key
 from agentaudit.core.config import TargetConfig, load_target_dict
 from agentaudit.core.egress import EgressPolicy
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
-from agentaudit.core.profile import HarnessPlan
+from agentaudit.core.profile import AgentProfile, HarnessPlan
 from agentaudit.core.redaction import Redactor
 from agentaudit.core.schema import RunResult, TestResult
 from agentaudit.core.scoring import ScoreReport
@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS targets (
     created_at TEXT NOT NULL,
     secret_ref TEXT,
     allowed_hosts TEXT,
+    profile_json TEXT,
+    profiled_at TEXT,
     PRIMARY KEY (org_id, id),
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
@@ -229,6 +231,14 @@ JOB_STATES = ("queued", "running", "done", "failed")
 _TERMINAL_JOB_STATES = ("done", "failed")
 
 Matrix = dict[str, dict[str, str]]
+
+# A discovery job carries no pack: it probes the endpoint and writes a profile.
+# `jobs.pack_id` is NOT NULL, so the kind rides in a reserved id rather than a
+# new column -- the queue, lease, retry and status machinery then works
+# unchanged for both kinds. The leading "__" cannot collide with a pack id,
+# which is a filesystem-derived name.
+DISCOVERY_PACK_ID = "__discovery__"
+
 
 def _validated_target_config(target_id: str, config: dict) -> None:
     credentials.scan_config(config)
@@ -396,6 +406,17 @@ class JobQueue:
                 (job_id, org_id, target_id, pack_id, created_by, priority, now),
             )
         return job_id
+
+    def enqueue_discovery(
+        self, org_id: str, target_id: str, *, created_by: str | None = None
+    ) -> str:
+        """Queue a profile refresh for one target.
+
+        Deliberately a job rather than an inline call: discovery dials a live
+        endpoint, and the web process must not make outbound requests in a
+        request handler -- see `worker.execute_discovery`.
+        """
+        return self.enqueue(org_id, target_id, DISCOVERY_PACK_ID, created_by=created_by)
 
     def claim(
         self, owner: str, *, lease_seconds: int = 60, max_per_org: int | None = None
@@ -626,6 +647,36 @@ class Store:
         if row is None:
             raise KeyError(target_id)
         return json.loads(row["allowed_hosts"]) if row["allowed_hosts"] else []
+
+    def save_target_profile(self, org_id: str, target_id: str, profile: AgentProfile) -> None:
+        """Replace what discovery knows about a target.
+
+        A profile describes the agent, so re-discovering overwrites rather than
+        appends. `AgentProfile` carries only shapes, booleans and names -- never
+        agent output -- so it needs no redaction pass of its own; see
+        `core/discovery.py` for the fence that keeps it that way.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE targets SET profile_json = ?, profiled_at = ? WHERE org_id = ? AND id = ?",
+                (profile.model_dump_json(), now, org_id, target_id),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(target_id)
+
+    def get_target_profile(self, org_id: str, target_id: str) -> tuple[AgentProfile, str] | None:
+        """The stored profile and when it was taken, or None if never discovered."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT profile_json, profiled_at FROM targets WHERE org_id = ? AND id = ?",
+                (org_id, target_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(target_id)
+        if not row["profile_json"]:
+            return None
+        return AgentProfile.model_validate_json(row["profile_json"]), row["profiled_at"]
 
     def list_targets(self, org_id: str) -> list[TargetRow]:
         with self._connection() as conn:
@@ -1092,6 +1143,114 @@ class Store:
         if row is None:
             raise KeyError(run_id)
         return HarnessPlan.model_validate_json(row["plan_json"]) if row["plan_json"] else None
+
+    def score_trend(
+        self, org_id: str, *, agent_id: str | None = None, limit: int = 30
+    ) -> list[dict]:
+        """Score per run over time, oldest first, for a trend line.
+
+        `score_json` is a stored blob rather than a column, so the percentage is
+        computed here instead of in SQL. The row count is bounded by `limit`, so
+        this stays a small parse rather than a table scan into Python.
+        """
+        sql = "SELECT id, agent_id, started_at, status, score_json FROM runs WHERE org_id = ?"
+        params: list = [org_id]
+        if agent_id is not None:
+            sql += " AND agent_id = ?"
+            params.append(agent_id)
+        sql += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        points = []
+        for r in rows:
+            score = json.loads(r["score_json"])
+            points.append(
+                {
+                    "run_id": r["id"],
+                    "agent_id": r["agent_id"],
+                    "started_at": r["started_at"],
+                    "status": r["status"],
+                    "score": round(score.get("overall_score", 0.0) * 100),
+                    "critical_failures": score.get("critical_failures", 0),
+                }
+            )
+        points.reverse()
+        return points
+
+    def category_failure_rates(self, org_id: str, *, since: str | None = None) -> list[dict]:
+        """Failure rate per test category, worst first.
+
+        Aggregated in SQL rather than by loading runs, because "which category
+        breaks most often" is a question about every result this org ever
+        recorded, not about the last page of them.
+        """
+        sql = (
+            "SELECT category, "
+            "COUNT(*) AS total, "
+            "SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed "
+            "FROM test_results WHERE org_id = ?"
+        )
+        params: list = [org_id]
+        if since:
+            sql += " AND run_id IN (SELECT id FROM runs WHERE org_id = ? AND started_at >= ?)"
+            params += [org_id, since]
+        sql += " GROUP BY category ORDER BY failed * 1.0 / COUNT(*) DESC, category"
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "category": r["category"],
+                "total": r["total"],
+                "failed": r["failed"],
+                "rate": (r["failed"] / r["total"]) if r["total"] else 0.0,
+            }
+            for r in rows
+        ]
+
+    def flakiest_tests(self, org_id: str, *, limit: int = 10) -> list[dict]:
+        """Tests that fail most often across runs, worst first.
+
+        A test that has only ever run once is not flaky, it is untested, so
+        single-run tests are excluded rather than shown at a 100% failure rate.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT test_id, category, "
+                "COUNT(*) AS runs, "
+                "SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed "
+                "FROM test_results WHERE org_id = ? "
+                "GROUP BY test_id, category HAVING COUNT(*) > 1 AND failed > 0 "
+                "ORDER BY failed * 1.0 / COUNT(*) DESC, failed DESC, test_id LIMIT ?",
+                (org_id, limit),
+            ).fetchall()
+        return [
+            {
+                "test_id": r["test_id"],
+                "category": r["category"],
+                "runs": r["runs"],
+                "failed": r["failed"],
+                "rate": r["failed"] / r["runs"],
+            }
+            for r in rows
+        ]
+
+    def risk_breakdown(self, org_id: str) -> list[dict]:
+        """Result counts per risk level, most severe first."""
+        order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT risk, status, COUNT(*) AS n FROM test_results "
+                "WHERE org_id = ? GROUP BY risk, status",
+                (org_id,),
+            ).fetchall()
+        by_risk: dict[str, dict] = {}
+        for r in rows:
+            entry = by_risk.setdefault(r["risk"], {"risk": r["risk"], "total": 0, "failed": 0})
+            entry["total"] += r["n"]
+            if r["status"] in ("failed", "error"):
+                entry["failed"] += r["n"]
+        return sorted(by_risk.values(), key=lambda e: order.get(e["risk"], 9))
 
     def pass_fail_matrix(self, org_id: str, agent_id: str) -> Matrix:
         with self._connection() as conn:

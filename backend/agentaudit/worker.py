@@ -19,11 +19,14 @@ import threading
 import uuid
 
 from agentaudit.core.audit import execute as execute_audit
-from agentaudit.core.config import ConfigError, HTTPSpec, load_target_dict
+from agentaudit.core.config import ConfigError, HTTPSpec, TargetConfig, load_target_dict
+from agentaudit.core.discovery import discover
 from agentaudit.core.egress import EgressError, EgressPolicy, validate_endpoint
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
 from agentaudit.core.redaction import Redactor
-from agentaudit.core.store import JobRow, Store
+from agentaudit.core.runner import run as run_tests
+from agentaudit.core.schema import RunResult
+from agentaudit.core.store import DISCOVERY_PACK_ID, JobRow, Store
 
 log = logging.getLogger("agentaudit.worker")
 
@@ -91,16 +94,21 @@ def _safe_job_error(store: Store, job: JobRow, message: str) -> str:
     return message
 
 
-def execute_job(store: Store, job: JobRow) -> str:
-    """Resolve, run, score, and persist one claimed job. Returns the run id."""
+def _prepare_target(store: Store, job: JobRow) -> tuple[TargetConfig, Redactor, str | None]:
+    """Resolve one job's target into everything needed to dial it safely.
+
+    Shared by run and discovery jobs: both reach a live endpoint, so both owe
+    the same egress decision, the same resolved-credential redaction, and the
+    same pinned address. A second copy of this preamble is a second thing to
+    audit.
+    """
     try:
         raw_config = store.get_target(job.org_id, job.target_id)
         secret_ref = store.get_target_secret_ref(job.org_id, job.target_id)
         allowed_hosts = store.get_target_allowed_hosts(job.org_id, job.target_id)
-        tests = load_tests_from_rows(store.get_pack_tests(job.org_id, job.pack_id))
     except KeyError as exc:
-        raise PermanentJobError(f"unknown target or pack: {exc}") from exc
-    except (ConfigError, LoaderError, ValueError) as exc:
+        raise PermanentJobError(f"unknown target: {exc}") from exc
+    except (ConfigError, ValueError) as exc:
         raise PermanentJobError(str(exc)) from exc
 
     secrets = resolve_secret(secret_ref)
@@ -133,6 +141,44 @@ def execute_job(store: Store, job: JobRow) -> str:
             update={"literals": [*target.evidence.redact.literals, *secrets.values()]}
         )
     )
+    return target, redactor, endpoint
+
+
+def execute_discovery(store: Store, job: JobRow) -> None:
+    """Probe the target and replace its stored profile.
+
+    Discovery produces a profile, not a run, so this writes nothing to `runs`
+    and the job finishes with no `run_id`. Probes go through `runner.run` bound
+    to the same egress decision and redactor as an audit would use -- discovery
+    reaches a live partner endpoint and gets no shortcut around that.
+    """
+    target, redactor, endpoint = _prepare_target(store, job)
+
+    def bound_run(cfg: TargetConfig, cases: list) -> RunResult:
+        return run_tests(cfg, cases, redactor=redactor, endpoint=endpoint)
+
+    profile = discover(target, runner=bound_run)
+    store.save_target_profile(job.org_id, job.target_id, profile)
+    log.info("job %s: profiled target %s", job.id, job.target_id)
+
+
+def execute_job(store: Store, job: JobRow) -> str | None:
+    """Resolve, run, score, and persist one claimed job. Returns the run id.
+
+    Returns None for a discovery job, which updates a profile instead of
+    producing a run.
+    """
+    if job.pack_id == DISCOVERY_PACK_ID:
+        execute_discovery(store, job)
+        return None
+
+    target, redactor, endpoint = _prepare_target(store, job)
+    try:
+        tests = load_tests_from_rows(store.get_pack_tests(job.org_id, job.pack_id))
+    except KeyError as exc:
+        raise PermanentJobError(f"unknown pack: {exc}") from exc
+    except (LoaderError, ValueError) as exc:
+        raise PermanentJobError(str(exc)) from exc
 
     # The egress decision above binds every request the audit makes, discovery
     # probes included. `external` stays off for exactly that reason: a spawned

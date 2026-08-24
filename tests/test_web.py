@@ -11,7 +11,7 @@ from agentaudit.core.runner import run
 from agentaudit.core.schema import Assertion, Category
 from agentaudit.core.schema import TestCase as SchemaTestCase
 from agentaudit.core.scoring import score
-from agentaudit.core.store import DEFAULT_ORG, Store
+from agentaudit.core.store import DEFAULT_ORG, DISCOVERY_PACK_ID, Store
 
 MODULE = "tests.test_web"
 
@@ -94,17 +94,20 @@ def test_dashboard_shows_run_and_critical_count(tmp_path, monkeypatch):
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/")
+    resp = client.get("/runs")
     assert resp.status_code == 200
     assert rr.run_id[:8] in resp.text
     assert str(report.critical_failures) in resp.text
     assert "Needs attention" in resp.text
-    assert "Connect an agent" in resp.text
-    assert "Create a test" in resp.text
-    assert 'href="/agents/connect"' in resp.text
-    assert 'href="/tests/new"' in resp.text
     assert 'aria-current="page"' in resp.text
     assert "Apply Filters" not in resp.text
+
+    # The onboarding CTAs moved to the analytics landing page.
+    home = client.get("/")
+    assert "Connect an agent" in home.text
+    assert "Create a test" in home.text
+    assert 'href="/agents/connect"' in home.text
+    assert 'href="/tests/new"' in home.text
 
 
 def test_dashboard_empty_state(tmp_path, monkeypatch):
@@ -114,7 +117,7 @@ def test_dashboard_empty_state(tmp_path, monkeypatch):
     _Store(db)  # create empty db
     client = _client(db, monkeypatch)
 
-    resp = client.get("/")
+    resp = client.get("/runs")
     assert resp.status_code == 200
     assert "No runs yet" in resp.text
 
@@ -225,7 +228,7 @@ def test_runs_route_shows_dashboard_table(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert "Recent runs" in resp.text
     assert rr.run_id[:8] in resp.text
-    assert 'href="/" data-testid="nav-runs" class="active" aria-current="page"' in resp.text
+    assert 'href="/runs" data-testid="nav-runs" class="active" aria-current="page"' in resp.text
 
 
 def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
@@ -500,7 +503,7 @@ def test_dashboard_filters_by_agent_query(tmp_path, monkeypatch):
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/?agent=web-target&q=web-target")
+    resp = client.get("/runs?agent=web-target&q=web-target")
 
     assert resp.status_code == 200
     assert rr.run_id[:8] in resp.text
@@ -513,13 +516,13 @@ def test_dashboard_status_filter_uses_result_summary(tmp_path, monkeypatch):
     _, passed_run, _ = _seed_passing_store(db)
     client = _client(db, monkeypatch)
 
-    failed_resp = client.get("/?status=failed")
+    failed_resp = client.get("/runs?status=failed")
 
     assert failed_resp.status_code == 200
     assert failed_run.run_id[:8] in failed_resp.text
     assert passed_run.run_id[:8] not in failed_resp.text
 
-    passed_resp = client.get("/?status=passed")
+    passed_resp = client.get("/runs?status=passed")
 
     assert passed_resp.status_code == 200
     assert passed_run.run_id[:8] in passed_resp.text
@@ -583,16 +586,20 @@ def test_data_testid_hooks_present(tmp_path, monkeypatch):
     home = client.get("/").text
     for hook in (
         "nav-harness",
+        "nav-analytics",
         "nav-runs",
         "nav-agents",
         "nav-tests",
         "nav-settings",
         "action-connect-agent",
         "action-create-test",
-        "stat-runs",
-        "run-row",
     ):
         assert f'data-testid="{hook}"' in home, hook
+
+    # The run list and its stats moved to /runs when analytics took over /.
+    runs = client.get("/runs").text
+    for hook in ("stat-runs", "run-row"):
+        assert f'data-testid="{hook}"' in runs, hook
 
     connect = client.get("/agents/connect").text
     assert 'data-testid="connect-form"' in connect
@@ -1086,6 +1093,17 @@ def test_store_serves_concurrent_threads(tmp_path):
 
 # ---- T13: async submission -----------------------------------------------
 
+_TARGET_CONFIG = {
+    "id": "treasury-demo",
+    "agent": {"type": "callable", "callable": "tests.test_web:_noop_agent"},
+    "sandbox": "treasury",
+}
+
+
+def _noop_agent():
+    return lambda input, sandbox: "ok"
+
+
 _TREASURY = {
     "target": "agentaudit/config/treasury-agent.yaml",
     "packs": "agentaudit/packs/treasury",
@@ -1501,3 +1519,122 @@ def test_the_queue_is_empty_when_nothing_was_generated(tmp_path, monkeypatch):
     resp = client.get("/generated")
     assert resp.status_code == 200
     assert "Nothing to review" in resp.text
+
+
+def test_post_discover_queues_a_job_without_dialling_the_endpoint(tmp_path, monkeypatch):
+    """The web process must never probe an agent in a request handler."""
+    db = str(tmp_path / "discover.db")
+    store = Store(db)
+    store.save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
+    client = _client(db, monkeypatch)
+
+    resp = client.post("/agents/treasury-demo/discover", follow_redirects=False)
+
+    assert resp.status_code == 303
+    jobs = Store(db).jobs.list_recent(DEFAULT_ORG)
+    assert len(jobs) == 1
+    assert jobs[0].pack_id == DISCOVERY_PACK_ID
+    assert jobs[0].state == "queued"
+    # Queued, not executed: no profile has been written yet.
+    assert Store(db).get_target_profile(DEFAULT_ORG, "treasury-demo") is None
+
+
+def test_post_discover_404s_for_an_unknown_target(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "discover-404.db"), monkeypatch)
+
+    assert client.post("/agents/nope/discover").status_code == 404
+
+
+def test_agent_detail_renders_a_stored_profile(tmp_path, monkeypatch):
+    db = str(tmp_path / "profile-view.db")
+    store = Store(db)
+    store.save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
+    store.save_target_profile(
+        DEFAULT_ORG,
+        "treasury-demo",
+        AgentProfile(
+            id="treasury-demo",
+            purpose="reviews and pays supplier invoices",
+            domain="treasury",
+            sandbox="treasury",
+            tool_use=True,
+            side_effects=["money_movement"],
+            notes=["answered a trivial probe in 12 ms"],
+        ),
+    )
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents/treasury-demo")
+
+    assert resp.status_code == 200
+    assert 'data-testid="agent-profile"' in resp.text
+    assert "reviews and pays supplier invoices" in resp.text
+    assert "money_movement" in resp.text
+    assert "answered a trivial probe in 12 ms" in resp.text
+
+
+def test_agent_detail_without_a_profile_offers_to_make_one(tmp_path, monkeypatch):
+    db = str(tmp_path / "no-profile-view.db")
+    Store(db).save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/agents/treasury-demo")
+
+    assert resp.status_code == 200
+    assert "Never profiled" in resp.text
+    assert 'data-testid="discover-submit"' in resp.text
+
+
+def test_analytics_is_the_home_page_and_runs_moved(tmp_path, monkeypatch):
+    db = str(tmp_path / "analytics.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert 'data-testid="chart-trend"' in home.text
+    assert 'data-testid="stat-gate-rate"' in home.text
+
+    # The run list still exists, at its own address.
+    runs = client.get("/runs")
+    assert runs.status_code == 200
+    assert 'data-testid="run-row"' in runs.text
+
+
+def test_analytics_renders_an_empty_state_with_no_runs(tmp_path, monkeypatch):
+    """An empty estate must not render a chart of nothing."""
+    client = _client(str(tmp_path / "empty-analytics.db"), monkeypatch)
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert "Nothing to analyse yet" in resp.text
+    assert 'data-testid="chart-trend"' not in resp.text
+
+
+def test_analytics_sparkline_carries_one_point_per_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "analytics-points.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get("/")
+
+    import re as _re
+
+    points = _re.search(r'class="chart-line" points="([^"]*)"', resp.text)
+    assert points, "expected a plotted trend line"
+    assert len(points.group(1).split()) >= 1
+
+
+def test_run_list_navigation_stays_on_the_run_list(tmp_path, monkeypatch):
+    """Analytics took over /, so a control on the run list must not send you there."""
+    db = str(tmp_path / "nav.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    runs = client.get("/runs").text
+    # The filter Reset returns to an unfiltered run list, not to analytics.
+    assert '<a class="button-secondary" href="/runs">Reset</a>' in runs
+
+    detail = client.get(f"/runs/{rr.run_id}").text
+    assert 'href="/runs">Back to runs</a>' in detail

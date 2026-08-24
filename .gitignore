@@ -35,3 +35,11 @@ Thumbs.db
 
 # Diagram plugin ephemeral state
 .diagram/
+
+# Node / Next.js (landing site; landing/.gitignore covers these on its own
+# branch, but that file is absent on branches without the landing source)
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
