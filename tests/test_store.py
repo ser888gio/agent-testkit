@@ -672,3 +672,100 @@ def test_purge_runs_by_age_and_count():
 
     with pytest.raises(ValueError):
         store.purge_runs()
+
+
+def _seed_analytics(store: Store) -> None:
+    """Two agents, mixed outcomes, so every aggregate has something to group."""
+    for i in range(3):
+        cfg, rr, report = _run_and_score(
+            target_id="agent-a",
+            test_id="flaky.case",
+            passing=i == 0,
+            started_at=datetime(2026, 8, 10 + i, tzinfo=timezone.utc),
+        )
+        store.save_run(DEFAULT_ORG, cfg, rr, report)
+    cfg, rr, report = _run_and_score(
+        target_id="agent-b",
+        test_id="steady.case",
+        passing=True,
+        started_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+    )
+    store.save_run(DEFAULT_ORG, cfg, rr, report)
+
+
+def test_category_failure_rates_group_in_sql():
+    store = Store(":memory:")
+    _seed_analytics(store)
+
+    rates = store.category_failure_rates(DEFAULT_ORG)
+
+    assert len(rates) == 1
+    row = rates[0]
+    assert row["category"] == "reliability"
+    # 4 results, 2 of the 3 agent-a runs failed.
+    assert row["total"] == 4
+    assert row["failed"] == 2
+    assert row["rate"] == 0.5
+
+
+def test_category_failure_rates_respect_the_since_window():
+    store = Store(":memory:")
+    _seed_analytics(store)
+
+    recent = store.category_failure_rates(DEFAULT_ORG, since="2026-08-20")
+
+    # Only the agent-b run falls inside the window, and it passed.
+    assert recent == [
+        {"category": "reliability", "total": 1, "failed": 0, "rate": 0.0}
+    ]
+
+
+def test_flakiest_tests_ignores_single_run_tests():
+    store = Store(":memory:")
+    _seed_analytics(store)
+
+    flaky = store.flakiest_tests(DEFAULT_ORG)
+
+    # steady.case ran once and passed; a test seen once is untested, not flaky.
+    assert [f["test_id"] for f in flaky] == ["flaky.case"]
+    assert flaky[0]["runs"] == 3
+    assert flaky[0]["failed"] == 2
+
+
+def test_score_trend_is_oldest_first_and_bounded():
+    store = Store(":memory:")
+    _seed_analytics(store)
+
+    trend = store.score_trend(DEFAULT_ORG)
+
+    assert len(trend) == 4
+    starts = [p["started_at"] for p in trend]
+    assert starts == sorted(starts), "a trend line must run oldest to newest"
+    assert trend[0]["score"] == 100
+    assert trend[-1]["agent_id"] == "agent-b"
+
+    assert len(store.score_trend(DEFAULT_ORG, limit=2)) == 2
+    assert {p["agent_id"] for p in store.score_trend(DEFAULT_ORG, agent_id="agent-b")} == {
+        "agent-b"
+    }
+
+
+def test_risk_breakdown_orders_by_severity():
+    store = Store(":memory:")
+    _seed_analytics(store)
+
+    breakdown = store.risk_breakdown(DEFAULT_ORG)
+
+    assert [b["risk"] for b in breakdown] == ["medium"]
+    assert breakdown[0]["total"] == 4
+    assert breakdown[0]["failed"] == 2
+
+
+def test_analytics_aggregates_are_org_scoped():
+    store = Store(":memory:")
+    _seed_analytics(store)
+
+    assert store.category_failure_rates("other-org") == []
+    assert store.flakiest_tests("other-org") == []
+    assert store.score_trend("other-org") == []
+    assert store.risk_breakdown("other-org") == []

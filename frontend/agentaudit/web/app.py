@@ -32,7 +32,8 @@ from agentaudit.core.loader import LoaderError, discover
 from agentaudit.core.redaction import builtin_pattern_names
 from agentaudit.core.regressions import compare
 from agentaudit.core.schema import Category, Risk, TestCase
-from agentaudit.core.store import Store
+from agentaudit.core.store import DISCOVERY_PACK_ID, Store
+from agentaudit.reports.charts import bar_rows, donut_segments, sparkline_points
 from agentaudit.web.auth import (
     LOGIN_STATE_COOKIE,
     SESSION_COOKIE,
@@ -216,8 +217,42 @@ def _runs_page(request: Request, org_id: str) -> HTMLResponse:
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, principal: Principal = Depends(current_principal)) -> HTMLResponse:
-    return _runs_page(request, principal.org_id)
+def analytics_page(principal: Principal = Depends(current_principal)) -> HTMLResponse:
+    """Portfolio view: where the estate stands and what is trending wrong.
+
+    The run list moved to /runs. This page answers "what should I look at",
+    which a reverse-chronological table cannot.
+    """
+    store = get_store()
+    org = principal.org_id
+    trend = store.score_trend(org, limit=30)
+    categories = store.category_failure_rates(org)
+    flaky = store.flakiest_tests(org, limit=8)
+    risks = store.risk_breakdown(org)
+
+    runs = [runview.run_row(r) for r in store.list_runs(org, limit=100)]
+    agents = sorted({r["agent_id"] for r in runs})
+    gates = sum(1 for r in runs if r["status"] not in runview.BAD_STATUSES)
+    latest = trend[-1]["score"] if trend else 0
+    previous = trend[-2]["score"] if len(trend) > 1 else latest
+
+    return _render(
+        "analytics.html",
+        trend=trend,
+        sparkline=sparkline_points([p["score"] for p in trend]),
+        categories=bar_rows(categories),
+        flaky=flaky,
+        risks=donut_segments(risks),
+        totals={
+            "runs": len(runs),
+            "agents": len(agents),
+            "gate_rate": round(gates / len(runs) * 100) if runs else 0,
+            "critical": sum(r["critical_failures"] for r in runs),
+            "latest_score": latest,
+            "delta": latest - previous,
+        },
+        active="analytics",
+    )
 
 
 @app.get("/runs", response_class=HTMLResponse)
@@ -297,6 +332,13 @@ def agent_detail(agent_id: str, principal: Principal = Depends(current_principal
     latest_run_id = runs[0].id if runs else None
     run_views = [runview.run_row(r) for r in runs]
     failures = [r for r in run_views if r["needs_attention"]]
+    # An agent id is the target id it was run against (`_import_first_party`),
+    # so the profile keys off the same value. A target that was never imported
+    # as a row has no profile to show rather than a 404.
+    try:
+        profile = get_store().get_target_profile(principal.org_id, agent_id)
+    except KeyError:
+        profile = None
     return _render(
         "agent_detail.html",
         agent_id=agent_id,
@@ -305,8 +347,28 @@ def agent_detail(agent_id: str, principal: Principal = Depends(current_principal
         failures=failures,
         matrix=matrix,
         latest_run_id=latest_run_id,
+        profile=profile[0] if profile else None,
+        profiled_at=profile[1] if profile else None,
+        csrf_token=principal.csrf_token,
         active="agents",
     )
+
+
+@app.post("/agents/{agent_id:path}/discover")
+def discover_agent(
+    agent_id: str,
+    # Read by require_admin off the form body; unused here.
+    csrf_token: str = Form(""),  # noqa: ARG001
+    principal: Principal = Depends(require_admin),
+) -> RedirectResponse:
+    """Queue a profile refresh. The worker probes; this handler never dials out."""
+    store = get_store()
+    try:
+        store.get_target(principal.org_id, agent_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"unknown target '{agent_id}'") from None
+    job_id = store.jobs.enqueue_discovery(principal.org_id, agent_id, created_by=principal.subject)
+    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 
 def get_packs_dir() -> Path:
@@ -847,7 +909,10 @@ def _load_job_or_404(org_id: str, job_id: str):
 
 @app.get("/jobs/{job_id}", response_class=HTMLResponse)
 def job_detail(job_id: str, principal: Principal = Depends(current_principal)) -> HTMLResponse:
-    return _render("job.html", job=_load_job_or_404(principal.org_id, job_id))
+    job = _load_job_or_404(principal.org_id, job_id)
+    # A discovery job produces a profile, not a run: the sentinel pack id is an
+    # implementation detail and must not surface as if it were a pack.
+    return _render("job.html", job=job, discovery=job.pack_id == DISCOVERY_PACK_ID)
 
 
 @app.get("/jobs/{job_id}/status")

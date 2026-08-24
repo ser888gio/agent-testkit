@@ -2,7 +2,7 @@
 {% from "_components.html" import stat_card, status_badge, score_bar, empty_state %}
 {% block title %}Run {{ run.run_id[:8] }} - agentaudit{% endblock %}
 {% block content %}
-<p><a href="/">Back to dashboard</a> &middot; <a href="/agents/{{ run.agent_name | urlencode }}">{{ run.agent_name }}</a></p>
+<p><a href="/runs">Back to runs</a> &middot; <a href="/agents/{{ run.agent_name | urlencode }}">{{ run.agent_name }}</a></p>
 <header class="page-header">
   <div>
     <p class="eyebrow">Run detail</p>

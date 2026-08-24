@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_components.html" import stat_card, status_badge, score_bar, empty_state %}
+{% from "_components.html" import stat_card, status_badge, score_bar, empty_state, time_text %}
 {% block title %}{{ agent_id }} - agentaudit{% endblock %}
 {% block content %}
 <p><a href="/agents">Back to agents</a></p>
@@ -9,6 +9,57 @@
     <h1>{{ agent_id }}</h1>
   </div>
 </header>
+
+<section class="panel" data-testid="agent-profile" aria-labelledby="profile-title">
+  <div class="panel-header">
+    <div>
+      <h2 id="profile-title">Discovered profile</h2>
+      <p>What probing the endpoint revealed, and therefore which tests are worth running.</p>
+    </div>
+    <form method="post" action="/agents/{{ agent_id | urlencode }}/discover">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" data-testid="discover-submit">{{ "Re-profile" if profile else "Profile agent" }}</button>
+    </form>
+  </div>
+  {% if not profile %}
+  <p class="quiet">Never profiled. Probing sends a few low-risk requests to the endpoint and records shapes only &mdash; never response text.</p>
+  {% else %}
+  <dl class="harness-meta">
+    <div><dt>Purpose</dt><dd>{{ profile.purpose or "not inferred" }}</dd></div>
+    <div><dt>Domain</dt><dd>{{ profile.domain }}</dd></div>
+    <div><dt>Interface</dt><dd>{{ profile.interface }}</dd></div>
+    <div><dt>Sandbox</dt><dd>{{ profile.sandbox or "none declared" }}</dd></div>
+    <div><dt>Risk level</dt><dd>{{ status_badge(profile.risk_level.value) }}</dd></div>
+    <div><dt>Profiled</dt><dd>{{ time_text(profiled_at) }}</dd></div>
+  </dl>
+
+  <h3>Capabilities</h3>
+  <p class="quiet">A test whose requirement the agent cannot satisfy is excluded rather than run and failed.</p>
+  <ul class="memory-check-list">
+    {% for name in ["multi_turn", "tool_use", "structured_input", "sandbox"] %}
+    <li>
+      <span class="mono">{{ name }}</span>
+      {{ status_badge("passed" if name in profile.capabilities() else "skipped", "yes" if name in profile.capabilities() else "no") }}
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if profile.tool_classes or profile.side_effects %}
+  <h3>Attack surface</h3>
+  <div class="matrix-row">
+    {% for tool in profile.tool_classes %}<span class="badge badge-neutral">{{ tool }}</span>{% endfor %}
+    {% for effect in profile.side_effects %}<span class="badge badge-failed">{{ effect }}</span>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if profile.notes %}
+  <h3>Discovery notes</h3>
+  <ul class="finding-stream">
+    {% for note in profile.notes %}<li class="finding-item"><div class="finding-main"><p>{{ note }}</p></div></li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% endif %}
+</section>
 
 {% if runs %}
 <section class="stat-grid">
