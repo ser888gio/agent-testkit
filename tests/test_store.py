@@ -769,3 +769,43 @@ def test_analytics_aggregates_are_org_scoped():
     assert store.flakiest_tests("other-org") == []
     assert store.score_trend("other-org") == []
     assert store.risk_breakdown("other-org") == []
+
+
+def test_test_history_is_newest_first_across_runs():
+    store = Store(":memory:")
+    _seed_analytics(store)
+
+    history = store.test_history(DEFAULT_ORG, "flaky.case")
+
+    assert len(history) == 3
+    starts = [h["started_at"] for h in history]
+    assert starts == sorted(starts, reverse=True), "history reads newest first"
+    # The first seeded run passed; the later two failed.
+    assert history[-1]["status"] == "passed"
+    assert [h["agent_id"] for h in history] == ["agent-a"] * 3
+
+
+def test_test_history_can_scope_to_one_agent():
+    store = Store(":memory:")
+    _seed_analytics(store)
+    cfg, rr, report = _run_and_score(
+        target_id="agent-b",
+        test_id="flaky.case",
+        passing=True,
+        started_at=datetime(2026, 8, 25, tzinfo=timezone.utc),
+    )
+    store.save_run(DEFAULT_ORG, cfg, rr, report)
+
+    everywhere = store.test_history(DEFAULT_ORG, "flaky.case")
+    just_b = store.test_history(DEFAULT_ORG, "flaky.case", agent_id="agent-b")
+
+    assert len(everywhere) == 4
+    assert [h["agent_id"] for h in just_b] == ["agent-b"]
+
+
+def test_test_history_is_empty_for_an_unknown_test_and_org_scoped():
+    store = Store(":memory:")
+    _seed_analytics(store)
+
+    assert store.test_history(DEFAULT_ORG, "never.ran") == []
+    assert store.test_history("other-org", "flaky.case") == []
