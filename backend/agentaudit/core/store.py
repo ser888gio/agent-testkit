@@ -659,8 +659,7 @@ class Store:
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as conn, conn:
             cursor = conn.execute(
-                "UPDATE targets SET profile_json = ?, profiled_at = ? "
-                "WHERE org_id = ? AND id = ?",
+                "UPDATE targets SET profile_json = ?, profiled_at = ? WHERE org_id = ? AND id = ?",
                 (profile.model_dump_json(), now, org_id, target_id),
             )
         if cursor.rowcount != 1:
@@ -1144,6 +1143,114 @@ class Store:
         if row is None:
             raise KeyError(run_id)
         return HarnessPlan.model_validate_json(row["plan_json"]) if row["plan_json"] else None
+
+    def score_trend(
+        self, org_id: str, *, agent_id: str | None = None, limit: int = 30
+    ) -> list[dict]:
+        """Score per run over time, oldest first, for a trend line.
+
+        `score_json` is a stored blob rather than a column, so the percentage is
+        computed here instead of in SQL. The row count is bounded by `limit`, so
+        this stays a small parse rather than a table scan into Python.
+        """
+        sql = "SELECT id, agent_id, started_at, status, score_json FROM runs WHERE org_id = ?"
+        params: list = [org_id]
+        if agent_id is not None:
+            sql += " AND agent_id = ?"
+            params.append(agent_id)
+        sql += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        points = []
+        for r in rows:
+            score = json.loads(r["score_json"])
+            points.append(
+                {
+                    "run_id": r["id"],
+                    "agent_id": r["agent_id"],
+                    "started_at": r["started_at"],
+                    "status": r["status"],
+                    "score": round(score.get("overall_score", 0.0) * 100),
+                    "critical_failures": score.get("critical_failures", 0),
+                }
+            )
+        points.reverse()
+        return points
+
+    def category_failure_rates(self, org_id: str, *, since: str | None = None) -> list[dict]:
+        """Failure rate per test category, worst first.
+
+        Aggregated in SQL rather than by loading runs, because "which category
+        breaks most often" is a question about every result this org ever
+        recorded, not about the last page of them.
+        """
+        sql = (
+            "SELECT category, "
+            "COUNT(*) AS total, "
+            "SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed "
+            "FROM test_results WHERE org_id = ?"
+        )
+        params: list = [org_id]
+        if since:
+            sql += " AND run_id IN (SELECT id FROM runs WHERE org_id = ? AND started_at >= ?)"
+            params += [org_id, since]
+        sql += " GROUP BY category ORDER BY failed * 1.0 / COUNT(*) DESC, category"
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "category": r["category"],
+                "total": r["total"],
+                "failed": r["failed"],
+                "rate": (r["failed"] / r["total"]) if r["total"] else 0.0,
+            }
+            for r in rows
+        ]
+
+    def flakiest_tests(self, org_id: str, *, limit: int = 10) -> list[dict]:
+        """Tests that fail most often across runs, worst first.
+
+        A test that has only ever run once is not flaky, it is untested, so
+        single-run tests are excluded rather than shown at a 100% failure rate.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT test_id, category, "
+                "COUNT(*) AS runs, "
+                "SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed "
+                "FROM test_results WHERE org_id = ? "
+                "GROUP BY test_id, category HAVING COUNT(*) > 1 AND failed > 0 "
+                "ORDER BY failed * 1.0 / COUNT(*) DESC, failed DESC, test_id LIMIT ?",
+                (org_id, limit),
+            ).fetchall()
+        return [
+            {
+                "test_id": r["test_id"],
+                "category": r["category"],
+                "runs": r["runs"],
+                "failed": r["failed"],
+                "rate": r["failed"] / r["runs"],
+            }
+            for r in rows
+        ]
+
+    def risk_breakdown(self, org_id: str) -> list[dict]:
+        """Result counts per risk level, most severe first."""
+        order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT risk, status, COUNT(*) AS n FROM test_results "
+                "WHERE org_id = ? GROUP BY risk, status",
+                (org_id,),
+            ).fetchall()
+        by_risk: dict[str, dict] = {}
+        for r in rows:
+            entry = by_risk.setdefault(r["risk"], {"risk": r["risk"], "total": 0, "failed": 0})
+            entry["total"] += r["n"]
+            if r["status"] in ("failed", "error"):
+                entry["failed"] += r["n"]
+        return sorted(by_risk.values(), key=lambda e: order.get(e["risk"], 9))
 
     def pass_fail_matrix(self, org_id: str, agent_id: str) -> Matrix:
         with self._connection() as conn:

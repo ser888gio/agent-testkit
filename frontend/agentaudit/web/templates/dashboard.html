@@ -1,27 +1,14 @@
 {% extends "base.html" %}
 {% from "_components.html" import stat_card, status_badge, score_bar, empty_state, time_text %}
-{% block title %}Dashboard - agentaudit{% endblock %}
+{% block title %}Runs - agentaudit{% endblock %}
 {% block content %}
 <header class="page-header">
   <div>
     <p class="eyebrow">Run operations</p>
-    <h1>Home</h1>
-    <p class="page-subtitle">Start by connecting an agent or creating a reusable test, then use the run dashboard below for triage.</p>
+    <h1>Runs</h1>
+    <p class="page-subtitle">Every recorded run, failure-first. Connect an agent or author a test to add more.</p>
   </div>
 </header>
-
-<section class="home-actions" aria-label="Primary actions">
-  <a class="home-action" data-testid="action-connect-agent" href="/agents/connect">
-    <span class="home-action-kicker">Connect agent</span>
-    <strong>Connect an agent</strong>
-    <span>Open the setup page for target configs, pack selection, and the run command.</span>
-  </a>
-  <a class="home-action" data-testid="action-create-test" href="/tests/new">
-    <span class="home-action-kicker">Create test</span>
-    <strong>Create a test</strong>
-    <span>Open the test creation page and add a YAML-backed coverage case.</span>
-  </a>
-</section>
 
 {% if not all_runs %}
 {{ empty_state("No runs yet", "Run your first pack with agentaudit run <packs_dir> --target <config.yaml>.", "View tests", "/tests") }}
@@ -90,7 +77,7 @@
         <option value="agent" {% if filters.sort == "agent" %}selected{% endif %}>Agent</option>
       </select>
     </label>
-    <a class="button-secondary" href="/">Reset</a>
+    <a class="button-secondary" href="/runs">Reset</a>
   </form>
   {% if not runs %}
   <p class="quiet">No runs match the current filters.</p>
