@@ -724,6 +724,41 @@ pre {
   font-size: 0.78rem;
 }
 
+.run-progress {
+  margin-top: 1rem;
+}
+
+.progress-meter {
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-hover);
+  transition: width 240ms ease;
+}
+
+.progress-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
 .test-picker {
   border: 1px solid var(--hairline);
   border-radius: var(--radius-card);

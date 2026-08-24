@@ -4,7 +4,7 @@ import time
 import pytest
 
 import agentaudit.core.audit as audit_module
-from agentaudit.core.store import Store
+from agentaudit.core.store import JobQueue, Store
 from agentaudit.worker import PermanentJobError, execute_job, main, work_once
 
 MODULE = "tests.test_worker"
@@ -374,3 +374,77 @@ def test_selection_survives_the_queue(tmp_path):
     import json as _json
 
     assert _json.loads(store.jobs.get("org-a", job_id).test_ids_json) == ["w.second.case"]
+
+
+def test_a_running_job_reports_progress_without_writing_a_run(tmp_path):
+    """The whole point of progress-on-the-job: `runs` stays untouched mid-flight."""
+    store, job_id = _store_with_two_tests(tmp_path)
+    seen: list[tuple[int, int, list]] = []
+
+    real_record = store.jobs.record_progress
+
+    def spy(jid, test_id, status):
+        real_record(jid, test_id, status)
+        job = store.jobs.get("org-a", jid)
+        # Mid-run: progress is visible, but no run exists to be mistaken for
+        # evidence and no score has been computed.
+        seen.append((job.tests_done, job.tests_total, store.list_runs("org-a")))
+
+    store.jobs.record_progress = spy
+    work_once(store, "w1")
+
+    assert seen, "expected per-test progress"
+    assert [s[0] for s in seen] == [1, 2], "tests_done must climb"
+    assert all(s[1] == 2 for s in seen), "total is known up front"
+    assert all(s[2] == [] for s in seen), "no run may exist while one is in flight"
+
+    # The run lands exactly once, at the end.
+    assert len(store.list_runs("org-a")) == 1
+
+
+def test_progress_records_each_outcome(tmp_path):
+    store, job_id = _store_with_two_tests(tmp_path)
+
+    work_once(store, "w1")
+
+    import json as _json
+
+    recent = _json.loads(store.jobs.get("org-a", job_id).progress_json)
+    assert {e["test_id"] for e in recent} == {"w.pass.case", "w.second.case"}
+    assert all(e["status"] in ("passed", "failed", "error", "skipped") for e in recent)
+
+
+def test_progress_window_is_bounded(tmp_path):
+    """A long run must not grow the job row without bound."""
+    store = Store(str(tmp_path / "window.db"))
+    store.jobs.enqueue("org-a", "t", "p")
+    job_id = store.jobs.list_recent("org-a")[0].id
+    store.jobs.start_progress(job_id, 100)
+
+    for i in range(JobQueue.PROGRESS_WINDOW + 5):
+        store.jobs.record_progress(job_id, f"t.{i}", "passed")
+
+    import json as _json
+
+    job = store.jobs.get("org-a", job_id)
+    recent = _json.loads(job.progress_json)
+    assert len(recent) == JobQueue.PROGRESS_WINDOW
+    # The window keeps the newest, and the counter still sees everything.
+    assert recent[-1]["test_id"] == f"t.{JobQueue.PROGRESS_WINDOW + 4}"
+    assert job.tests_done == JobQueue.PROGRESS_WINDOW + 5
+
+
+def test_a_failing_progress_callback_does_not_lose_the_run(tmp_path):
+    """Evidence matters; a dropped status update does not."""
+    store, job_id = _store_with_two_tests(tmp_path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("progress backend down")
+
+    store.jobs.record_progress = boom
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    rr, _report = store.get_run("org-a", job.run_id)
+    assert len(rr.results) == 2

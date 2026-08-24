@@ -933,12 +933,20 @@ def _job_status_payload(job) -> dict[str, object]:
     message = _JOB_MESSAGES.get(job.state, job.state)
     if job.state == "failed" and job.error:
         message = f"Failed: {job.error}"
+    elif job.state == "running" and job.tests_total:
+        message = f"Running... {job.tests_done} of {job.tests_total} tests"
+    recent = json.loads(job.progress_json) if job.progress_json else []
     return {
         "job_id": job.id,
         "run_id": job.run_id or "",
         "state": job.state,
         "message": message,
         "running": job.state in ("queued", "running"),
+        "tests_done": job.tests_done,
+        "tests_total": job.tests_total or 0,
+        # Test ids and status words only -- progress is operational state, and
+        # carries no agent output to redact.
+        "recent": recent,
     }
 
 

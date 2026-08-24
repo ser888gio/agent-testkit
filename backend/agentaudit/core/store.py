@@ -129,6 +129,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     lease_expires_at TEXT,
     heartbeat_at TEXT,
     test_ids_json TEXT,
+    tests_total INTEGER,
+    tests_done INTEGER NOT NULL DEFAULT 0,
+    progress_json TEXT,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -229,6 +232,11 @@ class JobRow:
     # JSON list of selected test ids, or None for "the whole pack". Defaulted
     # because `SELECT *` feeds JobRow(**dict(row)) and older rows predate it.
     test_ids_json: str | None = None
+    # Live progress while the worker runs. Operational state, not evidence:
+    # discarded once the run lands in `runs`.
+    tests_total: int | None = None
+    tests_done: int = 0
+    progress_json: str | None = None
 
 
 JOB_STATES = ("queued", "running", "done", "failed")
@@ -491,6 +499,39 @@ class JobQueue:
             if cursor.rowcount != 1:
                 return None
             return _job_by_id(conn, candidate["id"])
+
+    # How many recent outcomes a job carries. Enough to see the run moving
+    # without turning an operational row into a second copy of the evidence.
+    PROGRESS_WINDOW = 12
+
+    def start_progress(self, job_id: str, total: int) -> None:
+        """Record how many tests the job is about to run."""
+        with self._store._connection() as conn, conn:
+            conn.execute(
+                "UPDATE jobs SET tests_total = ?, tests_done = 0, progress_json = NULL "
+                "WHERE id = ?",
+                (total, job_id),
+            )
+
+    def record_progress(self, job_id: str, test_id: str, status: str) -> None:
+        """Append one completed test to a job's live progress.
+
+        Best-effort operational state: it carries a test id and a status word,
+        never agent output, so it needs no redaction pass. The window is capped
+        so a long run cannot grow this row without bound.
+        """
+        with self._store._connection() as conn, conn:
+            row = conn.execute(
+                "SELECT progress_json FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return
+            recent = json.loads(row["progress_json"]) if row["progress_json"] else []
+            recent.append({"test_id": test_id, "status": status})
+            conn.execute(
+                "UPDATE jobs SET tests_done = tests_done + 1, progress_json = ? WHERE id = ?",
+                (json.dumps(recent[-self.PROGRESS_WINDOW :]), job_id),
+            )
 
     def heartbeat(self, job_id: str, owner: str, *, lease_seconds: int = 60) -> bool:
         """Extend the lease. False means the lease was lost -- stop working."""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import time
 import uuid
 from collections.abc import Callable
@@ -28,6 +29,8 @@ from agentaudit.core.schema import (
     TestCase,
     TestResult,
 )
+
+log = logging.getLogger("agentaudit.runner")
 
 
 def _now() -> datetime:
@@ -327,6 +330,7 @@ def run(
     redactor: Redactor | None = None,
     endpoint: ValidatedEndpoint | None = None,
     on_test: Callable[[int, TestCase | PythonTestCase], None] | None = None,
+    on_result: Callable[[int, TestResult], None] | None = None,
 ) -> RunResult:
     """`endpoint` carries the egress decision made at run start.
 
@@ -349,7 +353,15 @@ def run(
                 on_test(index, test)
             repeat = _repeat_count(test)
             attempts = [_run_isolated(isolated, test, redactor) for _ in range(repeat)]
-            results.append(attempts[0] if repeat == 1 else _fold_attempts(attempts))
+            result = attempts[0] if repeat == 1 else _fold_attempts(attempts)
+            results.append(result)
+            if on_result is not None:
+                # Progress reporting must never take the run down with it: the
+                # evidence matters, a dropped status update does not.
+                try:
+                    on_result(index, result)
+                except Exception:  # noqa: BLE001
+                    log.warning("on_result callback failed for %s", test.id, exc_info=True)
     finally:
         isolated.close()
 
