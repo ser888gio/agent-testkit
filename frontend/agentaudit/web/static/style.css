@@ -158,6 +158,9 @@ main:focus-visible {
   letter-spacing: 0;
 }
 
+/* Desktop: the sidebar is always open, so the hamburger has no job. */
+.nav-toggle-button { display: none; }
+
 .sidebar nav {
   display: flex;
   flex-direction: column;
@@ -211,6 +214,12 @@ main {
   min-width: 0;
   margin: 0 auto;
   padding: clamp(1.25rem, 4vw, 3rem) clamp(1rem, 3vw, 2rem) 4rem;
+  /* Column so the footer's margin-top:auto pins it to the viewport bottom on
+     short pages, and gets pushed down by long ones. `position: fixed` would
+     overlap content instead. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 h1, h2, h3, p { margin-top: 0; }
@@ -1186,6 +1195,10 @@ pre {
     border-bottom: 1px solid var(--border);
   }
 
+  /* The sidebar stacks above main here rather than beside it, so a full-viewport
+     main would push the page past 100vh and strand the footer below the fold. */
+  main { min-height: 0; }
+
   h1 { font-size: 3rem; }
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-grid,
@@ -1200,16 +1213,37 @@ pre {
   .sidebar {
     align-items: stretch;
     gap: 0.65rem;
+    /* Brand and hamburger share a row; nav drops below when opened. */
+    display: grid;
+    grid-template-columns: 1fr auto;
   }
 
+  .nav-toggle-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.5rem;
+    padding: 0 0.7rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .nav-toggle-button:hover { color: var(--text); background: var(--surface); }
+
+  /* Collapsed by default; the checkbox is the only state, so no JS runs. */
   .sidebar nav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 0.1rem;
-    /* Without this the flex item sizes to its content and widens the page
-       instead of scrolling inside itself. */
+    display: none;
+    grid-column: 1 / -1;
+    flex-direction: column;
     min-width: 0;
   }
+
+  .nav-toggle:checked ~ nav { display: flex; }
 
   .sidebar nav a { flex: 0 0 auto; }
 
@@ -1293,4 +1327,27 @@ pre {
   .finding-side {
     justify-content: start;
   }
+}
+
+.page-header-actions-group {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.site-footer {
+  margin-top: auto;
+  padding-bottom: 0.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.site-footer p { margin: 0 0 0.4rem; max-width: 60ch; }
+
+.site-footer-brand {
+  color: var(--text);
+  font-weight: 600;
 }

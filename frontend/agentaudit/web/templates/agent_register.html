@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Register agent - agentaudit{% endblock %}
+{% block content %}
+<p><a href="/agents">Back to agents</a></p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Agent setup</p>
+    <h1>Register an agent</h1>
+    <p class="page-subtitle">Point agentaudit at an HTTP endpoint. The host you enter becomes the only address this target may be dialled at.</p>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Endpoint</h2>
+      <p>Registered targets can be profiled and run without adding a YAML file.</p>
+    </div>
+  </div>
+  {% if error %}<p class="error" data-testid="register-error">{{ error }}</p>{% endif %}
+  <form method="post" action="/agents/register" class="test-form" data-testid="register-form">
+    {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+    <label>Target id
+      <input name="target_id" required value="{{ values.target_id or '' }}"
+             placeholder="my-support-agent" data-testid="register-id">
+    </label>
+
+    <label>Endpoint URL
+      <input name="endpoint" type="url" required value="{{ values.endpoint or '' }}"
+             placeholder="https://agent.example.com/chat" data-testid="register-endpoint">
+    </label>
+
+    <label>Method
+      <select name="method">
+        {% for m in ["POST", "GET"] %}
+        <option value="{{ m }}" {% if values.method == m %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>Response text path
+      <input name="text_path" value="{{ values.text_path or '$.text' }}">
+      <span class="quiet">Where the agent's reply lives in the JSON response.</span>
+    </label>
+
+    <label>Sandbox
+      <select name="sandbox">
+        <option value="">None</option>
+        {% for s in sandboxes %}
+        <option value="{{ s }}" {% if values.sandbox == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <span class="quiet">Fake tools the agent is given. Required for action-safety tests.</span>
+    </label>
+
+    <button type="submit" data-testid="register-submit">Register agent</button>
+  </form>
+</section>
+{% endblock %}

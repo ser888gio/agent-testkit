@@ -8,10 +8,13 @@
     <h1>Agents</h1>
     <p class="page-subtitle">Each target keeps its own run history and latest pass/fail matrix.</p>
   </div>
-  <a class="button-link" href="/agents/connect">Add Agent</a>
+  <div class="page-header-actions-group">
+    <a class="button-link" href="/agents/register" data-testid="action-register-agent">Register Agent</a>
+    <a class="button-link button-secondary" href="/agents/connect">Run a Pack</a>
+  </div>
 </header>
 {% if not agent_rows %}
-{{ empty_state("No agents yet", "Connect a target and run a pack to record the first agent.", "Add Agent", "/agents/connect") }}
+{{ empty_state("No agents yet", "Register an endpoint, or run a shipped pack, to record the first agent.", "Register Agent", "/agents/register") }}
 {% else %}
 <div class="table-wrap">
 <table>

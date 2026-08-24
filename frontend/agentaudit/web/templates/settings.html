@@ -5,7 +5,12 @@
   <div>
     <p class="eyebrow">Workspace</p>
     <h1>Settings</h1>
-    <p class="page-subtitle">Read-only runtime configuration for the local web dashboard.</p>
+    <p class="page-subtitle">
+      Deployment-owned runtime configuration. These come from the environment the
+      server and its workers were started with, so they are changed there, not here.
+      Per-target settings that <em>are</em> editable live on each
+      <a href="/agents">agent's page</a>.
+    </p>
   </div>
 </header>
 
@@ -72,8 +77,9 @@
       </div>
     </div>
     <dl class="harness-meta">
-      <div><dt>Allow Local Endpoints</dt><dd>{% if settings.egress_allow_local %}Enabled (development only){% else %}Disabled{% endif %}</dd></div>
-      <div><dt>Host Allowlist</dt><dd>Configured per target; workers refuse hosts outside it.</dd></div>
+      <div><dt>Allow Local Endpoints</dt><dd>{% if settings.egress_allow_local %}Enabled (development only){% else %}Disabled{% endif %}
+        <span class="quiet">Set by <span class="mono">AGENTAUDIT_EGRESS_ALLOW_LOCAL</span> in the worker's environment. Deliberately not tenant-settable: a bypass you can toggle from the UI is not a bypass fix.</span></dd></div>
+      <div><dt>Host Allowlist</dt><dd>Editable per target on the <a href="/agents">agent's page</a>; workers refuse hosts outside it.</dd></div>
     </dl>
   </article>
 
@@ -101,7 +107,7 @@
       </div>
     </div>
     <dl class="harness-meta">
-      <div><dt>Sections</dt><dd>Runs, Agents, Tests, Settings</dd></div>
+      <div><dt>Sections</dt><dd>Analytics, Harness, Runs, Agents, Tests, Generated, Settings</dd></div>
       <div><dt>Polling</dt><dd>Status polling uses JSON and writes text content only.</dd></div>
     </dl>
   </article>
