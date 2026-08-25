@@ -111,6 +111,27 @@ def test_on_test_fires_once_per_test_in_order():
     assert seen == [(0, "progress.case.0"), (1, "progress.case.1"), (2, "progress.case.2")]
 
 
+def test_cancel_check_stops_before_the_next_test():
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    tests = [
+        TestCase(
+            id=f"cancel.case.{n}",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+        )
+        for n in range(3)
+    ]
+    seen: list[str] = []
+    rr = run(
+        cfg,
+        tests,
+        cancel_check=lambda: len(seen) >= 1,
+        on_result=lambda i, r: seen.append(r.test_id),
+    )
+    assert [r.test_id for r in rr.results] == ["cancel.case.0"]
+
+
 def test_erroring_agent_yields_error_status():
     def _boom(input):
         raise RuntimeError("agent exploded")

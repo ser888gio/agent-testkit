@@ -86,6 +86,10 @@ document.addEventListener("DOMContentLoaded", () => {
           el.setAttribute("aria-live", "polite");
           el.textContent = typeof status.message === "string" ? status.message : "";
           renderProgress(el, status);
+          var abortForm = document.getElementById(el.getAttribute("data-abort-target") || "");
+          if (abortForm) {
+            abortForm.hidden = status.running !== true;
+          }
           if (status.running === true) {
             setTimeout(tick, 2000);
           }

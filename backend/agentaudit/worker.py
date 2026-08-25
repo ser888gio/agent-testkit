@@ -27,7 +27,7 @@ from agentaudit.core.loader import LoaderError, load_tests_from_rows
 from agentaudit.core.redaction import Redactor
 from agentaudit.core.runner import run as run_tests
 from agentaudit.core.schema import RunResult
-from agentaudit.core.store import DISCOVERY_PACK_ID, JobRow, Store
+from agentaudit.core.store import CANCELLED_ERROR, DISCOVERY_PACK_ID, JobRow, Store
 
 log = logging.getLogger("agentaudit.worker")
 
@@ -190,6 +190,10 @@ def execute_job(store: Store, job: JobRow) -> str | None:
 
     Returns None for a discovery job, which updates a profile instead of
     producing a run.
+
+    Checks `store.jobs.is_cancel_requested` between tests; a cancelled job
+    still saves whatever ran as a (shorter) run, same as any other partial
+    evidence. `work_once` is what turns that into the job's terminal state.
     """
     if job.pack_id == DISCOVERY_PACK_ID:
         execute_discovery(store, job)
@@ -218,6 +222,9 @@ def execute_job(store: Store, job: JobRow) -> str | None:
     def note(_index: int, result) -> None:
         store.jobs.record_progress(job.id, result.test_id, result.status.value)
 
+    def cancelled() -> bool:
+        return store.jobs.is_cancel_requested(job.id)
+
     # The egress decision above binds every request the audit makes, discovery
     # probes included. `external` stays off for exactly that reason: a spawned
     # scanner re-resolves the hostname itself, so the pinned address would not
@@ -230,6 +237,7 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         plan=True,
         on_plan=count,
         on_result=note,
+        cancel_check=cancelled,
     )
     result, report = audit.result, audit.report
     if audit.unexecuted:
@@ -274,7 +282,12 @@ def work_once(
         # putting secrets in logs.
         log.error("job %s hit an infrastructure fault; leaving it to lease expiry", job.id)
     else:
-        store.jobs.release(job.id, owner, state="done", run_id=run_id)
+        if store.jobs.is_cancel_requested(job.id):
+            store.jobs.release(
+                job.id, owner, state="failed", run_id=run_id, error=CANCELLED_ERROR
+            )
+        else:
+            store.jobs.release(job.id, owner, state="done", run_id=run_id)
     finally:
         stop.set()
         beat.join(timeout=5)

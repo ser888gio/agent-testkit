@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     tests_total INTEGER,
     tests_done INTEGER NOT NULL DEFAULT 0,
     progress_json TEXT,
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -237,10 +238,14 @@ class JobRow:
     tests_total: int | None = None
     tests_done: int = 0
     progress_json: str | None = None
+    # Set by `JobQueue.request_cancel` on a running job; the worker polls it
+    # between tests (`worker.py:execute_job`) and stops early when it sees it.
+    cancel_requested: bool = False
 
 
 JOB_STATES = ("queued", "running", "done", "failed")
 _TERMINAL_JOB_STATES = ("done", "failed")
+CANCELLED_ERROR = "cancelled by user"
 
 Matrix = dict[str, dict[str, str]]
 
@@ -566,6 +571,47 @@ class JobQueue:
                 (state, run_id, error, now, job_id, owner),
             )
         return cursor.rowcount == 1
+
+    def request_cancel(self, org_id: str, job_id: str) -> str:
+        """Ask a job to stop. Returns the state it ends up in.
+
+        A queued job has no worker to ask, so this cancels it directly -- a
+        state flip to 'failed' that the CHECK constraint already allows. A
+        running job cannot be stopped from here (the worker may be a different
+        process, possibly on a different machine), so this only sets a flag;
+        `worker.execute_job` polls it between tests and releases the job
+        itself once it sees it. A terminal job is a no-op.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._store._connection() as conn, conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET state = 'failed', error = ?, finished_at = ?, "
+                "lease_owner = NULL, lease_expires_at = NULL "
+                "WHERE org_id = ? AND id = ? AND state = 'queued'",
+                (CANCELLED_ERROR, now, org_id, job_id),
+            )
+            if cursor.rowcount == 1:
+                return "failed"
+            cursor = conn.execute(
+                "UPDATE jobs SET cancel_requested = 1 "
+                "WHERE org_id = ? AND id = ? AND state = 'running'",
+                (org_id, job_id),
+            )
+            if cursor.rowcount == 1:
+                return "running"
+            row = conn.execute(
+                "SELECT state FROM jobs WHERE org_id = ? AND id = ?", (org_id, job_id)
+            ).fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        return row["state"]
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        with self._store._connection() as conn:
+            row = conn.execute(
+                "SELECT cancel_requested FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+        return bool(row and row["cancel_requested"])
 
     def reclaim(self, *, max_attempts: int = 3) -> int:
         """Requeue jobs whose lease expired; fail those past `max_attempts`.

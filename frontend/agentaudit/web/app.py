@@ -970,7 +970,30 @@ def job_detail(job_id: str, principal: Principal = Depends(current_principal)) -
     job = _load_job_or_404(principal.org_id, job_id)
     # A discovery job produces a profile, not a run: the sentinel pack id is an
     # implementation detail and must not surface as if it were a pack.
-    return _render("job.html", job=job, discovery=job.pack_id == DISCOVERY_PACK_ID)
+    return _render(
+        "job.html",
+        job=job,
+        discovery=job.pack_id == DISCOVERY_PACK_ID,
+        csrf_token=principal.csrf_token,
+    )
+
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(
+    job_id: str,
+    csrf_token: str = Form(""),  # noqa: ARG001 -- read by require_admin off the form body
+    principal: Principal = Depends(require_admin),
+) -> RedirectResponse:
+    """Abort a queued or running job.
+
+    A queued job is cancelled immediately (there is no worker to ask). A
+    running job only gets a flag set here -- the worker that holds its lease
+    is the one that stops it, between tests (`worker.py:execute_job`), and
+    may be a different process or machine than this one.
+    """
+    _load_job_or_404(principal.org_id, job_id)
+    get_store().jobs.request_cancel(principal.org_id, job_id)
+    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 
 @app.get("/jobs/{job_id}/status")
