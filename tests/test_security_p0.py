@@ -54,8 +54,8 @@ def test_post_runs_rejects_missing_token(monkeypatch):
     monkeypatch.setenv("AGENTAUDIT_OIDC_REDIRECT_URI", "https://agentaudit.test/auth/callback")
     client = _web_client()
     resp = client.post(
-        "/runs",
-        params={"target": "x", "packs": "y"},
+        "/api/runs/enqueue",
+        json={"target": "x", "packs": "y"},
         headers={"Accept": "application/json"},
     )
     assert resp.status_code == 401
@@ -67,8 +67,8 @@ def test_post_runs_rejects_path_outside_allowlist():
     # packs/ must still be refused, so the route can never load an arbitrary
     # Python callable.
     resp = client.post(
-        "/runs",
-        data={"target": "/etc/passwd", "packs": "../../evil"},
+        "/api/runs/enqueue",
+        json={"target": "/etc/passwd", "packs": "../../evil"},
     )
     assert resp.status_code == 400
 

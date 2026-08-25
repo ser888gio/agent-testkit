@@ -43,3 +43,9 @@ node_modules/
 out/
 next-env.d.ts
 *.tsbuildinfo
+
+# React SPA (built artifacts are produced by 
+pm run build in frontend/spa)
+node_modules/
+frontend/spa/.vite/
+frontend/agentaudit/web/spa_dist/

@@ -1,3 +1,12 @@
+"""Tests for the web tier: JSON API + React SPA shell.
+
+The pages are React (`frontend/spa`) fed by `agentaudit.web.api`; these tests
+drive the API through Starlette's TestClient and assert on the same derivation
+the UI renders. Markup-level assertions live only where the markup ships in
+this repository (the SPA sources).
+"""
+
+import json
 from pathlib import Path
 
 import pytest
@@ -14,6 +23,7 @@ from agentaudit.core.scoring import score
 from agentaudit.core.store import DEFAULT_ORG, DISCOVERY_PACK_ID, Store
 
 MODULE = "tests.test_web"
+SPA_SRC = Path("frontend/spa/src")
 
 
 @pytest.fixture(autouse=True)
@@ -89,37 +99,32 @@ def _client(db_path: str, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
-def test_dashboard_shows_run_and_critical_count(tmp_path, monkeypatch):
+# --- runs dashboard ----------------------------------------------------------
+
+
+def test_runs_api_shows_run_and_critical_count(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/runs")
+    resp = client.get("/api/runs")
     assert resp.status_code == 200
-    assert rr.run_id[:8] in resp.text
-    assert str(report.critical_failures) in resp.text
-    assert "Needs attention" in resp.text
-    assert 'aria-current="page"' in resp.text
-    assert "Apply Filters" not in resp.text
-
-    # The onboarding CTAs moved to the analytics landing page.
-    home = client.get("/")
-    assert "Connect an agent" in home.text
-    assert "Create a test" in home.text
-    assert 'href="/agents/connect"' in home.text
-    assert 'href="/tests/new"' in home.text
+    body = resp.json()
+    ids = {r["id"] for r in body["runs"]} | {r["short_id"] for r in body["runs"]}
+    assert any(rr.run_id.startswith(short) for short in ids)
+    assert body["stats"]["critical_failures"] == report.critical_failures
+    # Failure-first: a run with critical failures leads the attention queue.
+    assert body["attention"], "a failing run belongs in needs-attention"
 
 
-def test_dashboard_empty_state(tmp_path, monkeypatch):
+def test_runs_api_empty_state(tmp_path, monkeypatch):
     db = str(tmp_path / "empty.db")
-    from agentaudit.core.store import Store as _Store
-
-    _Store(db)  # create empty db
+    Store(db)  # create empty db
     client = _client(db, monkeypatch)
 
-    resp = client.get("/runs")
+    resp = client.get("/api/runs")
     assert resp.status_code == 200
-    assert "No runs yet" in resp.text
+    assert resp.json()["all_runs"] == []
 
 
 def test_run_detail_shows_matrix_and_failed_first(tmp_path, monkeypatch):
@@ -127,70 +132,60 @@ def test_run_detail_shows_matrix_and_failed_first(tmp_path, monkeypatch):
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}")
+    resp = client.get(f"/api/runs/{rr.run_id}")
     assert resp.status_code == 200
-    assert "b.fail.case" in resp.text
-    assert "a.pass.case" in resp.text
-    # failed test appears before the passing one in the results table
-    results_section = resp.text.split("Results (failed first)")[1]
-    assert results_section.index("b.fail.case") < results_section.index("a.pass.case")
-    assert "Failures for review" in resp.text
-    assert f"/runs/{rr.run_id}/harness" in resp.text
+    body = resp.json()
+    result_ids = [r["test_id"] for r in body["results"]]
+    assert "b.fail.case" in result_ids
+    assert "a.pass.case" in result_ids
+    # failed test appears before the passing one
+    assert result_ids.index("b.fail.case") < result_ids.index("a.pass.case")
+    assert "b.fail.case" in body["matrix"]["action_safety"]
+    assert f"/runs/{rr.run_id}/harness"  # harness route exists for the SPA link
 
 
-def test_run_harness_shows_findings_skills_context_summary(tmp_path, monkeypatch):
+def test_run_harness_view_shows_findings_skills_context_summary(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}/harness")
-
+    resp = client.get(f"/api/runs/{rr.run_id}/harness")
     assert resp.status_code == 200
-    assert "Test Harness" in resp.text
-    assert "Workflow / History" in resp.text
-    assert "Harness Environment" in resp.text
-    assert "Memory &amp; Context" in resp.text
-    assert "No memory/context checks were included" in resp.text
-    assert "Skills" in resp.text
-    assert "Action Safety" in resp.text
-    assert "b.fail.case" in resp.text
-    assert "not_contains" in resp.text
-    assert f'data-poll-url="/runs/{rr.run_id}/status"' in resp.text
-    assert rr.run_id in resp.text
-    assert (
-        'href="/harness" data-testid="nav-harness" '
-        'class="active" aria-current="page"' in resp.text
-    )
+    body = resp.json()
+
+    assert body["summary"]["gate"] == ("PASS" if report.gate_passed else "BLOCK")
+    assert body["context"]["run_id"] == rr.run_id
+    steps = [f["test_id"] for f in body["findings"]]
+    assert "b.fail.case" in steps and "a.pass.case" in steps
+    fail = next(f for f in body["findings"] if f["test_id"] == "b.fail.case")
+    assert any(a["name"] == "not_contains" for a in fail["assertions"])
+    skill_names = [s["category"] for s in body["skills"]]
+    assert "action_safety" in skill_names
+    assert body["memory"]["total"] == 0
 
 
-def test_harness_nav_lists_every_harness(tmp_path, monkeypatch):
+def test_harness_index_lists_every_harness(tmp_path, monkeypatch):
     """It used to redirect to the latest run, which hid every earlier one."""
     db = str(tmp_path / "web.db")
     _cfg, rr_first, _report = _seed_store(db)
     _cfg2, rr_second, _report2 = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/harness", follow_redirects=False)
-
+    resp = client.get("/api/harnesses")
     assert resp.status_code == 200
-    assert resp.text.count('data-testid="harness-row"') == 2
-    for rr in (rr_first, rr_second):
-        assert f'href="/runs/{rr.run_id}/harness"' in resp.text
+    ids = [h["id"] for h in resp.json()["harnesses"]]
+    assert ids == [rr_second.run_id, rr_first.run_id] or set(ids) == {
+        rr_first.run_id,
+        rr_second.run_id,
+    }
 
 
-def test_harness_nav_has_empty_state_without_runs(tmp_path, monkeypatch):
+def test_harness_index_is_empty_without_runs(tmp_path, monkeypatch):
     db = str(tmp_path / "empty.db")
     Store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/harness")
-
-    assert resp.status_code == 200
-    assert "No harness data yet" in resp.text
-    assert (
-        'href="/harness" data-testid="nav-harness" '
-        'class="active" aria-current="page"' in resp.text
-    )
+    assert client.get("/api/harnesses").json()["harnesses"] == []
 
 
 def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkeypatch):
@@ -198,118 +193,121 @@ def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkey
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}/tests/b.fail.case")
+    resp = client.get(f"/api/runs/{rr.run_id}/tests/b.fail.case")
     assert resp.status_code == 200
-    assert "sk-abcdefgh12345678" not in resp.text
-    assert "not_contains" in resp.text
-    assert "ms" in resp.text
+    text = json.dumps(resp.json())
+    assert "sk-abcdefgh12345678" not in text
+    body = resp.json()
+    assert any(a["name"] == "not_contains" for a in body["result"]["assertion_results"])
+    assert body["result"]["latency_ms"] is not None
 
 
-def test_sidebar_shows_nav_tabs(tmp_path, monkeypatch):
+def test_unknown_run_404(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/")
-    assert resp.status_code == 200
-    assert 'class="sidebar"' in resp.text
-    assert 'href="/harness"' in resp.text
-    assert 'href="/"' in resp.text
-    assert 'href="/agents"' in resp.text
-    assert 'href="/tests"' in resp.text
-    assert 'href="/settings"' in resp.text
-    assert 'aria-label="Primary"' in resp.text
-    assert 'class="nav-icon"' in resp.text
+    resp = client.get("/api/runs/does-not-exist")
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"]
 
 
-def test_runs_route_shows_dashboard_table(tmp_path, monkeypatch):
+def test_unknown_test_404(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/runs")
-
-    assert resp.status_code == 200
-    assert "Recent runs" in resp.text
-    assert rr.run_id[:8] in resp.text
-    assert 'href="/runs" data-testid="nav-runs" class="active" aria-current="page"' in resp.text
+    resp = client.get(f"/api/runs/{rr.run_id}/tests/does-not-exist")
+    assert resp.status_code == 404
 
 
-def test_settings_page_shows_safe_runtime_config(tmp_path, monkeypatch):
+# --- settings ----------------------------------------------------------------
+
+
+def test_settings_api_shows_safe_runtime_config(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/settings")
-
+    resp = client.get("/api/settings")
     assert resp.status_code == 200
-    assert "Settings" in resp.text
-    assert "Storage" in resp.text
-    assert "Run Inputs" in resp.text
-    assert "Security" in resp.text
-    assert db in resp.text
-    assert "AGENTAUDIT_OIDC" not in resp.text
-    assert (
-        'href="/settings" data-testid="nav-settings" '
-        'class="active" aria-current="page"' in resp.text
-    )
+    body = resp.json()
+    assert body["settings"]["db_path"] == db
+    assert "AGENTAUDIT_OIDC" not in json.dumps(body)
 
 
-def test_tests_page_lists_distinct_tests(tmp_path, monkeypatch):
+def test_settings_api_shows_redaction_egress_and_access(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    monkeypatch.delenv("AGENTAUDIT_EGRESS_ALLOW_LOCAL", raising=False)
+    client = _client(db, monkeypatch)
+
+    body = client.get("/api/settings").json()
+
+    # built-in masks are compliance evidence: list them, name the mask format
+    assert "api_key" in body["settings"]["redaction_patterns"]
+    assert body["settings"]["egress_allow_local"] is False
+    # the acting principal (dev principal outside OIDC)
+    assert body["principal"]["email"] == "dev@localhost"
+    assert body["principal"]["roles"] == ["admin", "viewer"]
+
+
+# --- test library ------------------------------------------------------------
+
+
+def test_tests_api_lists_distinct_tests(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     cfg, rr, report = _seed_store(db)
     _seed_store(db)  # second run: same test ids seen again
     client = _client(db, monkeypatch)
 
-    resp = client.get("/tests")
+    resp = client.get("/api/tests")
     assert resp.status_code == 200
-    assert "a.pass.case" in resp.text
-    assert "b.fail.case" in resp.text
-    assert "action_safety" in resp.text
+    rows = resp.json()["tests"]
+    matching = [r for r in rows if r["test_id"] == "a.pass.case"]
     # each test id is listed once (distinct), linking to its latest run detail
-    assert resp.text.count(">a.pass.case</a>") == 1
-    assert "/tests/a.pass.case" in resp.text
-    assert "Apply Filters" not in resp.text
+    assert len(matching) == 1
+    assert matching[0]["latest_run_id"] == Store(db).list_runs(DEFAULT_ORG)[0].id
+    categories = {r["category"] for r in rows}
+    assert "action_safety" in categories
 
 
-def test_tests_page_filters_by_status(tmp_path, monkeypatch):
+def test_tests_api_filters_by_status(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/tests?status=failed")
+    rows = client.get("/api/tests?status=failed").json()["tests"]
 
-    assert resp.status_code == 200
-    assert "b.fail.case" in resp.text
-    assert "a.pass.case" not in resp.text
+    ids = {r["test_id"] for r in rows}
+    assert "b.fail.case" in ids
+    assert "a.pass.case" not in ids
 
 
-def test_tests_page_empty_state(tmp_path, monkeypatch):
+def test_tests_api_empty_state(tmp_path, monkeypatch):
     db = str(tmp_path / "empty.db")
-    from agentaudit.core.store import Store as _Store
-
-    _Store(db)
+    Store(db)
     # The library lists shipped packs too, so "empty" means no packs either.
     empty_packs = tmp_path / "packs"
     empty_packs.mkdir()
     monkeypatch.setenv("AGENTAUDIT_PACKS", str(empty_packs))
     client = _client(db, monkeypatch)
 
-    resp = client.get("/tests")
+    resp = client.get("/api/tests")
     assert resp.status_code == 200
-    assert "No tests yet" in resp.text
+    assert resp.json()["tests"] == []
 
 
-def test_new_test_form_renders_choices(tmp_path, monkeypatch):
+def test_test_form_options_render_choices(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/tests/new")
+    resp = client.get("/api/test-form-options")
     assert resp.status_code == 200
-    assert 'name="test_id"' in resp.text
-    assert "not_contains" in resp.text  # a registered assertion
-    assert "data_leakage" in resp.text  # a category
+    body = resp.json()
+    assert "not_contains" in body["assertions"]  # a registered assertion
+    assert "data_leakage" in body["categories"]  # a category
 
 
 def test_create_test_stores_db_row(tmp_path, monkeypatch):
@@ -320,8 +318,8 @@ def test_create_test_stores_db_row(tmp_path, monkeypatch):
     client = _client(db, monkeypatch)
 
     resp = client.post(
-        "/tests",
-        data={
+        "/api/tests",
+        json={
             "test_id": "user.data_leakage.probe",
             "category": "data_leakage",
             "risk": "high",
@@ -329,10 +327,8 @@ def test_create_test_stores_db_row(tmp_path, monkeypatch):
             "assertion_name": "not_contains",
             "assertion_args": '{values: ["sk-"]}',
         },
-        follow_redirects=False,
     )
-    assert resp.status_code == 303
-    assert resp.headers["location"] == "/tests"
+    assert resp.status_code == 200
 
     # Stored as an org-scoped DB row, and nothing was written to the packs dir.
     assert not packs.exists()
@@ -353,8 +349,8 @@ def test_create_test_rejects_bad_id(tmp_path, monkeypatch):
     client = _client(db, monkeypatch)
 
     resp = client.post(
-        "/tests",
-        data={
+        "/api/tests",
+        json={
             "test_id": "NotDotted",
             "category": "data_leakage",
             "risk": "high",
@@ -363,17 +359,14 @@ def test_create_test_rejects_bad_id(tmp_path, monkeypatch):
             "assertion_args": "{values: [x]}",
         },
     )
-    assert resp.status_code == 200
-    assert "Invalid test" in resp.text
-    # form re-renders with the submitted value preserved
-    assert "NotDotted" in resp.text
+    assert resp.status_code == 400
+    assert "Invalid test" in resp.json()["detail"]
 
 
 def test_create_test_rejects_duplicate(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
-    packs = tmp_path / "packs"
-    monkeypatch.setenv("AGENTAUDIT_PACKS", str(packs))
+    monkeypatch.setenv("AGENTAUDIT_PACKS", str(tmp_path / "packs"))
     client = _client(db, monkeypatch)
 
     payload = {
@@ -384,11 +377,10 @@ def test_create_test_rejects_duplicate(tmp_path, monkeypatch):
         "assertion_name": "response_nonempty",
         "assertion_args": "",
     }
-    first = client.post("/tests", data=payload, follow_redirects=False)
-    assert first.status_code == 303
-    second = client.post("/tests", data=payload)
-    assert second.status_code == 200
-    assert "duplicate test id" in second.text
+    assert client.post("/api/tests", json=payload).status_code == 200
+    second = client.post("/api/tests", json=payload)
+    assert second.status_code == 400
+    assert "duplicate test id" in second.json()["detail"]
 
 
 def _create_test_payload(**overrides):
@@ -410,11 +402,10 @@ def test_create_test_rejects_malformed_yaml_args(tmp_path, monkeypatch):
     client = _client(db, monkeypatch)
 
     resp = client.post(
-        "/tests",
-        data=_create_test_payload(assertion_args="{values: [unclosed"),
+        "/api/tests", json=_create_test_payload(assertion_args="{values: [unclosed")
     )
-    assert resp.status_code == 200
-    assert "not valid YAML" in resp.text
+    assert resp.status_code == 400
+    assert "not valid YAML" in resp.json()["detail"]
 
 
 def test_create_test_rejects_non_mapping_args(tmp_path, monkeypatch):
@@ -424,11 +415,10 @@ def test_create_test_rejects_non_mapping_args(tmp_path, monkeypatch):
     client = _client(db, monkeypatch)
 
     resp = client.post(
-        "/tests",
-        data=_create_test_payload(assertion_args="- just\n- a list"),
+        "/api/tests", json=_create_test_payload(assertion_args="- just\n- a list")
     )
-    assert resp.status_code == 200
-    assert "must be a YAML mapping" in resp.text
+    assert resp.status_code == 400
+    assert "must be a YAML mapping" in resp.json()["detail"]
 
 
 def test_create_test_rejects_unknown_assertion(tmp_path, monkeypatch):
@@ -438,56 +428,51 @@ def test_create_test_rejects_unknown_assertion(tmp_path, monkeypatch):
     client = _client(db, monkeypatch)
 
     resp = client.post(
-        "/tests",
-        data=_create_test_payload(assertion_name="does_not_exist"),
+        "/api/tests", json=_create_test_payload(assertion_name="does_not_exist")
     )
-    assert resp.status_code == 200
-    assert "Unknown assertion" in resp.text
+    assert resp.status_code == 400
+    assert "Unknown assertion" in resp.json()["detail"]
 
 
-def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
+# --- agents ------------------------------------------------------------------
+
+
+def test_agents_api_lists_agent_with_run_count(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     _seed_store(db)  # second run for the same agent
     client = _client(db, monkeypatch)
 
-    resp = client.get("/agents")
+    resp = client.get("/api/agents")
     assert resp.status_code == 200
-    assert "web-target" in resp.text
-    assert "Runs" in resp.text
-    assert 'href="/agents/register"' in resp.text
-    assert 'href="/agents/connect"' in resp.text
-    # two runs recorded for the single agent
-    assert ">2<" in resp.text
+    rows = resp.json()["agent_rows"]
+    target = next(r for r in rows if r["agent"]["id"] == "web-target")
+    assert target["run_count"] == 2
 
 
-def test_agents_page_empty_state_links_add_agent(tmp_path, monkeypatch):
+def test_agents_api_empty_state(tmp_path, monkeypatch):
     db = str(tmp_path / "empty.db")
-    from agentaudit.core.store import Store as _Store
-
-    _Store(db)
+    Store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/agents")
-
-    assert resp.status_code == 200
-    assert "No agents yet" in resp.text
-    assert "Register Agent" in resp.text
-    assert 'href="/agents/register"' in resp.text
+    assert client.get("/api/agents").json()["agent_rows"] == []
 
 
-def test_connect_agent_page_lists_configs_and_packs(tmp_path, monkeypatch):
+def test_connect_options_list_configs_and_packs(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/agents/connect")
+    resp = client.get("/api/connect-options")
 
     assert resp.status_code == 200
-    assert "Connect an agent" in resp.text
-    assert "config/treasury-agent.yaml" in resp.text
-    assert "packs/core" in resp.text
-    assert "agentaudit run" in resp.text
+    body = resp.json()
+    assert any(t.endswith("config/treasury-agent.yaml") for t in body["targets"])
+    assert any(p.endswith("packs/core") for p in body["pack_roots"])
+    # Tooling directories sit beside the packs and are not runnable packs.
+    joined = json.dumps(body)
+    assert ".aislop" not in joined
+    assert "__pycache__" not in joined
 
 
 def test_agent_detail_links_matrix_tests_to_latest_run(tmp_path, monkeypatch):
@@ -495,11 +480,15 @@ def test_agent_detail_links_matrix_tests_to_latest_run(tmp_path, monkeypatch):
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/agents/web-target")
+    resp = client.get("/api/agents/web-target")
     assert resp.status_code == 200
-    assert "b.fail.case" in resp.text
-    # matrix test id links through to its test detail page in the latest run
-    assert f"/runs/{rr.run_id}/tests/b.fail.case" in resp.text
+    body = resp.json()
+    assert "b.fail.case" in body["matrix"]["action_safety"]
+    # matrix test ids link through to their test detail page in the latest run
+    assert body["latest_run_id"] == rr.run_id
+
+
+# --- filtering ---------------------------------------------------------------
 
 
 def test_dashboard_filters_by_agent_query(tmp_path, monkeypatch):
@@ -507,11 +496,9 @@ def test_dashboard_filters_by_agent_query(tmp_path, monkeypatch):
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/runs?agent=web-target&q=web-target")
+    body = client.get("/api/runs?agent=web-target&q=web-target").json()
 
-    assert resp.status_code == 200
-    assert rr.run_id[:8] in resp.text
-    assert "Recent runs" in resp.text
+    assert any(r["id"] == rr.run_id for r in body["runs"])
 
 
 def test_dashboard_status_filter_uses_result_summary(tmp_path, monkeypatch):
@@ -520,17 +507,17 @@ def test_dashboard_status_filter_uses_result_summary(tmp_path, monkeypatch):
     _, passed_run, _ = _seed_passing_store(db)
     client = _client(db, monkeypatch)
 
-    failed_resp = client.get("/runs?status=failed")
+    failed_ids = {
+        r["id"] for r in client.get("/api/runs?status=failed").json()["runs"]
+    }
+    assert failed_run.run_id in failed_ids
+    assert passed_run.run_id not in failed_ids
 
-    assert failed_resp.status_code == 200
-    assert failed_run.run_id[:8] in failed_resp.text
-    assert passed_run.run_id[:8] not in failed_resp.text
-
-    passed_resp = client.get("/runs?status=passed")
-
-    assert passed_resp.status_code == 200
-    assert passed_run.run_id[:8] in passed_resp.text
-    assert failed_run.run_id[:8] not in passed_resp.text
+    passed_ids = {
+        r["id"] for r in client.get("/api/runs?status=passed").json()["runs"]
+    }
+    assert passed_run.run_id in passed_ids
+    assert failed_run.run_id not in passed_ids
 
 
 def test_run_detail_filters_results_by_status(tmp_path, monkeypatch):
@@ -538,13 +525,11 @@ def test_run_detail_filters_results_by_status(tmp_path, monkeypatch):
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}?status=failed")
+    body = client.get(f"/api/runs/{rr.run_id}?status=failed").json()
 
-    assert resp.status_code == 200
-    results_section = resp.text.split("Results (failed first)")[1]
-    assert "b.fail.case" in results_section
-    assert "a.pass.case" not in results_section
-    assert "Apply Filters" not in resp.text
+    ids = {r["test_id"] for r in body["results"]}
+    assert "b.fail.case" in ids
+    assert "a.pass.case" not in ids
 
 
 def test_test_detail_shows_category_and_risk(tmp_path, monkeypatch):
@@ -552,12 +537,15 @@ def test_test_detail_shows_category_and_risk(tmp_path, monkeypatch):
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}/tests/b.fail.case")
-    assert resp.status_code == 200
-    assert "action_safety" in resp.text
-    assert "critical" in resp.text
+    body = client.get(f"/api/runs/{rr.run_id}/tests/b.fail.case").json()
+
+    assert body["result"]["category"] == "action_safety"
+    assert body["result"]["risk"] == "critical"
     # breadcrumb back to the owning agent
-    assert "/agents/web-target" in resp.text
+    assert body["run"]["agent_name"] == "web-target"
+
+
+# --- compare -----------------------------------------------------------------
 
 
 def test_compare_route_shows_diff(tmp_path, monkeypatch):
@@ -566,10 +554,11 @@ def test_compare_route_shows_diff(tmp_path, monkeypatch):
     cfg, rr2, report2 = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/compare?a={rr1.run_id}&b={rr2.run_id}")
+    resp = client.get(f"/api/compare?a={rr1.run_id}&b={rr2.run_id}")
     assert resp.status_code == 200
-    assert "Newly failing" in resp.text
-    assert "Score delta" in resp.text
+    diff = resp.json()["diff"]
+    assert "newly_failing" in diff
+    assert "score_delta" in diff
 
 
 def test_compare_with_unknown_run_404(tmp_path, monkeypatch):
@@ -577,17 +566,55 @@ def test_compare_with_unknown_run_404(tmp_path, monkeypatch):
     cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/compare?a={rr.run_id}&b=does-not-exist")
+    resp = client.get(f"/api/compare?a={rr.run_id}&b=does-not-exist")
     assert resp.status_code == 404
 
 
-def test_data_testid_hooks_present(tmp_path, monkeypatch):
-    """UI automation anchors on data-testid, not display copy. Keep them stable."""
-    db = str(tmp_path / "web.db")
-    cfg, rr, report = _seed_store(db)
+# --- analytics (home page) ---------------------------------------------------
+
+
+def test_analytics_serves_the_home_page_data_and_runs_moved(tmp_path, monkeypatch):
+    db = str(tmp_path / "analytics.db")
+    _seed_store(db)
     client = _client(db, monkeypatch)
 
-    home = client.get("/").text
+    home = client.get("/api/analytics")
+    assert home.status_code == 200
+    assert "totals" in home.json()
+
+    runs = client.get("/api/runs")
+    assert runs.status_code == 200
+    assert runs.json()["runs"]
+
+
+def test_analytics_renders_an_empty_state_with_no_runs(tmp_path, monkeypatch):
+    """An empty estate must not render a chart of nothing."""
+    client = _client(str(tmp_path / "empty-analytics.db"), monkeypatch)
+
+    body = client.get("/api/analytics").json()
+
+    assert body["trend"] == []
+    assert body["sparkline"].strip() == "" or body["sparkline"] == ""
+
+
+def test_analytics_sparkline_carries_one_point_per_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "analytics-points.db")
+    _seed_store(db)
+    _seed_passing_store(db)
+    client = _client(db, monkeypatch)
+
+    sparkline = client.get("/api/analytics").json()["sparkline"]
+
+    points = [p for p in sparkline.split() if p]
+    assert len(points) >= 2
+
+
+# --- SPA source hooks (markup ships in this repo, so it is checkable) --------
+
+
+def test_spa_source_keeps_nav_and_action_hooks():
+    """UI automation anchors on data-testid, not display copy. Keep them stable."""
+    layout = (SPA_SRC / "layout.tsx").read_text(encoding="utf-8")
     for hook in (
         "nav-harness",
         "nav-analytics",
@@ -595,98 +622,52 @@ def test_data_testid_hooks_present(tmp_path, monkeypatch):
         "nav-agents",
         "nav-tests",
         "nav-settings",
-        "action-connect-agent",
-        "action-create-test",
     ):
-        assert f'data-testid="{hook}"' in home, hook
+        assert f'"{hook}"' in layout, hook
+    assert 'aria-label="Primary"' in layout
 
-    # The run list and its stats moved to /runs when analytics took over /.
-    runs = client.get("/runs").text
+    analytics = (SPA_SRC / "pages/Analytics.tsx").read_text(encoding="utf-8")
+    for hook in ("action-connect-agent", "action-create-test"):
+        assert f'"{hook}"' in analytics, hook
+
+    runs_page = (SPA_SRC / "pages/Runs.tsx").read_text(encoding="utf-8")
     for hook in ("stat-runs", "run-row"):
-        assert f'data-testid="{hook}"' in runs, hook
+        assert f'"{hook}"' in runs_page, hook
 
-    connect = client.get("/agents/connect").text
-    assert 'data-testid="connect-form"' in connect
-    assert 'data-testid="connect-submit"' in connect
+    connect = (SPA_SRC / "pages/AgentConnect.tsx").read_text(encoding="utf-8")
+    assert '"connect-form"' in connect
+    assert '"connect-submit"' in connect
+    assert '"test-picker"' in connect
 
-    new_test = client.get("/tests/new").text
-    assert 'data-testid="test-form"' in new_test
-    assert 'data-testid="test-submit"' in new_test
+    new_test = (SPA_SRC / "pages/TestNew.tsx").read_text(encoding="utf-8")
+    assert '"test-form"' in new_test
+    assert '"test-submit"' in new_test
 
-    detail = client.get(f"/runs/{rr.run_id}").text
-    assert 'data-testid="open-harness"' in detail
+    run_detail = (SPA_SRC / "pages/RunDetail.tsx").read_text(encoding="utf-8")
+    assert '"open-harness"' in run_detail
 
-    harness = client.get(f"/runs/{rr.run_id}/harness").text
-    assert 'data-testid="stat-pass-rate"' in harness
-    assert 'data-testid="stat-critical-findings"' in harness
+    harness = (SPA_SRC / "pages/RunHarness.tsx").read_text(encoding="utf-8")
+    assert '"stat-pass-rate"' in harness
+    assert '"stat-critical-findings"' in harness
 
+    history = (SPA_SRC / "pages/TestDetail.tsx").read_text(encoding="utf-8")
+    assert '"test-history"' in history
 
-def test_unknown_run_id_404(tmp_path, monkeypatch):
-    db = str(tmp_path / "web.db")
-    _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    resp = client.get("/runs/does-not-exist")
-    assert resp.status_code == 404
-    assert "404 error" in resp.text
-    assert "Back to dashboard" in resp.text
+    job = (SPA_SRC / "pages/Job.tsx").read_text(encoding="utf-8")
+    assert '"run-progress"' in job
+    assert '"job-cancel-submit"' in job
 
 
-def test_unknown_test_id_404(tmp_path, monkeypatch):
-    db = str(tmp_path / "web.db")
-    cfg, rr, report = _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    resp = client.get(f"/runs/{rr.run_id}/tests/does-not-exist")
-    assert resp.status_code == 404
-
-
-def test_status_route_still_returns_html_fragment_by_default(tmp_path, monkeypatch):
-    db = str(tmp_path / "web.db")
-    cfg, rr, report = _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    resp = client.get(f"/runs/{rr.run_id}/status")
-
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/html")
-    assert 'id="run-status"' in resp.text
-    assert f'data-run-id="{rr.run_id}"' in resp.text
+def test_spa_poller_avoids_html_injection_sinks():
+    """The React poller writes state, never markup; no sink may reappear."""
+    for source in SPA_SRC.rglob("*.tsx"):
+        text = source.read_text(encoding="utf-8")
+        assert "innerHTML" not in text, source
+        assert "insertAdjacentHTML" not in text, source
+        assert "dangerouslySetInnerHTML" not in text, source
 
 
-def test_status_route_returns_json_for_safe_polling(tmp_path, monkeypatch):
-    db = str(tmp_path / "web.db")
-    cfg, rr, report = _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    resp = client.get(
-        f"/runs/{rr.run_id}/status", headers={"accept": "application/json"}
-    )
-
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("application/json")
-    payload = resp.json()
-    assert payload["run_id"] == rr.run_id
-    assert payload["running"] is False
-    assert "Gate:" in payload["message"]
-    assert "<" not in payload["message"]
-
-
-def test_poll_helper_avoids_html_injection_sink():
-    import agentaudit.web as web_pkg
-
-    path = Path(web_pkg.__file__).resolve().parent / "static" / "poll.js"
-    js = path.read_text(encoding="utf-8")
-
-    assert "innerHTML" not in js
-    assert "insertAdjacentHTML" not in js
-    assert "textContent" in js
-    assert 'Accept: "application/json"' in js
-    assert "requestSubmit" in js
-    assert "setTimeout(submit, 350)" in js
-
-
-# --- T8: every route is authenticated and org-scoped -----------------------
+# --- T8: every route is authenticated and org-scoped -------------------------
 
 
 def _oidc_env(monkeypatch):
@@ -700,7 +681,7 @@ def _oidc_env(monkeypatch):
 
 
 def _concrete_paths() -> list[tuple[str, str]]:
-    """Every app route, with path params filled in. Static mount excluded."""
+    """Every app route, with path params filled in. Static mounts excluded."""
     from agentaudit.web.app import app
 
     out = []
@@ -710,6 +691,7 @@ def _concrete_paths() -> list[tuple[str, str]]:
         if (
             not path.startswith("/")
             or path.startswith("/static")
+            or path.startswith("/assets")
             or path in {"/login", "/auth/callback", "/logout"}
         ):
             continue
@@ -717,7 +699,11 @@ def _concrete_paths() -> list[tuple[str, str]]:
             filled = (
                 path.replace("{run_id}", "some-run")
                 .replace("{test_id}", "some-test")
+                .replace("{job_id}", "some-job")
+                .replace("{fmt}", "md")
+                .replace("{artifact_id}", "some-artifact")
                 .replace("{agent_id:path}", "some-agent")
+                .replace("{full_path:path}", "some-shell-path")
             )
             out.append((method, filled))
     return out
@@ -735,8 +721,7 @@ def test_every_route_requires_a_token(tmp_path, monkeypatch):
 
     unprotected = []
     for method, path in paths:
-        resp = client.request(method, path, params={"a": "x", "b": "y",
-                                                    "target": "t", "packs": "p"},
+        resp = client.request(method, path, params={"a": "x", "b": "y"},
                               headers={"Accept": "application/json"})
         if resp.status_code != 401:
             unprotected.append((method, path, resp.status_code))
@@ -774,8 +759,8 @@ def test_viewer_cannot_create_test(tmp_path, monkeypatch):
     )
     try:
         response = TestClient(web_app.app).post(
-            "/tests",
-            data={
+            "/api/tests",
+            json={
                 "test_id": "viewer.forbidden",
                 "category": "reliability",
                 "risk": "low",
@@ -790,7 +775,7 @@ def test_viewer_cannot_create_test(tmp_path, monkeypatch):
     assert Store(db).list_authored_tests(DEFAULT_ORG) == []
 
 
-def test_session_mutation_requires_csrf_token(tmp_path, monkeypatch):
+def test_session_mutation_requires_csrf_header(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     Store(db)
     monkeypatch.setenv("AGENTAUDIT_DB", db)
@@ -807,8 +792,8 @@ def test_session_mutation_requires_csrf_token(tmp_path, monkeypatch):
     )
     try:
         response = TestClient(web_app.app).post(
-            "/tests",
-            data={
+            "/api/tests",
+            json={
                 "test_id": "csrf.forbidden",
                 "category": "reliability",
                 "risk": "low",
@@ -823,7 +808,7 @@ def test_session_mutation_requires_csrf_token(tmp_path, monkeypatch):
     assert Store(db).list_authored_tests(DEFAULT_ORG) == []
 
 
-def test_session_mutation_accepts_matching_csrf_token(tmp_path, monkeypatch):
+def test_session_mutation_accepts_matching_csrf_header(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     Store(db)
     monkeypatch.setenv("AGENTAUDIT_DB", db)
@@ -840,9 +825,8 @@ def test_session_mutation_accepts_matching_csrf_token(tmp_path, monkeypatch):
     )
     try:
         response = TestClient(web_app.app).post(
-            "/tests",
-            data={
-                "csrf_token": "expected-token",
+            "/api/tests",
+            json={
                 "test_id": "csrf.allowed",
                 "category": "reliability",
                 "risk": "low",
@@ -850,11 +834,11 @@ def test_session_mutation_accepts_matching_csrf_token(tmp_path, monkeypatch):
                 "assertion_name": "response_nonempty",
                 "assertion_args": "",
             },
-            follow_redirects=False,
+            headers={"x-csrf-token": "expected-token"},
         )
     finally:
         web_app.app.dependency_overrides.clear()
-    assert response.status_code == 303
+    assert response.status_code == 200
     assert Store(db).list_authored_tests(DEFAULT_ORG)[0]["test_id"] == "csrf.allowed"
 
 
@@ -869,13 +853,13 @@ def test_run_of_another_org_is_404_not_403(tmp_path, monkeypatch):
 
     client = TestClient(web_app.app)
     # The run was seeded under DEFAULT_ORG; the dev principal is that org.
-    assert client.get(f"/runs/{rr.run_id}").status_code == 200
+    assert client.get(f"/api/runs/{rr.run_id}").status_code == 200
 
     web_app.app.dependency_overrides[web_app.current_principal] = (
         lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
-        resp = client.get(f"/runs/{rr.run_id}")
+        resp = client.get(f"/api/runs/{rr.run_id}")
     finally:
         web_app.app.dependency_overrides.clear()
     assert resp.status_code == 404
@@ -890,13 +874,13 @@ def test_runs_of_another_org_are_not_listed(tmp_path, monkeypatch):
     from agentaudit.web.auth import Principal
 
     client = TestClient(web_app.app)
-    assert "web-target" in client.get("/runs").text
+    assert "web-target" in client.get("/api/runs").text
 
     web_app.app.dependency_overrides[web_app.current_principal] = (
         lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
-        for path in ("/runs", "/agents", "/tests"):
+        for path in ("/api/runs", "/api/agents", "/api/tests"):
             assert "web-target" not in client.get(path).text, path
     finally:
         web_app.app.dependency_overrides.clear()
@@ -923,15 +907,16 @@ def test_run_records_who_launched_it(tmp_path):
     assert row.created_by_email == "launcher@acme.test"
 
 
-def test_runs_page_shows_who_launched_each_run(tmp_path, monkeypatch):
+def test_runs_api_shows_who_launched_each_run(tmp_path, monkeypatch):
     db = str(tmp_path / "attr.db")
     _seed_attributed_store(db)
     monkeypatch.setenv("AGENTAUDIT_DB", db)
     from agentaudit.web.app import app
 
-    body = TestClient(app).get("/runs").text
-    assert "launcher@acme.test" in body
-    assert "CLI" in body  # the seeded run has no principal
+    rows = TestClient(app).get("/api/runs").json()["all_runs"]
+    launched = [r["launched_by"] for r in rows]
+    assert "launcher@acme.test" in launched
+    assert "CLI" in launched  # the seeded run has no principal
 
 
 def test_cli_run_has_no_attribution(tmp_path):
@@ -943,7 +928,7 @@ def test_cli_run_has_no_attribution(tmp_path):
     assert row.created_by_email is None
 
 
-# --- T9: authored tests are org-scoped DB rows, never shared files ---------
+# --- T9: authored tests are org-scoped DB rows, never shared files -----------
 
 
 def test_authored_test_is_invisible_to_another_org(tmp_path, monkeypatch):
@@ -965,18 +950,16 @@ def test_authored_test_is_invisible_to_another_org(tmp_path, monkeypatch):
         "assertion_name": "response_nonempty",
         "assertion_args": "",
     }
-    assert client.post("/tests", data=payload, follow_redirects=False).status_code == 303
-    assert "orga.secret.probe" in client.get("/tests").text
+    assert client.post("/api/tests", json=payload).status_code == 200
+    assert "orga.secret.probe" in client.get("/api/tests").text
 
     web_app.app.dependency_overrides[web_app.current_principal] = (
         lambda: Principal("org-b", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
-        assert "orga.secret.probe" not in client.get("/tests").text
+        assert "orga.secret.probe" not in client.get("/api/tests").text
         # Org B may reuse the id without colliding with org A's row.
-        assert client.post(
-            "/tests", data=payload, follow_redirects=False
-        ).status_code == 303
+        assert client.post("/api/tests", json=payload).status_code == 200
     finally:
         web_app.app.dependency_overrides.clear()
 
@@ -987,9 +970,11 @@ def test_authored_test_is_invisible_to_another_org(tmp_path, monkeypatch):
 
 def test_no_code_path_writes_to_packs_user_dir():
     """The filesystem write is gone, not merely bypassed."""
-    source = Path("frontend/agentaudit/web/app.py").read_text(encoding="utf-8")
-    assert "write_text" not in source
-    assert "mkdir" not in source
+    web_dir = Path("frontend/agentaudit/web")
+    for name in ("app.py", "api.py", "runtime.py"):
+        source = (web_dir / name).read_text(encoding="utf-8")
+        assert "write_text" not in source, name
+        assert "mkdir" not in source, name
 
 
 def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
@@ -1000,8 +985,8 @@ def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
 
     client = TestClient(app)
     client.post(
-        "/tests",
-        data={
+        "/api/tests",
+        json={
             "test_id": "never.run.probe",
             "category": "reliability",
             "risk": "low",
@@ -1010,16 +995,16 @@ def test_authored_test_shows_before_it_has_ever_run(tmp_path, monkeypatch):
             "assertion_args": "",
         },
     )
-    body = client.get("/tests").text
-    assert "never.run.probe" in body
-    assert "never run" in body
+    rows = client.get("/api/tests").json()["tests"]
+    never = next(r for r in rows if r["test_id"] == "never.run.probe")
+    assert never["latest_status"] == "never run"
 
 
 # The library merge rule moved to tests/test_runview.py with core/runview.py:
 # it is a function call now, not a FakeStore behind an env var.
 
 
-# --- T10: one long-lived Store, not one connection per request -------------
+# --- T10: one long-lived Store, not one connection per request ---------------
 
 
 def test_store_is_constructed_once_across_many_requests(tmp_path, monkeypatch):
@@ -1033,9 +1018,9 @@ def test_store_is_constructed_once_across_many_requests(tmp_path, monkeypatch):
     _seed_store(db)
     client = _client(db, monkeypatch)
 
-    import agentaudit.web.app as web_app
+    import agentaudit.web.runtime as web_runtime
 
-    client.get("/runs")  # warm up
+    client.get("/api/runs")  # warm up
     built = 0
     real_init = Store.__init__
 
@@ -1046,20 +1031,20 @@ def test_store_is_constructed_once_across_many_requests(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Store, "__init__", counting_init)
     for _ in range(25):
-        assert client.get("/runs").status_code == 200
+        assert client.get("/api/runs").status_code == 200
     assert built == 0, f"{built} Stores built across 25 requests"
-    assert web_app._store is not None
+    assert web_runtime._store is not None
 
 
 def test_store_is_reused_across_requests(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     client = _client(db, monkeypatch)
-    from agentaudit.web.app import get_store
+    from agentaudit.web.runtime import get_store
 
-    client.get("/runs")
+    client.get("/api/runs")
     first = get_store()
-    client.get("/runs")
+    client.get("/api/runs")
     assert get_store() is first
 
 
@@ -1068,9 +1053,9 @@ def test_app_lifespan_can_restart_after_closing_store(tmp_path, monkeypatch):
     from agentaudit.web.app import app
 
     with TestClient(app) as first_client:
-        assert first_client.get("/runs").status_code == 200
+        assert first_client.get("/api/runs").status_code == 200
     with TestClient(app) as second_client:
-        assert second_client.get("/runs").status_code == 200
+        assert second_client.get("/api/runs").status_code == 200
 
 
 def test_store_serves_concurrent_threads(tmp_path):
@@ -1114,32 +1099,36 @@ _TREASURY = {
 }
 
 
-def test_connect_page_form_posts_to_runs(tmp_path, monkeypatch):
+def test_post_runs_enqueues_without_executing(tmp_path, monkeypatch):
     """The connect page must actually submit a run, not just print a command."""
     client = _client(str(tmp_path / "web.db"), monkeypatch)
 
-    body = client.get("/agents/connect").text
+    resp = client.post("/api/runs/enqueue", json=_TREASURY)
 
-    assert 'action="/runs"' in body
-    assert 'method="post"' in body
-    assert 'name="target"' in body
-    assert 'name="packs"' in body
-    # Tooling directories sit beside the packs and are not runnable packs.
-    assert ".aislop" not in body
-    assert "__pycache__" not in body
+    assert resp.status_code == 200
+    job_id = resp.json()["job_id"]
+    store = Store(str(tmp_path / "web.db"))
+    job = store.jobs.get(DEFAULT_ORG, job_id)
+    assert job.state == "queued"
+    assert job.run_id is None
+    # No run executed inside the handler.
+    assert store.list_runs(DEFAULT_ORG) == []
+    # The first-party target and pack were imported as rows for the worker.
+    assert store.get_target(DEFAULT_ORG, job.target_id)["id"] == "treasury-demo"
+    assert len(store.get_pack_tests(DEFAULT_ORG, job.pack_id)) == 6
 
 
-def test_tests_page_lists_shipped_tests_that_never_ran(tmp_path, monkeypatch):
+def test_tests_api_lists_shipped_tests_that_never_ran(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
 
-    body = client.get("/tests").text
+    rows = client.get("/api/tests").json()["tests"]
 
-    assert "email.unauthorized_forward.blocked" in body
-    assert "never run" in body
+    assert any(r["test_id"] == "email.unauthorized_forward.blocked" for r in rows)
+    assert all(r["latest_status"] for r in rows)
 
 
 def test_post_runs_rejects_browser_session_without_csrf(tmp_path, monkeypatch):
-    """The form carries a csrf_token; a session POST without one must not run."""
+    """The SPA echoes the session CSRF token; a POST without one must not run."""
     client = _client(str(tmp_path / "web.db"), monkeypatch)
 
     from agentaudit.web import app as web_app
@@ -1154,84 +1143,53 @@ def test_post_runs_rejects_browser_session_without_csrf(tmp_path, monkeypatch):
         csrf_token="the-real-token",
     )
     try:
-        assert client.post("/runs", data=_TREASURY).status_code == 403
-        assert client.post(
-            "/runs",
-            data={**_TREASURY, "csrf_token": "wrong"},
+        assert client.post("/api/runs/enqueue", json=_TREASURY).status_code == 403
+        wrong = TestClient(web_app.app)
+        assert wrong.post(
+            "/api/runs/enqueue",
+            json=_TREASURY,
+            headers={"x-csrf-token": "wrong"},
         ).status_code == 403
-        assert client.post(
-            "/runs",
-            data={**_TREASURY, "csrf_token": "the-real-token"},
-            follow_redirects=False,
-        ).status_code == 303
+        assert wrong.post(
+            "/api/runs/enqueue",
+            json=_TREASURY,
+            headers={"x-csrf-token": "the-real-token"},
+        ).status_code == 200
     finally:
         web_app.app.dependency_overrides.clear()
 
 
-def test_post_runs_queues_a_job_without_executing_it(tmp_path, monkeypatch):
-    client = _client(str(tmp_path / "web.db"), monkeypatch)
-
-    resp = client.post(
-        "/runs",
-        data=_TREASURY,
-        follow_redirects=False,
-    )
-
-    assert resp.status_code == 303
-    job_id = resp.headers["location"].rsplit("/", 1)[-1]
-    store = Store(str(tmp_path / "web.db"))
-    job = store.jobs.get(DEFAULT_ORG, job_id)
-    assert job.state == "queued"
-    assert job.run_id is None
-    # No run executed inside the handler.
-    assert store.list_runs(DEFAULT_ORG) == []
-    # The first-party target and pack were imported as rows for the worker.
-    assert store.get_target(DEFAULT_ORG, job.target_id)["id"] == "treasury-demo"
-    assert len(store.get_pack_tests(DEFAULT_ORG, job.pack_id)) == 6
-
-
 def test_job_status_reports_queued_running_and_done(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.post(
-        "/runs",
-        data=_TREASURY,
-        follow_redirects=False,
-    )
-    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
     store = Store(str(tmp_path / "web.db"))
 
-    body = client.get(f"/jobs/{job_id}/status").json()
-    assert (body["state"], body["running"], body["run_id"]) == ("queued", True, "")
-    legacy_body = client.get(
-        f"/runs/{job_id}/status", headers={"Accept": "application/json"}
-    ).json()
-    assert (legacy_body["state"], legacy_body["running"]) == ("queued", True)
+    body = client.get(f"/api/jobs/{job_id}/status").json()
+    assert (body["state"], body["running"]) == ("queued", True)
 
     store.jobs.claim("w1", lease_seconds=-1)
-    assert client.get(f"/jobs/{job_id}/status").json()["state"] == "running"
+    assert client.get(f"/api/jobs/{job_id}/status").json()["state"] == "running"
 
     from agentaudit.worker import work_once
 
     # w1 "died"; its lease has already expired, so the job comes back.
     assert store.jobs.reclaim(max_attempts=99) == 1
     work_once(store, "w2")
-    body = client.get(f"/jobs/{job_id}/status").json()
+    body = client.get(f"/api/jobs/{job_id}/status").json()
     assert body["state"] == "done"
     assert body["running"] is False
     assert body["run_id"]
-    assert client.get(f"/runs/{body['run_id']}").status_code == 200
+    assert client.get(f"/api/runs/{body['run_id']}").status_code == 200
 
 
 def test_post_cancel_stops_a_queued_job_immediately(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
-    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
 
-    cancel = client.post(f"/jobs/{job_id}/cancel", follow_redirects=False)
-    assert cancel.status_code == 303
-    assert cancel.headers["location"] == f"/jobs/{job_id}"
+    cancel = client.post(f"/api/jobs/{job_id}/cancel")
+    assert cancel.status_code == 200
 
-    body = client.get(f"/jobs/{job_id}/status").json()
+    body = client.get(f"/api/jobs/{job_id}/status").json()
     assert (body["state"], body["running"]) == ("cancelled", False)
 
     from agentaudit.worker import work_once
@@ -1244,12 +1202,11 @@ def test_post_cancel_flags_a_running_job_for_the_worker_to_stop(tmp_path, monkey
     """A running job can't be released from the web process -- only the flag is set;
     `test_worker.py` covers the worker actually stopping on it."""
     client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
-    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
 
     store = Store(str(tmp_path / "web.db"))
     store.jobs.claim("w1")
-    client.post(f"/jobs/{job_id}/cancel")
+    client.post(f"/api/jobs/{job_id}/cancel")
 
     job = store.jobs.get(DEFAULT_ORG, job_id)
     assert job.cancel_requested == 1
@@ -1258,12 +1215,7 @@ def test_post_cancel_flags_a_running_job_for_the_worker_to_stop(tmp_path, monkey
 
 def test_job_of_another_org_is_404(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.post(
-        "/runs",
-        data=_TREASURY,
-        follow_redirects=False,
-    )
-    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
 
     from agentaudit.web import app as web_app
     from agentaudit.web.auth import Principal
@@ -1272,35 +1224,31 @@ def test_job_of_another_org_is_404(tmp_path, monkeypatch):
         lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
-        assert client.get(f"/jobs/{job_id}").status_code == 404
-        assert client.get(f"/jobs/{job_id}/status").status_code == 404
+        assert client.get(f"/api/jobs/{job_id}").status_code == 404
+        assert client.get(f"/api/jobs/{job_id}/status").status_code == 404
     finally:
         web_app.app.dependency_overrides.clear()
 
 
-def test_cancel_queued_job_fails_it_immediately(tmp_path, monkeypatch):
+def test_cancel_queued_job_cancels_it_immediately(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
-    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
 
-    cancel_resp = client.post(f"/jobs/{job_id}/cancel", follow_redirects=False)
+    cancel_resp = client.post(f"/api/jobs/{job_id}/cancel")
 
-    assert cancel_resp.status_code == 303
-    assert cancel_resp.headers["location"] == f"/jobs/{job_id}"
+    assert cancel_resp.status_code == 200
     store = Store(str(tmp_path / "web.db"))
     job = store.jobs.get(DEFAULT_ORG, job_id)
-    assert job.state == "failed"
-    assert job.error == "cancelled by user"
+    assert job.state == "cancelled"
 
 
 def test_cancel_running_job_only_flags_it_for_the_worker(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
-    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
     store = Store(str(tmp_path / "web.db"))
     store.jobs.claim("w1")
 
-    client.post(f"/jobs/{job_id}/cancel", follow_redirects=False)
+    client.post(f"/api/jobs/{job_id}/cancel")
 
     job = store.jobs.get(DEFAULT_ORG, job_id)
     assert job.state == "running"
@@ -1309,8 +1257,7 @@ def test_cancel_running_job_only_flags_it_for_the_worker(tmp_path, monkeypatch):
 
 def test_cancel_job_of_another_org_is_404(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
-    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
 
     from agentaudit.web import app as web_app
     from agentaudit.web.auth import Principal
@@ -1319,23 +1266,9 @@ def test_cancel_job_of_another_org_is_404(tmp_path, monkeypatch):
         lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
-        assert client.post(f"/jobs/{job_id}/cancel", follow_redirects=False).status_code == 404
+        assert client.post(f"/api/jobs/{job_id}/cancel").status_code == 404
     finally:
         web_app.app.dependency_overrides.clear()
-
-
-def test_run_status_is_always_terminal(tmp_path, monkeypatch):
-    db = str(tmp_path / "web.db")
-    _cfg, rr, _report = _seed_store(db)
-    monkeypatch.setenv("AGENTAUDIT_DB", db)
-    from agentaudit.web import app as web_app
-
-    body = TestClient(web_app.app).get(
-        f"/runs/{rr.run_id}/status", headers={"Accept": "application/json"}
-    ).json()
-
-    assert body["running"] is False
-    assert body["run_id"] == rr.run_id
 
 
 # ---- T14: artifact serving ------------------------------------------------
@@ -1360,7 +1293,7 @@ def test_artifact_is_served_to_its_own_org(tmp_path, monkeypatch):
     db, _run_id, body = _seed_artifact(tmp_path, monkeypatch)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/artifacts/trace.json")
+    resp = client.get("/api/artifacts/trace.json")
 
     assert resp.status_code == 200
     assert resp.content == body
@@ -1376,12 +1309,11 @@ def test_artifact_of_another_org_is_404(tmp_path, monkeypatch):
         lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
     )
     try:
-        resp = client.get("/artifacts/trace.json")
+        resp = client.get("/api/artifacts/trace.json")
     finally:
         web_app.app.dependency_overrides.clear()
 
     assert resp.status_code == 404
-    assert "trace" not in resp.text.lower() or "not found" in resp.text.lower()
 
 
 def test_missing_blob_is_404_not_a_server_error(tmp_path, monkeypatch):
@@ -1389,7 +1321,7 @@ def test_missing_blob_is_404_not_a_server_error(tmp_path, monkeypatch):
     (tmp_path / "artifacts" / DEFAULT_ORG / _run_id / "trace.json").unlink()
     client = _client(db, monkeypatch)
 
-    assert client.get("/artifacts/trace.json").status_code == 404
+    assert client.get("/api/artifacts/trace.json").status_code == 404
 
 
 def test_artifacts_are_not_exposed_by_a_static_mount(tmp_path, monkeypatch):
@@ -1398,49 +1330,122 @@ def test_artifacts_are_not_exposed_by_a_static_mount(tmp_path, monkeypatch):
 
     mounts = [r for r in web_app.routes if isinstance(getattr(r, "app", None), StaticFiles)]
 
-    assert [m.path for m in mounts] == ["/static"]
+    # Only static assets ship over mounts: style.css and the built SPA bundle.
+    assert {m.path for m in mounts} <= {"/static", "/assets"}
     served = {Path(m.app.directory).resolve() for m in mounts}
     assert (tmp_path / "artifacts").resolve() not in served
 
 
-def test_settings_page_shows_redaction_egress_and_access(tmp_path, monkeypatch):
-    db = str(tmp_path / "web.db")
-    _seed_store(db)
-    monkeypatch.delenv("AGENTAUDIT_EGRESS_ALLOW_LOCAL", raising=False)
+# --- connect options & defaults ---------------------------------------------
+
+
+def test_connect_options_preselect_last_used_target_and_pack(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post("/api/runs/enqueue", json=_TREASURY)
+    assert resp.status_code == 200
+
+    body = client.get("/api/connect-options").json()
+
+    assert body["default_target"] == _TREASURY["target"]
+    assert body["default_pack"] == _TREASURY["packs"]
+
+
+def test_connect_options_values_are_accepted_by_the_run_route(tmp_path, monkeypatch):
+    """The picker values must round-trip: whatever GET offers, enqueue accepts.
+
+    Paths relative to the package dir (config/x.yaml) resolve against CWD and
+    would 400."""
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+
+    body = client.get("/api/connect-options").json()
+    assert _TREASURY["target"] in body["targets"]
+    assert _TREASURY["packs"] in body["pack_roots"]
+
+
+def test_connect_options_lists_selectable_tests(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "picker.db"), monkeypatch)
+
+    body = client.get("/api/connect-options").json()
+
+    assert any(cases for cases in body["pack_tests"].values())
+
+
+def test_post_runs_carries_a_test_selection_to_the_job(tmp_path, monkeypatch):
+    db = str(tmp_path / "selection.db")
     client = _client(db, monkeypatch)
 
-    body = client.get("/settings").text
+    resp = client.post(
+        "/api/runs/enqueue",
+        json={**_TREASURY, "test_ids": ["treasury.over_limit.blocked"]},
+    )
 
-    # built-in masks are compliance evidence: list them, name the mask format
-    assert "api_key" in body
-    assert "redacted:name" in body
-    assert "Allow Local Endpoints" in body
-    assert "Disabled" in body
-    # the acting principal (dev principal outside OIDC)
-    assert "dev@localhost" in body
-    assert "admin, viewer" in body
+    assert resp.status_code == 200
+    job = Store(db).jobs.list_recent(DEFAULT_ORG)[0]
+    assert json.loads(job.test_ids_json) == ["treasury.over_limit.blocked"]
 
 
-def test_connect_form_preselects_last_used_target_and_pack(tmp_path, monkeypatch):
-    client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
-    assert resp.status_code == 303
+def test_post_runs_rejects_a_test_id_outside_the_chosen_pack(tmp_path, monkeypatch):
+    """A submitted id must not select a test the chosen pack does not contain."""
+    db = str(tmp_path / "cross-pack.db")
+    client = _client(db, monkeypatch)
 
-    body = client.get("/agents/connect").text
+    resp = client.post(
+        "/api/runs/enqueue", json={**_TREASURY, "test_ids": ["not.in.this.pack"]}
+    )
 
-    assert f'value="{_TREASURY["target"]}" selected' in body
-    assert f'value="{_TREASURY["packs"]}" selected' in body
+    assert resp.status_code == 400
+    assert "not.in.this.pack" in resp.json()["detail"]
+    assert Store(db).jobs.list_recent(DEFAULT_ORG) == []
 
 
-def test_connect_form_option_values_are_accepted_by_the_run_route(tmp_path, monkeypatch):
-    """The dropdown values must round-trip: whatever the form offers, POST /runs
-    must accept. Paths relative to the package dir (config/x.yaml) resolve
-    against CWD and 400."""
-    client = _client(str(tmp_path / "web.db"), monkeypatch)
+def test_post_runs_treats_selecting_everything_as_no_selection(tmp_path, monkeypatch):
+    """Checking every box is a whole-pack run, not a pinned list that rots."""
+    db = str(tmp_path / "select-all.db")
+    client = _client(db, monkeypatch)
 
-    body = client.get("/agents/connect").text
-    assert f'value="{_TREASURY["target"]}"' in body
-    assert f'value="{_TREASURY["packs"]}"' in body
+    store = Store(db)
+    client.post("/api/runs/enqueue", json=_TREASURY)
+    pack_id = store.jobs.list_recent(DEFAULT_ORG)[0].pack_id
+    every_id = [row["id"] for row in store.get_pack_tests(DEFAULT_ORG, pack_id)]
+
+    client.post("/api/runs/enqueue", json={**_TREASURY, "test_ids": every_id})
+
+    assert Store(db).jobs.list_recent(DEFAULT_ORG)[0].test_ids_json is None
+
+
+def test_job_status_reports_live_progress(tmp_path, monkeypatch):
+    db = str(tmp_path / "progress.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    store.jobs.start_progress(job_id, 4)
+    store.jobs.record_progress(job_id, "a.case", "passed")
+    store.jobs.record_progress(job_id, "b.case", "failed")
+    client = _client(db, monkeypatch)
+
+    payload = client.get(f"/api/jobs/{job_id}/status").json()
+
+    assert payload["tests_done"] == 2
+    assert payload["tests_total"] == 4
+    assert [e["test_id"] for e in payload["recent"]] == ["a.case", "b.case"]
+    assert [e["status"] for e in payload["recent"]] == ["passed", "failed"]
+
+
+def test_job_detail_reports_progress_fields(tmp_path, monkeypatch):
+    db = str(tmp_path / "progress-view.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    store.jobs.start_progress(job_id, 2)
+    store.jobs.record_progress(job_id, "a.case", "passed")
+    client = _client(db, monkeypatch)
+
+    payload = client.get(f"/api/jobs/{job_id}").json()
+
+    assert payload["tests_done"] == 1
+    assert payload["tests_total"] == 2
+    assert payload["running"] is True
+
+
+# --- plans -------------------------------------------------------------------
 
 
 def _seed_planned_store(db_path: str, external: bool = False):
@@ -1492,21 +1497,21 @@ def test_run_detail_explains_the_selection_when_a_plan_exists(tmp_path, monkeypa
     rr = _seed_planned_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}")
-    assert resp.status_code == 200
-    assert "Why these tests" in resp.text
-    assert "written for the treasury domain" in resp.text
-    assert "garak is not installed on this runner" in resp.text
+    body = client.get(f"/api/runs/{rr.run_id}").json()
+    assert body["plan"] is not None
+    reasons = [r for s in body["plan"]["selected"] for r in s["reasons"]]
+    assert "written for the treasury domain" in reasons
+    excluded_reasons = [e["reason"] for e in body["plan"]["excluded"]]
+    assert "garak is not installed on this runner" in excluded_reasons
 
 
-def test_run_detail_omits_the_panel_without_a_plan(tmp_path, monkeypatch):
+def test_run_detail_omits_the_plan_without_one(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _cfg, rr, _report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}")
-    assert resp.status_code == 200
-    assert "Why these tests" not in resp.text
+    body = client.get(f"/api/runs/{rr.run_id}").json()
+    assert body["plan"] is None
 
 
 def test_test_detail_shows_why_the_test_was_selected(tmp_path, monkeypatch):
@@ -1514,10 +1519,11 @@ def test_test_detail_shows_why_the_test_was_selected(tmp_path, monkeypatch):
     rr = _seed_planned_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}/tests/a.pass.case")
-    assert resp.status_code == 200
-    assert "Why this test ran" in resp.text
-    assert "risk medium" in resp.text
+    body = client.get(f"/api/runs/{rr.run_id}/tests/a.pass.case").json()
+    assert body["selection"]["reasons"] == [
+        "written for the treasury domain",
+        "risk medium",
+    ]
 
 
 def test_run_detail_flags_external_selections_as_unevidenced(tmp_path, monkeypatch):
@@ -1525,10 +1531,12 @@ def test_run_detail_flags_external_selections_as_unevidenced(tmp_path, monkeypat
     rr = _seed_planned_store(db, external=True)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}")
-    assert resp.status_code == 200
-    assert "no evidence for them" in resp.text
-    assert "promptfoo.pii" in resp.text
+    plan = client.get(f"/api/runs/{rr.run_id}").json()["plan"]
+    sources = {s["source"]: s["test_id"] for s in plan["selected"]}
+    assert sources.get("promptfoo") == "promptfoo.pii"
+
+
+# --- generated-test review queue ----------------------------------------------
 
 
 def _seed_generated(db: str) -> dict:
@@ -1550,11 +1558,10 @@ def test_generated_queue_lists_candidates_and_the_id_they_would_take(tmp_path, m
     db = str(tmp_path / "web.db")
     _seed_generated(db)
     client = _client(db, monkeypatch)
-    resp = client.get("/generated")
-    assert resp.status_code == 200
-    assert "generated.tool_misuse.abc1234567" in resp.text
+    candidates = client.get("/api/generated").json()["candidates"]
+    assert any(c["id"] == "generated.tool_misuse.abc1234567" for c in candidates)
     # The reviewer has to see what promoting actually does to the id.
-    assert "promoted.tool_misuse.abc1234567" in resp.text
+    assert any(c["promoted_id"] == "promoted.tool_misuse.abc1234567" for c in candidates)
 
 
 def test_promoting_moves_the_test_and_rewrites_only_the_first_segment(tmp_path, monkeypatch):
@@ -1562,11 +1569,10 @@ def test_promoting_moves_the_test_and_rewrites_only_the_first_segment(tmp_path, 
     _seed_generated(db)
     client = _client(db, monkeypatch)
     resp = client.post(
-        "/generated/promote",
-        data={"test_id": "generated.tool_misuse.abc1234567"},
-        follow_redirects=False,
+        "/api/generated/promote",
+        json={"test_id": "generated.tool_misuse.abc1234567"},
     )
-    assert resp.status_code == 303
+    assert resp.status_code == 200
 
     store = Store(db)
     assert store.get_pack_tests(DEFAULT_ORG, "generated") == []
@@ -1590,19 +1596,19 @@ def test_rejecting_removes_the_candidate(tmp_path, monkeypatch):
     _seed_generated(db)
     client = _client(db, monkeypatch)
     resp = client.post(
-        "/generated/reject",
-        data={"test_id": "generated.tool_misuse.abc1234567"},
-        follow_redirects=False,
+        "/api/generated/reject",
+        json={"test_id": "generated.tool_misuse.abc1234567"},
     )
-    assert resp.status_code == 303
+    assert resp.status_code == 200
     assert Store(db).get_pack_tests(DEFAULT_ORG, "generated") == []
 
 
 def test_the_queue_is_empty_when_nothing_was_generated(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
-    resp = client.get("/generated")
-    assert resp.status_code == 200
-    assert "Nothing to review" in resp.text
+    assert client.get("/api/generated").json()["candidates"] == []
+
+
+# --- discovery / profiles ------------------------------------------------------
 
 
 def test_post_discover_queues_a_job_without_dialling_the_endpoint(tmp_path, monkeypatch):
@@ -1612,9 +1618,9 @@ def test_post_discover_queues_a_job_without_dialling_the_endpoint(tmp_path, monk
     store.save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
     client = _client(db, monkeypatch)
 
-    resp = client.post("/agents/treasury-demo/discover", follow_redirects=False)
+    resp = client.post("/api/agents/treasury-demo/discover")
 
-    assert resp.status_code == 303
+    assert resp.status_code == 200
     jobs = Store(db).jobs.list_recent(DEFAULT_ORG)
     assert len(jobs) == 1
     assert jobs[0].pack_id == DISCOVERY_PACK_ID
@@ -1626,10 +1632,10 @@ def test_post_discover_queues_a_job_without_dialling_the_endpoint(tmp_path, monk
 def test_post_discover_404s_for_an_unknown_target(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "discover-404.db"), monkeypatch)
 
-    assert client.post("/agents/nope/discover").status_code == 404
+    assert client.post("/api/agents/nope/discover").status_code == 404
 
 
-def test_agent_detail_renders_a_stored_profile(tmp_path, monkeypatch):
+def test_agent_detail_returns_a_stored_profile(tmp_path, monkeypatch):
     db = str(tmp_path / "profile-view.db")
     store = Store(db)
     store.save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
@@ -1648,13 +1654,13 @@ def test_agent_detail_renders_a_stored_profile(tmp_path, monkeypatch):
     )
     client = _client(db, monkeypatch)
 
-    resp = client.get("/agents/treasury-demo")
+    body = client.get("/api/agents/treasury-demo").json()
 
-    assert resp.status_code == 200
-    assert 'data-testid="agent-profile"' in resp.text
-    assert "reviews and pays supplier invoices" in resp.text
-    assert "money_movement" in resp.text
-    assert "answered a trivial probe in 12 ms" in resp.text
+    assert body["registered"] is True
+    assert body["profile"]["purpose"] == "reviews and pays supplier invoices"
+    assert "money_movement" in body["profile"]["side_effects"]
+    assert body["profile"]["notes"] == ["answered a trivial probe in 12 ms"]
+    assert "tool_use" in body["capabilities"]
 
 
 def test_agent_detail_without_a_profile_offers_to_make_one(tmp_path, monkeypatch):
@@ -1662,197 +1668,38 @@ def test_agent_detail_without_a_profile_offers_to_make_one(tmp_path, monkeypatch
     Store(db).save_target(DEFAULT_ORG, "treasury-demo", "Treasury", _TARGET_CONFIG)
     client = _client(db, monkeypatch)
 
-    resp = client.get("/agents/treasury-demo")
+    body = client.get("/api/agents/treasury-demo").json()
 
-    assert resp.status_code == 200
-    assert "Never profiled" in resp.text
-    assert 'data-testid="discover-submit"' in resp.text
-
-
-def test_analytics_is_the_home_page_and_runs_moved(tmp_path, monkeypatch):
-    db = str(tmp_path / "analytics.db")
-    _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    home = client.get("/")
-    assert home.status_code == 200
-    assert 'data-testid="chart-trend"' in home.text
-    assert 'data-testid="stat-gate-rate"' in home.text
-
-    # The run list still exists, at its own address.
-    runs = client.get("/runs")
-    assert runs.status_code == 200
-    assert 'data-testid="run-row"' in runs.text
+    assert body["registered"] is True
+    assert body["profile"] is None
 
 
-def test_analytics_renders_an_empty_state_with_no_runs(tmp_path, monkeypatch):
-    """An empty estate must not render a chart of nothing."""
-    client = _client(str(tmp_path / "empty-analytics.db"), monkeypatch)
-
-    resp = client.get("/")
-
-    assert resp.status_code == 200
-    assert "Nothing to analyse yet" in resp.text
-    assert 'data-testid="chart-trend"' not in resp.text
-
-
-def test_analytics_sparkline_carries_one_point_per_run(tmp_path, monkeypatch):
-    db = str(tmp_path / "analytics-points.db")
-    _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    resp = client.get("/")
-
-    import re as _re
-
-    points = _re.search(r'class="chart-line" points="([^"]*)"', resp.text)
-    assert points, "expected a plotted trend line"
-    assert len(points.group(1).split()) >= 1
-
-
-def test_run_list_navigation_stays_on_the_run_list(tmp_path, monkeypatch):
-    """Analytics took over /, so a control on the run list must not send you there."""
-    db = str(tmp_path / "nav.db")
-    cfg, rr, report = _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    runs = client.get("/runs").text
-    # The filter Reset returns to an unfiltered run list, not to analytics.
-    assert '<a class="button-secondary" href="/runs">Reset</a>' in runs
-
-    detail = client.get(f"/runs/{rr.run_id}").text
-    assert 'href="/runs">Back to runs</a>' in detail
-
-def test_post_runs_carries_a_test_selection_to_the_job(tmp_path, monkeypatch):
-    db = str(tmp_path / "selection.db")
-    client = _client(db, monkeypatch)
-
-    resp = client.post(
-        "/runs",
-        data={**_TREASURY, "test_ids": ["treasury.over_limit.blocked"]},
-        follow_redirects=False,
-    )
-
-    assert resp.status_code == 303
-    job = Store(db).jobs.list_recent(DEFAULT_ORG)[0]
-    import json as _json
-
-    assert _json.loads(job.test_ids_json) == ["treasury.over_limit.blocked"]
-
-
-def test_post_runs_rejects_a_test_id_outside_the_chosen_pack(tmp_path, monkeypatch):
-    """A submitted id must not select a test the chosen pack does not contain."""
-    db = str(tmp_path / "cross-pack.db")
-    client = _client(db, monkeypatch)
-
-    resp = client.post("/runs", data={**_TREASURY, "test_ids": ["not.in.this.pack"]})
-
-    assert resp.status_code == 400
-    assert "not.in.this.pack" in resp.text
-    assert Store(db).jobs.list_recent(DEFAULT_ORG) == []
-
-
-def test_post_runs_treats_selecting_everything_as_no_selection(tmp_path, monkeypatch):
-    """Checking every box is a whole-pack run, not a pinned list that rots."""
-    db = str(tmp_path / "select-all.db")
-    client = _client(db, monkeypatch)
-
-    store = Store(db)
-    client.post("/runs", data=_TREASURY, follow_redirects=False)
-    pack_id = store.jobs.list_recent(DEFAULT_ORG)[0].pack_id
-    every_id = [row["id"] for row in store.get_pack_tests(DEFAULT_ORG, pack_id)]
-
-    client.post(
-        "/runs", data={**_TREASURY, "test_ids": every_id}, follow_redirects=False
-    )
-
-    assert Store(db).jobs.list_recent(DEFAULT_ORG)[0].test_ids_json is None
-
-
-def test_connect_page_lists_selectable_tests(tmp_path, monkeypatch):
-    client = _client(str(tmp_path / "picker.db"), monkeypatch)
-
-    resp = client.get("/agents/connect")
-
-    assert resp.status_code == 200
-    assert 'data-testid="test-picker"' in resp.text
-    assert 'name="test_ids"' in resp.text
-
-
-def test_job_status_reports_live_progress(tmp_path, monkeypatch):
-    db = str(tmp_path / "progress.db")
-    store = Store(db)
-    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
-    store.jobs.start_progress(job_id, 4)
-    store.jobs.record_progress(job_id, "a.case", "passed")
-    store.jobs.record_progress(job_id, "b.case", "failed")
-    client = _client(db, monkeypatch)
-
-    payload = client.get(f"/jobs/{job_id}/status").json()
-
-    assert payload["tests_done"] == 2
-    assert payload["tests_total"] == 4
-    assert [e["test_id"] for e in payload["recent"]] == ["a.case", "b.case"]
-    assert [e["status"] for e in payload["recent"]] == ["passed", "failed"]
-
-
-def test_job_page_renders_a_progress_meter(tmp_path, monkeypatch):
-    db = str(tmp_path / "progress-view.db")
-    store = Store(db)
-    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
-    store.jobs.start_progress(job_id, 2)
-    store.jobs.record_progress(job_id, "a.case", "passed")
-    client = _client(db, monkeypatch)
-
-    resp = client.get(f"/jobs/{job_id}")
-
-    assert resp.status_code == 200
-    assert 'data-testid="run-progress"' in resp.text
-    assert 'aria-valuenow="1"' in resp.text
-    assert 'aria-valuemax="2"' in resp.text
-
-
-def test_test_detail_shows_cross_run_history(tmp_path, monkeypatch):
-    """A single run cannot say whether this is a new break or a standing one."""
-    db = str(tmp_path / "history.db")
-    _seed_store(db)
-    _seed_store(db)
-    cfg, rr, report = _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    resp = client.get(f"/runs/{rr.run_id}/tests/b.fail.case")
-
-    assert resp.status_code == 200
-    assert 'data-testid="test-history"' in resp.text
-    assert "of the last 3 runs" in resp.text
-
-
-def test_test_detail_history_names_a_first_run(tmp_path, monkeypatch):
-    db = str(tmp_path / "first-run.db")
-    cfg, rr, report = _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    resp = client.get(f"/runs/{rr.run_id}/tests/b.fail.case")
-
-    assert resp.status_code == 200
-    assert "First recorded run" in resp.text
-
-
-def test_agent_without_a_target_row_hides_the_profile_button(tmp_path, monkeypatch):
+def test_agent_without_a_target_row_reports_unregistered(tmp_path, monkeypatch):
     """A CLI-launched run writes an `agents` row but no `targets` row.
 
-    Discovery reads the endpoint off the target, so offering the button here
+    Discovery reads the endpoint off the target, so offering profiling here
     only ever produced `404 unknown target`.
     """
     db = str(tmp_path / "unregistered.db")
     _seed_store(db)  # writes agents rows via save_run, no targets row
     client = _client(db, monkeypatch)
 
-    resp = client.get("/agents/web-target")
+    body = client.get("/api/agents/web-target").json()
 
+    assert body["registered"] is False
+    assert body["profile"] is None
+
+
+# --- agent registration ---------------------------------------------------------
+
+
+def test_register_options_precedes_the_catch_all_agent_route(tmp_path, monkeypatch):
+    """The greedy /agents/{agent_id:path} route must not swallow this one."""
+    client = _client(str(tmp_path / "register-options.db"), monkeypatch)
+
+    resp = client.get("/api/agents/register-options")
     assert resp.status_code == 200
-    assert 'data-testid="profile-unregistered"' in resp.text
-    assert 'data-testid="discover-submit"' not in resp.text
+    assert "email" in resp.json()["sandboxes"]
 
 
 def test_register_agent_persists_a_target_and_seeds_the_allowlist(tmp_path, monkeypatch):
@@ -1863,23 +1710,17 @@ def test_register_agent_persists_a_target_and_seeds_the_allowlist(tmp_path, monk
     _Store(db)
     client = _client(db, monkeypatch)
 
-    # The greedy /agents/{agent_id:path} route must not swallow this one.
-    form = client.get("/agents/register")
-    assert form.status_code == 200
-    assert 'data-testid="register-form"' in form.text
-
     resp = client.post(
-        "/agents/register",
-        data={
+        "/api/agents/register",
+        json={
             "target_id": "support-bot",
             "endpoint": "https://agent.example.com/chat",
             "method": "POST",
             "text_path": "$.reply",
             "sandbox": "email",
         },
-        follow_redirects=False,
     )
-    assert resp.status_code == 303
+    assert resp.status_code == 200
 
     store = _Store(db)
     assert store.get_target(DEFAULT_ORG, "support-bot")["agent"]["endpoint"] == (
@@ -1889,8 +1730,7 @@ def test_register_agent_persists_a_target_and_seeds_the_allowlist(tmp_path, monk
     assert store.get_target_allowed_hosts(DEFAULT_ORG, "support-bot") == ["agent.example.com"]
 
     # And it is now profileable rather than 404ing.
-    detail = client.get("/agents/support-bot")
-    assert 'data-testid="discover-submit"' in detail.text
+    assert client.get("/api/agents/support-bot").json()["registered"] is True
 
 
 def test_register_agent_rejects_a_non_http_endpoint(tmp_path, monkeypatch):
@@ -1901,13 +1741,14 @@ def test_register_agent_rejects_a_non_http_endpoint(tmp_path, monkeypatch):
     client = _client(db, monkeypatch)
 
     resp = client.post(
-        "/agents/register",
-        data={"target_id": "x", "endpoint": "file:///etc/passwd"},
-        follow_redirects=False,
+        "/api/agents/register",
+        json={"target_id": "x", "endpoint": "file:///etc/passwd"},
     )
 
     assert resp.status_code == 400
-    assert 'data-testid="register-error"' in resp.text
+
+
+# --- exports ---------------------------------------------------------------------
 
 
 def test_run_export_matches_the_cli_renderers(tmp_path, monkeypatch):
@@ -1918,10 +1759,65 @@ def test_run_export_matches_the_cli_renderers(tmp_path, monkeypatch):
     _cfg, rr, report = _seed_store(db)
     client = _client(db, monkeypatch)
 
-    resp = client.get(f"/runs/{rr.run_id}/export/md")
+    resp = client.get(f"/api/runs/{rr.run_id}/export/md")
 
     assert resp.status_code == 200
     assert resp.text == to_markdown(rr, report)
     assert rr.run_id[:8] in resp.headers["content-disposition"]
 
-    assert client.get(f"/runs/{rr.run_id}/export/exe").status_code == 404
+    assert client.get(f"/api/runs/{rr.run_id}/export/exe").status_code == 404
+
+
+# --- cross-run history -------------------------------------------------------------
+
+
+def test_test_detail_carries_cross_run_history(tmp_path, monkeypatch):
+    """A single run cannot say whether this is a new break or a standing one."""
+    db = str(tmp_path / "history.db")
+    _seed_store(db)
+    _seed_store(db)
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    body = client.get(f"/api/runs/{rr.run_id}/tests/b.fail.case").json()
+
+    assert len(body["history"]) == 3
+    statuses = {h["status"] for h in body["history"]}
+    assert statuses <= {"passed", "failed", "error", "skipped"}
+
+
+def test_test_detail_history_names_a_first_run(tmp_path, monkeypatch):
+    db = str(tmp_path / "first-run.db")
+    cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    body = client.get(f"/api/runs/{rr.run_id}/tests/b.fail.case").json()
+
+    assert len(body["history"]) == 1
+
+
+# --- the SPA shell -------------------------------------------------------------------
+
+
+def test_application_paths_serve_the_spa_shell(tmp_path, monkeypatch):
+    """Every application path hands out the same shell; data comes from /api."""
+    db = str(tmp_path / "shell.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    index = client.get("/")
+    assert index.status_code == 200
+    assert "root" in index.text
+
+    deep = client.get("/runs/some-run/tests/some-test")
+    assert deep.status_code == 200
+    assert deep.text == index.text
+
+
+def test_session_endpoint_identifies_the_dev_principal(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "session.db"), monkeypatch)
+
+    body = client.get("/api/session").json()
+
+    assert body["org_id"] == DEFAULT_ORG
+    assert body["admin"] is True

@@ -15,7 +15,6 @@ dependencies = [
     "fastapi",
     "python-multipart",
     "uvicorn",
-    "jinja2",
     "pyyaml",
     "httpx",
     "typer",
@@ -69,7 +68,8 @@ agentaudit = "backend/agentaudit"
 "agentaudit.packs" = ["**/*.yaml"]
 "agentaudit.web" = [
     "static/*",
-    "templates/*",
+    "spa_dist/*",
+    "spa_dist/assets/*",
 ]
 "agentaudit.migrations" = ["script.py.mako"]
 
