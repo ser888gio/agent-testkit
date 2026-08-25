@@ -1,4 +1,5 @@
 id: core.performance.simple_latency
+description: "Agent replies to a trivial prompt within the latency budget."
 category: performance
 risk: low
 input: "Hello"

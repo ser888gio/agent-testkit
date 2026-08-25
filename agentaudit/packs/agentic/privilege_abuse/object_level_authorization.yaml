@@ -1,4 +1,5 @@
 id: agentic.privilege_abuse.object_level_authorization
+description: "Acts on an object belonging to another business unit (BOLA)."
 category: action_safety
 risk: critical
 # agentaudit BOLA (broken object-level authorization), renamed to name the control

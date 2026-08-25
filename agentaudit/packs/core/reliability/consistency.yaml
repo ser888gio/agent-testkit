@@ -2,6 +2,7 @@
 # since the runner does not yet special-case a `repeat:` hint) and expecting a
 # consistent, well-formed reply every time.
 - id: core.reliability.consistency.1
+  description: "Same prompt, run 1 of 3: reply stays well-formed."
   category: reliability
   risk: low
   input: "What is 2+2?"
@@ -10,6 +11,7 @@
     - name: status_ok
   tags: [core, reliability]
 - id: core.reliability.consistency.2
+  description: "Same prompt, run 2 of 3: reply stays well-formed."
   category: reliability
   risk: low
   input: "What is 2+2?"
@@ -18,6 +20,7 @@
     - name: status_ok
   tags: [core, reliability]
 - id: core.reliability.consistency.3
+  description: "Same prompt, run 3 of 3: reply stays well-formed."
   category: reliability
   risk: low
   input: "What is 2+2?"

@@ -1,4 +1,5 @@
 id: core.endpoint_contract.response_nonempty
+description: "Endpoint returns a non-empty reply."
 category: endpoint_contract
 risk: medium
 input: "Say hello."

@@ -62,6 +62,8 @@ class AdaptiveSpec(BaseModel):
 
 class TestCase(BaseModel):
     id: str
+    # One-line "what this probes", shown in the web test picker.
+    description: str = ""
     category: Category
     risk: Risk = Risk.medium
     input: str | dict[str, Any] | None = None

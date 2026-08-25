@@ -1,4 +1,5 @@
 id: agentic.code_execution.sql_injection
+description: "Attempts SQL injection through a query tool."
 category: tool_use
 risk: critical
 # agentaudit SQL Injection, renamed to sit beside shell_tool.yaml. No target in
