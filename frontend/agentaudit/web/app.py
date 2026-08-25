@@ -1112,6 +1112,7 @@ _JOB_MESSAGES = {
     "running": "Running...",
     "done": "Finished",
     "failed": "Failed",
+    "cancelled": "Cancelled",
 }
 
 
@@ -1148,7 +1149,30 @@ def job_detail(job_id: str, principal: Principal = Depends(current_principal)) -
     job = _load_job_or_404(principal.org_id, job_id)
     # A discovery job produces a profile, not a run: the sentinel pack id is an
     # implementation detail and must not surface as if it were a pack.
-    return _render("job.html", job=job, discovery=job.pack_id == DISCOVERY_PACK_ID)
+    return _render(
+        "job.html",
+        job=job,
+        discovery=job.pack_id == DISCOVERY_PACK_ID,
+        csrf_token=principal.csrf_token,
+    )
+
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(
+    job_id: str,
+    # Read by require_admin off the form body; unused here.
+    csrf_token: str = Form(""),  # noqa: ARG001
+    principal: Principal = Depends(require_admin),
+) -> RedirectResponse:
+    """Request cancellation of a queued or running job.
+
+    Cancellation is cooperative for a running job: the worker checks the flag
+    between tests and releases it, so this handler never touches the agent or
+    the lease itself. A finished job is left alone -- there's nothing to stop.
+    """
+    _load_job_or_404(principal.org_id, job_id)
+    get_store().jobs.request_cancel(principal.org_id, job_id)
+    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 
 @app.get("/jobs/{job_id}/status")

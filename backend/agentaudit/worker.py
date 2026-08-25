@@ -49,6 +49,16 @@ class PermanentJobError(Exception):
     """
 
 
+class JobCancelled(Exception):
+    """Raised by `execute_job` once `runner.run`'s `should_stop` has fired.
+
+    Cancellation is cooperative: `should_stop` is only polled between tests, so
+    this is the earliest point the worker can react. Tests already dispatched
+    to the agent still finish; nothing after them starts, and the partial
+    result is discarded rather than saved as a `done` run.
+    """
+
+
 def _heartbeat(store: Store, job_id: str, owner: str, stop: threading.Event, lease: int) -> None:
     # Extend well inside the lease so one slow beat does not lose the job.
     interval = max(lease / 4, 1.0)
@@ -218,6 +228,9 @@ def execute_job(store: Store, job: JobRow) -> str | None:
     def note(_index: int, result) -> None:
         store.jobs.record_progress(job.id, result.test_id, result.status.value)
 
+    def should_stop() -> bool:
+        return store.jobs.is_cancelled(job.id)
+
     # The egress decision above binds every request the audit makes, discovery
     # probes included. `external` stays off for exactly that reason: a spawned
     # scanner re-resolves the hostname itself, so the pinned address would not
@@ -230,7 +243,10 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         plan=True,
         on_plan=count,
         on_result=note,
+        should_stop=should_stop,
     )
+    if should_stop():
+        raise JobCancelled(job.id)
     result, report = audit.result, audit.report
     if audit.unexecuted:
         log.info(
@@ -261,6 +277,9 @@ def work_once(
     beat.start()
     try:
         run_id = execute_job(store, job)
+    except JobCancelled:
+        log.info("job %s: cancelled", job.id)
+        store.jobs.release(job.id, owner, state="cancelled")
     except PermanentJobError as exc:
         error = _safe_job_error(store, job, str(exc))
         log.warning("job %s failed permanently: %s", job.id, error)

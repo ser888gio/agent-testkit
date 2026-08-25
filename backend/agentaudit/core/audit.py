@@ -94,6 +94,7 @@ def execute(
     on_plan: Callable[[list[Any], HarnessPlan | None, list[SelectedTest]], None] | None = None,
     on_test: Callable[[int, Any], None] | None = None,
     on_result: Callable[[int, Any], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> AuditRun:
     """Assemble and grade one run.
 
@@ -141,6 +142,7 @@ def execute(
         endpoint=endpoint,
         on_test=on_test,
         on_result=on_result,
+        should_stop=should_stop,
     )
 
     if external and harness is not None and unexecuted:

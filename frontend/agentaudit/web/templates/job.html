@@ -22,6 +22,13 @@
     <span class="spinner" aria-hidden="true"></span> {{ job.state }}
   </p>
 
+  {% if job.state in ("queued", "running") %}
+  <form method="post" action="/jobs/{{ job.id }}/cancel">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" data-testid="job-cancel-submit">Abort run</button>
+  </form>
+  {% endif %}
+
   {#- Live progress off the job row. A run is written once, when it finishes,
       so nothing here reads a half-written run. -#}
   <div id="run-progress" class="run-progress" data-testid="run-progress"

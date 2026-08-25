@@ -5,7 +5,7 @@ import pytest
 
 import agentaudit.core.audit as audit_module
 from agentaudit.core.store import JobQueue, Store
-from agentaudit.worker import PermanentJobError, execute_job, main, work_once
+from agentaudit.worker import JobCancelled, PermanentJobError, execute_job, main, work_once
 
 MODULE = "tests.test_worker"
 
@@ -184,6 +184,69 @@ def test_discovery_reuses_the_jobs_egress_decision(tmp_path, monkeypatch):
     # keyword, so none of them bypassed validate_endpoint above.
     assert seen, "expected the worker to execute something"
     assert "MISSING" not in seen
+
+
+def test_cancel_requested_before_the_run_starts_stops_it_before_the_first_test(tmp_path):
+    """`should_stop` is polled at the top of the loop, so a cancel that lands before
+    the worker starts skips every test rather than running one first."""
+    second_test = {**_TEST, "id": "w.pass.case.2"}
+    store = Store(str(tmp_path / "cancel.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST, second_test])
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1")
+    store.jobs.claim("w1")
+
+    store.jobs.request_cancel("org-a", job_id)
+
+    with pytest.raises(JobCancelled):
+        execute_job(store, store.jobs.get("org-a", job_id))
+
+    job = store.jobs.get("org-a", job_id)
+    # execute_job itself doesn't release the lease; work_once does that.
+    assert job.state == "running"
+    assert job.tests_done == 0
+
+
+def test_work_once_releases_a_cancelled_job_without_a_run(tmp_path, monkeypatch):
+    second_test = {**_TEST, "id": "w.pass.case.2"}
+    store = Store(str(tmp_path / "cancel2.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST, second_test])
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1")
+
+    real_claim = JobQueue.claim
+
+    def claim_then_cancel(self, owner, **kw):
+        job = real_claim(self, owner, **kw)
+        if job is not None:
+            store.jobs.request_cancel("org-a", job.id)
+        return job
+
+    monkeypatch.setattr(JobQueue, "claim", claim_then_cancel)
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "cancelled"
+    assert job.run_id is None
+    assert store.list_runs("org-a") == []
+
+
+def test_request_cancel_on_a_queued_job_finishes_it_immediately(tmp_path):
+    store, job_id = _store_with_job(tmp_path)
+
+    assert store.jobs.request_cancel("org-a", job_id) is True
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "cancelled"
+    assert work_once(store, "w1") is None  # nothing left to claim
+
+
+def test_request_cancel_on_a_finished_job_is_a_no_op(tmp_path):
+    store, job_id = _store_with_job(tmp_path)
+    work_once(store, "w1")
+
+    assert store.jobs.request_cancel("org-a", job_id) is False
+    assert store.jobs.get("org-a", job_id).state == "done"
 
 
 def test_per_org_cap_stops_one_partner_starving_another(tmp_path):
