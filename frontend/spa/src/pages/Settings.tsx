@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { useSession } from "../session";
 import { useView, Loading } from "../useView";
 import { EmptyState, PageHeader } from "../ui";
 
@@ -60,7 +59,6 @@ function Panel({
 }
 
 export function SettingsPage() {
-  const session = useSession();
   const { view, error } = useView<SettingsView>("/settings");
 
   if (error) return <EmptyState title="Could not load settings" body={error} />;
@@ -183,7 +181,7 @@ export function SettingsPage() {
               ],
               [
                 "Polling",
-                `Job status polls every two seconds while work is live; signed in as ${session.subject}.`,
+                `Job status polls every two seconds while work is live; signed in as ${view.principal.subject}.`,
               ],
             ]}
           />

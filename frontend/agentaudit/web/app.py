@@ -8,6 +8,7 @@ checked in ``auth.require_admin``.
 
 from __future__ import annotations
 
+import mimetypes
 from contextlib import asynccontextmanager
 from urllib.parse import quote
 
@@ -66,10 +67,18 @@ app = FastAPI(
 )
 app.include_router(api_router)
 
+# StaticFiles guesses content types from the OS. On some Windows setups the
+# registry maps .js to application/json, and browsers refuse to execute a
+# module with that MIME type -- pin what we serve.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
+
 if (BASE_DIR / "static").is_dir():
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-if (SPA_DIST / "assets").is_dir():
-    app.mount("/assets", StaticFiles(directory=str(SPA_DIST / "assets")), name="assets")
+if SPA_DIST.is_dir():
+    # Vite is configured with assetsDir "" and base "/assets/", so bundle files
+    # sit directly in spa_dist and their URLs land here.
+    app.mount("/assets", StaticFiles(directory=str(SPA_DIST)), name="assets")
 
 
 @app.get("/login", include_in_schema=False)

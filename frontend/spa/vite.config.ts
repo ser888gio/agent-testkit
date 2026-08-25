@@ -9,6 +9,9 @@ export default defineConfig({
   build: {
     outDir: "../agentaudit/web/spa_dist",
     emptyOutDir: true,
+    // Empty so a URL is `/assets/<file>` — `base` already provides the
+    // "assets" segment that matches app.py's StaticFiles mount.
+    assetsDir: "",
   },
   server: {
     proxy: {

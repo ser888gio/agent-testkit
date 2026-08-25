@@ -13,6 +13,8 @@ export interface Session {
 
 const SessionContext = createContext<Session | null>(null);
 
+// The same `null` means both "outside the provider" and "still fetching
+// /api/session"; callers render a loading state until it resolves.
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   useEffect(() => {
@@ -25,8 +27,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
 }
 
-export function useSession(): Session {
-  const session = useContext(SessionContext);
-  if (!session) throw new Error("useSession outside SessionProvider");
-  return session;
+export function useSession(): Session | null {
+  return useContext(SessionContext);
 }

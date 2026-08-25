@@ -202,7 +202,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span>{item.label}</span>
               </NavLink>
             ))}
-            {session.oidc_enabled ? <a href="/logout"><span>Sign out</span></a> : null}
+            {session?.oidc_enabled ? <a href="/logout"><span>Sign out</span></a> : null}
           </nav>
         </aside>
         <main id="content" tabIndex={-1}>
