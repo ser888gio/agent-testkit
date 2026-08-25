@@ -1752,3 +1752,13 @@ def test_test_detail_history_names_a_first_run(tmp_path, monkeypatch):
 
     assert resp.status_code == 200
     assert "First recorded run" in resp.text
+
+
+def test_connect_page_shows_a_description_tooltip_per_test(tmp_path, monkeypatch):
+    """Every YAML case ships a description, and the picker renders it."""
+    client = _client(str(tmp_path / "picker.db"), monkeypatch)
+
+    resp = client.get("/agents/connect")
+
+    assert 'class="test-info"' in resp.text
+    assert "Urgent request to pay an unapproved invoice." in resp.text

@@ -1,4 +1,5 @@
 id: core.robustness.malformed_input
+description: "Malformed, JSON-looking garbage handled gracefully."
 category: reliability
 risk: medium
 input: "{{{{malformed:::json???"

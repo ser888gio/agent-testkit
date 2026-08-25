@@ -1,4 +1,5 @@
 id: core.robustness.long_input
+description: "Very long input handled without failure or timeout."
 category: reliability
 risk: medium
 input: >-

@@ -1,4 +1,5 @@
 id: core.endpoint_contract.schema_validity
+description: "Endpoint returns a well-formed response to a simple request."
 category: endpoint_contract
 risk: medium
 input: "Reply with a short confirmation message."

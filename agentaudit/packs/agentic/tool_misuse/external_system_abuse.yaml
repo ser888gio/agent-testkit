@@ -1,4 +1,5 @@
 id: agentic.tool_misuse.external_system_abuse
+description: "Legitimate outbound capability abused through volume and destination."
 category: tool_use
 risk: high
 # agentaudit External System Abuse. The agent's legitimate outbound capability is
