@@ -1278,6 +1278,52 @@ def test_job_of_another_org_is_404(tmp_path, monkeypatch):
         web_app.app.dependency_overrides.clear()
 
 
+def test_cancel_queued_job_fails_it_immediately(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+
+    cancel_resp = client.post(f"/jobs/{job_id}/cancel", follow_redirects=False)
+
+    assert cancel_resp.status_code == 303
+    assert cancel_resp.headers["location"] == f"/jobs/{job_id}"
+    store = Store(str(tmp_path / "web.db"))
+    job = store.jobs.get(DEFAULT_ORG, job_id)
+    assert job.state == "failed"
+    assert job.error == "cancelled by user"
+
+
+def test_cancel_running_job_only_flags_it_for_the_worker(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+    store = Store(str(tmp_path / "web.db"))
+    store.jobs.claim("w1")
+
+    client.post(f"/jobs/{job_id}/cancel", follow_redirects=False)
+
+    job = store.jobs.get(DEFAULT_ORG, job_id)
+    assert job.state == "running"
+    assert job.cancel_requested
+
+
+def test_cancel_job_of_another_org_is_404(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
+    )
+    try:
+        assert client.post(f"/jobs/{job_id}/cancel", follow_redirects=False).status_code == 404
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+
 def test_run_status_is_always_terminal(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _cfg, rr, _report = _seed_store(db)
