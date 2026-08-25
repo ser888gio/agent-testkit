@@ -18,9 +18,16 @@
      data-poll-url="/jobs/{{ job.id }}/status"
      data-poll-redirect="/runs/"
      data-progress-target="run-progress"
+     data-abort-target="abort-job-form"
      aria-live="polite">
     <span class="spinner" aria-hidden="true"></span> {{ job.state }}
   </p>
+
+  <form method="post" action="/jobs/{{ job.id }}/cancel" id="abort-job-form"
+        {% if job.state not in ("queued", "running") %}hidden{% endif %}>
+    {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+    <button type="submit" data-testid="abort-job">Abort run</button>
+  </form>
 
   {#- Live progress off the job row. A run is written once, when it finishes,
       so nothing here reads a half-written run. -#}

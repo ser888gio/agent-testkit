@@ -144,6 +144,35 @@ def test_agent_failures_are_evidence_not_job_failures(tmp_path):
     assert store.jobs.reclaim() == 0
 
 
+def test_cancel_requested_mid_run_stops_the_job_and_keeps_partial_evidence(tmp_path, monkeypatch):
+    store = Store(str(tmp_path / "cancel.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    tests = [{**_TEST, "id": f"w.pass.case.{n}"} for n in range(2)]
+    store.save_pack("org-a", "pack-1", "Pack One", tests)
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1")
+
+    # Simulate a cancel request arriving mid-run: flag the job right after the
+    # first test's progress lands, the same point a real caller's request
+    # would race against.
+    original_record_progress = JobQueue.record_progress
+
+    def _record_then_cancel(self, job_id_, test_id, status):
+        original_record_progress(self, job_id_, test_id, status)
+        self.request_cancel("org-a", job_id_)
+
+    monkeypatch.setattr(JobQueue, "record_progress", _record_then_cancel)
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "failed"
+    assert job.error == "cancelled by user"
+    assert job.run_id is not None
+
+    run, _ = store.get_run("org-a", job.run_id)
+    assert [r.test_id for r in run.results] == ["w.pass.case.0"]
+
+
 def test_a_worker_run_persists_the_plan_that_selected_its_tests(tmp_path):
     """A hosted run is evidence too: `report --format plan` must not say "no planner"."""
     store, job_id = _store_with_job(tmp_path)

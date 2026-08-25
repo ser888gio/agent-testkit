@@ -618,6 +618,47 @@ def test_release_rejects_a_non_terminal_state():
         store.jobs.release(job.id, "worker-1", state="running")
 
 
+def test_request_cancel_on_a_queued_job_fails_it_immediately():
+    store = Store(":memory:")
+    job_id = _queue(store)
+
+    assert store.jobs.request_cancel("org-a", job_id) == "failed"
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "failed"
+    assert job.error == "cancelled by user"
+    assert job.finished_at is not None
+
+
+def test_request_cancel_on_a_running_job_only_sets_the_flag():
+    store = Store(":memory:")
+    job_id = _queue(store)
+    store.jobs.claim("worker-1")
+
+    assert store.jobs.request_cancel("org-a", job_id) == "running"
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "running"
+    assert job.cancel_requested
+    assert store.jobs.is_cancel_requested(job_id) is True
+
+
+def test_request_cancel_on_a_finished_job_is_a_no_op():
+    store = Store(":memory:")
+    job_id = _queue(store)
+    store.jobs.claim("worker-1")
+    store.jobs.release(job_id, "worker-1", state="done", run_id="run-1")
+
+    assert store.jobs.request_cancel("org-a", job_id) == "done"
+    assert store.jobs.get("org-a", job_id).state == "done"
+
+
+def test_request_cancel_on_an_unknown_job_raises():
+    store = Store(":memory:")
+    with pytest.raises(KeyError):
+        store.jobs.request_cancel("org-a", "nope")
+
+
 def test_jobs_are_scoped_to_the_calling_org():
     store = Store(":memory:")
     job_id = _queue(store, org="org-a")

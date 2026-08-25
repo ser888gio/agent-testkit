@@ -331,6 +331,7 @@ def run(
     endpoint: ValidatedEndpoint | None = None,
     on_test: Callable[[int, TestCase | PythonTestCase], None] | None = None,
     on_result: Callable[[int, TestResult], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> RunResult:
     """`endpoint` carries the egress decision made at run start.
 
@@ -341,6 +342,11 @@ def run(
     (`core/isolation.py`). Python functions are serialized into the child; the
     tested agent itself runs in a nested worker so it can be killed before the
     sandbox owner snapshots timeout evidence.
+
+    `cancel_check`, if given, is polled before each test; once it returns
+    True the loop stops and whatever ran so far is returned as the result.
+    It cannot interrupt a test already in flight -- that granularity belongs
+    to `core/isolation.py`'s kill boundary, not this loop.
     """
     redactor = redactor or Redactor(target.evidence.redact)
     isolated = IsolatedRunner(target, redactor, endpoint, sandbox_modules())
@@ -349,6 +355,8 @@ def run(
     results: list[TestResult] = []
     try:
         for index, test in enumerate(tests):
+            if cancel_check is not None and cancel_check():
+                break
             if on_test is not None:
                 on_test(index, test)
             repeat = _repeat_count(test)
