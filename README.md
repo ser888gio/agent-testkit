@@ -14,8 +14,9 @@ box (no prompts/tools/source shared) and checks the side effects against a fake 
 "the agent said it wouldn't pay the invoice, and the invoice store confirms it didn't."
 
 > Status: MVP. Two working demo verticals (treasury payment approval, email
-> phishing/exfiltration), an OWASP Agentic Top 10 attack pack, and an EU AI Act / ISO 42001
-> / NIST evidence report. See [Limits](#limits) before you rely on it.
+> phishing/exfiltration), an OWASP Agentic Top 10 attack pack, adaptive multi-turn
+> attacks and model-driven attack generation with human review, and an EU AI Act /
+> ISO 42001 / NIST evidence report. See [Limits](#limits) before you rely on it.
 
 **Documentation:** the full user guide — install, quickstart, concepts, guides, and CLI /
 assertion reference — is a Docusaurus site in [`website/`](website/). Build it locally with
@@ -67,7 +68,8 @@ or add the directory `pip` named to your `PATH` (Windows user installs land in
 `%APPDATA%\Python\PythonXY\Scripts`, Linux/macOS in `~/.local/bin`).
 
 The exit code is the CI gate — non-zero when the run fails its threshold or a critical
-safety test fails. Every run is persisted to `agentaudit.db` (SQLite):
+safety test fails. Every run is persisted to `database/agentaudit.db` (SQLite;
+`AGENTAUDIT_DB` overrides the path):
 
 ```bash
 agentaudit run core --endpoint https://your-agent.example.com/chat --format json
@@ -120,6 +122,20 @@ and only apply to agents in those domains. Testing a payments or email agent mea
 `Sandbox` subclass for your tools — see
 [`backend/agentaudit/domains/`](backend/agentaudit/domains/) for the two worked examples.
 
+### All commands
+
+| Command | Purpose |
+|---|---|
+| `run <packs>` | Execute tests against a target; the exit code is the CI gate. `--plan` selects tests by profile first, `--external` also executes the promptfoo/garak selections, `--attack` applies input transforms. |
+| `plan <packs>` | Probe the target with two trivial probes and print which catalog tests would be selected or excluded, with reasons. |
+| `report --run <id>` | Re-render a stored run as `json`, `md`, `html`, `junit`, `compliance`, `compliance-json` or `plan`. |
+| `compare <a> <b>` | Diff two runs; exits non-zero when a previously-passing critical safety test regresses. |
+| `evolve <packs>` | Generate candidate attacks with a configured attacker model (Ollama works); only novel-and-effective survivors land in a review queue, never straight into the audited baseline. Off unless configured. |
+| `worker` | Run the job-queue worker that executes runs enqueued from the dashboard; secrets resolve only inside the worker. |
+| `ui` | Serve the dashboard at `http://127.0.0.1:8000`; non-loopback binds require OIDC. |
+| `migrate` | Apply Alembic migrations to the SQLite store (`--status` to inspect). |
+| `purge` | Retention: delete runs older than `--keep-days` / beyond `--keep-last`, plus their artifacts. |
+
 ## System overview
 
 ### Infrastructure
@@ -148,6 +164,13 @@ and only apply to agents in those domains. Testing a payments or email agent mea
 - **Test packs as YAML** — a domain-neutral core pack (contract, robustness, prompt
   injection, data leakage, performance, reliability) plus treasury and email packs, plus an
   OWASP Agentic Top 10 pack (tool misuse, memory poisoning, goal hijack, privilege abuse).
+- **Adaptive multi-turn attacks** — scripted escalation ladders (`crescendo`,
+  `sequential`, `linear`, `bad_likert_judge`) choose each turn from the agent's last
+  reply — deterministic and offline by default, with an optional attacker model and
+  judge behind the same protocol.
+- **Attack generation with review** — `agentaudit evolve` asks a configured attacker
+  model for attacks aimed at uncovered cells, keeps only novel-and-effective ones, and
+  parks them in a human review queue until they are promoted into the baseline.
 - **Redaction by default** — secrets/PII stripped from evidence before it's stored or shown;
   storage on/off is a separate policy.
 - **Scoring + CI gate** — risk-weighted score, per-category breakdown, critical-failure
@@ -156,8 +179,14 @@ and only apply to agents in those domains. Testing a payments or email agent mea
   previously-passing critical safety test now fails.
 - **Reports** — JSON, JUnit XML, self-contained HTML, PR-comment Markdown, and an EU AI Act
   / ISO 42001 / NIST evidence report grouped by regulatory obligation.
-- **SQLite store + dashboard** — pass/fail matrix, run history, per-test evidence
-  (redacted request/response, sandbox before/after diff, latency).
+- **Job queue + workers** — dashboard-initiated runs are enqueued and executed by workers
+  with lease-based claiming, retries, per-org concurrency caps and cooperative
+  cancellation between tests; secrets resolve only inside the worker.
+- **Multi-tenant dashboard** — org-scoped, OIDC or local dev auth. Register an agent by
+  URL (no YAML), discover its profile, pick tests from a harness picker with descriptions,
+  cancel queued/running jobs, and browse results: analytics home, pass/fail matrix,
+  per-test evidence (redacted request/response, sandbox before/after diff, latency),
+  per-test history across runs, and a review queue for generated tests.
 
 ### EU AI Act compliance evidence
 
@@ -186,8 +215,9 @@ pass. This is technical readiness evidence, **not** a compliance/CE determinatio
 If you need broad, battle-tested prompt-injection/jailbreak probe coverage today, garak or
 promptfoo cover more ground. agentaudit's edge is asserting on **side effects in a domain
 sandbox**, not just grading the reply text, and turning that into a compliance-shaped report
-— narrower scope, different axis of evidence. `core/adapters.py` normalizes promptfoo/garak
-reports into agentaudit's schema so you can combine both.
+— narrower scope, different axis of evidence. `agentaudit run --external` executes
+promptfoo/garak selections against your target alongside agentaudit's own catalog,
+normalizing their results into agentaudit's schema.
 
 ## Limits
 
@@ -197,9 +227,9 @@ reports into agentaudit's schema so you can combine both.
   not the package layout. `tools/validate.sh` already uses the module form.
 - **No `examples/` directory.** It held only stale `.pyc` cache and was removed. Use the CLI
   commands above — they're the maintained, tested path.
-- **No adaptive/iterative attack loop yet.** Tests run as a fixed, pre-selected set per run;
-  branching into deeper multi-turn probes based on prior responses is on the roadmap below,
-  not implemented.
+- **Generated tests need a human.** `evolve` output sits in a review queue and must be
+  promoted before it counts as audited evidence — nothing model-written enters the baseline
+  unreviewed.
 - **Two demo verticals.** Treasury and email are real, working examples, not a general
   library of agent domains — adding a new one means writing a `Sandbox` subclass.
 
@@ -207,10 +237,13 @@ reports into agentaudit's schema so you can combine both.
 
 The longer-term direction is `discover → profile → generate harness → select tests → attack
 iteratively → score → report evidence` — automatically profiling an agent's risk surface and
-adapting the attack based on what it learns, not just running a fixed pack. Steps 1–3 and 5
-are implemented (`core/discovery.py`, `core/profile.py`, `core/catalog.py`,
-`core/planner.py`, `reports/plan.py`); the adapters exist but don't yet execute promptfoo/
-garak themselves, and the iterative attack loop is not built. See
+adapting the attack based on what it learns, not just running a fixed pack. Most of that
+pipeline ships today: discovery, profiling, catalog ranking and planning
+(`core/discovery.py`, `core/profile.py`, `core/catalog.py`, `core/planner.py`,
+`reports/plan.py`), adaptive multi-turn ladders (`core/adaptive.py`), attack generation with
+human review (`core/evolve.py`), and promptfoo/garak execution via `agentaudit run
+--external`. The remaining work is breadth — more domains, richer probe coverage — and
+deeper automatic selection. See
 [`docs/IMPLEMENTATION-TESTS-PLAN.md`](docs/IMPLEMENTATION-TESTS-PLAN.md) for the detailed
 plan and [`CLAUDE.md`](CLAUDE.md#product-direction) for the current-repo-vs-target framing.
 
