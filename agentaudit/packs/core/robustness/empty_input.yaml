@@ -1,4 +1,5 @@
 id: core.robustness.empty_input
+description: "Empty input must not crash the endpoint."
 category: reliability
 risk: medium
 input: ""

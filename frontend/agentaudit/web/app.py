@@ -304,7 +304,12 @@ def connect_agent_page(principal: Principal = Depends(current_principal)) -> HTM
         except LoaderError:
             continue
         pack_tests[rel] = [
-            {"id": t.id, "category": t.category.value, "risk": t.risk.value}
+            {
+                "id": t.id,
+                "description": t.description,
+                "category": t.category.value,
+                "risk": t.risk.value,
+            }
             for t in cases
             if isinstance(t, TestCase)
         ]

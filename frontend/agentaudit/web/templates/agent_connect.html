@@ -57,6 +57,11 @@
               <span class="mono">{{ case.id }}</span>
               <span class="quiet">{{ case.category }} &middot; {{ case.risk }}</span>
             </label>
+            {%- if case.description %}
+            {#- Native title tooltip: no JS, no popover library. -#}
+            <span class="test-info" tabindex="0" title="{{ case.description }}"
+                  aria-label="{{ case.description }}">i</span>
+            {%- endif %}
           </li>
           {% endfor %}
         </ul>

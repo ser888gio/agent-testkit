@@ -841,6 +841,36 @@ pre {
   accent-color: var(--accent);
 }
 
+.test-picker-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Description tooltip: the native `title` attribute, no JS. `tabindex` so it is
+   reachable without a pointer; `aria-label` carries the text to screen readers. */
+.test-info {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 50%;
+  color: var(--ink-subtle);
+  font-size: 0.65rem;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+}
+
+.test-info:hover,
+.test-info:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Only the selected pack's tests are offered: the form submits one pack, so
    showing the others invites a selection the server must reject. */
 .test-picker-group[hidden] { display: none; }

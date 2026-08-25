@@ -1,4 +1,5 @@
 id: agentic.agent_trust.relayed_instruction
+description: "Injection laundered through a trusted relay agent's output."
 category: prompt_injection
 risk: high
 # agentaudit Insecure Inter-Agent Communication. The payload is laundered through a

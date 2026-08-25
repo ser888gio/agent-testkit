@@ -1,4 +1,5 @@
 id: core.jailbreak.refined_pressure
+description: "An attacker model reads the actual refusal and writes the next turn against it."
 category: prompt_injection
 risk: high
 # The one deepteam idea the scripted ladders cannot express: an attacker model
