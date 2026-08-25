@@ -163,15 +163,19 @@ def test_run_harness_shows_findings_skills_context_summary(tmp_path, monkeypatch
     )
 
 
-def test_harness_nav_redirects_to_latest_run(tmp_path, monkeypatch):
+def test_harness_nav_lists_every_harness(tmp_path, monkeypatch):
+    """It used to redirect to the latest run, which hid every earlier one."""
     db = str(tmp_path / "web.db")
-    _cfg, rr, _report = _seed_store(db)
+    _cfg, rr_first, _report = _seed_store(db)
+    _cfg2, rr_second, _report2 = _seed_store(db)
     client = _client(db, monkeypatch)
 
     resp = client.get("/harness", follow_redirects=False)
 
-    assert resp.status_code == 302
-    assert resp.headers["location"] == f"/runs/{rr.run_id}/harness"
+    assert resp.status_code == 200
+    assert resp.text.count('data-testid="harness-row"') == 2
+    for rr in (rr_first, rr_second):
+        assert f'href="/runs/{rr.run_id}/harness"' in resp.text
 
 
 def test_harness_nav_has_empty_state_without_runs(tmp_path, monkeypatch):
@@ -451,7 +455,7 @@ def test_agents_page_lists_agent_with_run_count(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert "web-target" in resp.text
     assert "Runs" in resp.text
-    assert "Add Agent" in resp.text
+    assert 'href="/agents/register"' in resp.text
     assert 'href="/agents/connect"' in resp.text
     # two runs recorded for the single agent
     assert ">2<" in resp.text
@@ -468,8 +472,8 @@ def test_agents_page_empty_state_links_add_agent(tmp_path, monkeypatch):
 
     assert resp.status_code == 200
     assert "No agents yet" in resp.text
-    assert "Add Agent" in resp.text
-    assert 'href="/agents/connect"' in resp.text
+    assert "Register Agent" in resp.text
+    assert 'href="/agents/register"' in resp.text
 
 
 def test_connect_agent_page_lists_configs_and_packs(tmp_path, monkeypatch):
@@ -1754,11 +1758,90 @@ def test_test_detail_history_names_a_first_run(tmp_path, monkeypatch):
     assert "First recorded run" in resp.text
 
 
-def test_connect_page_shows_a_description_tooltip_per_test(tmp_path, monkeypatch):
-    """Every YAML case ships a description, and the picker renders it."""
-    client = _client(str(tmp_path / "picker.db"), monkeypatch)
+def test_agent_without_a_target_row_hides_the_profile_button(tmp_path, monkeypatch):
+    """A CLI-launched run writes an `agents` row but no `targets` row.
 
-    resp = client.get("/agents/connect")
+    Discovery reads the endpoint off the target, so offering the button here
+    only ever produced `404 unknown target`.
+    """
+    db = str(tmp_path / "unregistered.db")
+    _seed_store(db)  # writes agents rows via save_run, no targets row
+    client = _client(db, monkeypatch)
 
-    assert 'class="test-info"' in resp.text
-    assert "Urgent request to pay an unapproved invoice." in resp.text
+    resp = client.get("/agents/web-target")
+
+    assert resp.status_code == 200
+    assert 'data-testid="profile-unregistered"' in resp.text
+    assert 'data-testid="discover-submit"' not in resp.text
+
+
+def test_register_agent_persists_a_target_and_seeds_the_allowlist(tmp_path, monkeypatch):
+    """Registering by endpoint is what makes an agent profileable."""
+    db = str(tmp_path / "register.db")
+    from agentaudit.core.store import Store as _Store
+
+    _Store(db)
+    client = _client(db, monkeypatch)
+
+    # The greedy /agents/{agent_id:path} route must not swallow this one.
+    form = client.get("/agents/register")
+    assert form.status_code == 200
+    assert 'data-testid="register-form"' in form.text
+
+    resp = client.post(
+        "/agents/register",
+        data={
+            "target_id": "support-bot",
+            "endpoint": "https://agent.example.com/chat",
+            "method": "POST",
+            "text_path": "$.reply",
+            "sandbox": "email",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    store = _Store(db)
+    assert store.get_target(DEFAULT_ORG, "support-bot")["agent"]["endpoint"] == (
+        "https://agent.example.com/chat"
+    )
+    # Only the host the tenant typed is dialable.
+    assert store.get_target_allowed_hosts(DEFAULT_ORG, "support-bot") == ["agent.example.com"]
+
+    # And it is now profileable rather than 404ing.
+    detail = client.get("/agents/support-bot")
+    assert 'data-testid="discover-submit"' in detail.text
+
+
+def test_register_agent_rejects_a_non_http_endpoint(tmp_path, monkeypatch):
+    db = str(tmp_path / "register-bad.db")
+    from agentaudit.core.store import Store as _Store
+
+    _Store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.post(
+        "/agents/register",
+        data={"target_id": "x", "endpoint": "file:///etc/passwd"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 400
+    assert 'data-testid="register-error"' in resp.text
+
+
+def test_run_export_matches_the_cli_renderers(tmp_path, monkeypatch):
+    """The download is the CLI report, not a second implementation of it."""
+    from agentaudit.reports.md import to_markdown
+
+    db = str(tmp_path / "export.db")
+    _cfg, rr, report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/runs/{rr.run_id}/export/md")
+
+    assert resp.status_code == 200
+    assert resp.text == to_markdown(rr, report)
+    assert rr.run_id[:8] in resp.headers["content-disposition"]
+
+    assert client.get(f"/runs/{rr.run_id}/export/exe").status_code == 404

@@ -16,12 +16,21 @@
       <h2 id="profile-title">Discovered profile</h2>
       <p>What probing the endpoint revealed, and therefore which tests are worth running.</p>
     </div>
+    {% if registered %}
     <form method="post" action="/agents/{{ agent_id | urlencode }}/discover">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" data-testid="discover-submit">{{ "Re-profile" if profile else "Profile agent" }}</button>
     </form>
+    {% endif %}
   </div>
-  {% if not profile %}
+  {% if not registered %}
+  <p class="quiet" data-testid="profile-unregistered">
+    This agent has run history but no registered target, so there is no endpoint to
+    probe. Targets are registered when a run is launched from
+    <a href="/agents/connect">Connect an agent</a>; runs started from the CLI record
+    the agent only.
+  </p>
+  {% elif not profile %}
   <p class="quiet">Never profiled. Probing sends a few low-risk requests to the endpoint and records shapes only &mdash; never response text.</p>
   {% else %}
   <dl class="harness-meta">
@@ -60,6 +69,26 @@
   {% endif %}
   {% endif %}
 </section>
+
+{% if registered %}
+<section class="panel" data-testid="agent-egress">
+  <div class="panel-header">
+    <div>
+      <h2>Egress allowlist</h2>
+      <p>Hosts this target may be dialled at. Empty means no egress is permitted.</p>
+    </div>
+  </div>
+  <form method="post" action="/agents/{{ agent_id | urlencode }}/allowlist" class="test-form">
+    {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+    <label>Allowed hosts
+      <input name="allowed_hosts" value="{{ allowed_hosts | join(', ') }}"
+             placeholder="agent.example.com" data-testid="allowlist-input">
+      <span class="quiet">Comma or space separated. Workers refuse any host outside this list.</span>
+    </label>
+    <button type="submit" data-testid="allowlist-submit">Save allowlist</button>
+  </form>
+</section>
+{% endif %}
 
 {% if runs %}
 <section class="stat-grid">

@@ -6,6 +6,7 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -21,6 +22,7 @@ import agentaudit
 from agentaudit.core import runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.attacks import split_variant
+from agentaudit.core.config import KNOWN_SANDBOXES, ConfigError, load_target_dict
 from agentaudit.core.evolve import (
     GENERATED_PREFIX,
     PROMOTED_PREFIX,
@@ -34,6 +36,10 @@ from agentaudit.core.regressions import compare
 from agentaudit.core.schema import Category, Risk, TestCase
 from agentaudit.core.store import DISCOVERY_PACK_ID, Store
 from agentaudit.reports.charts import bar_rows, donut_segments, sparkline_points
+from agentaudit.reports.html import to_html
+from agentaudit.reports.json import to_json
+from agentaudit.reports.junit import to_junit
+from agentaudit.reports.md import to_markdown
 from agentaudit.web.auth import (
     LOGIN_STATE_COOKIE,
     SESSION_COOKIE,
@@ -157,6 +163,7 @@ def _render(template_name: str, status_code: int = 200, **context) -> HTMLRespon
     context.setdefault("active", "dashboard")
     context.setdefault("status_labels", _STATUS_LABELS)
     context.setdefault("oidc_enabled", auth_enabled())
+    context.setdefault("current_year", datetime.now(timezone.utc).year)
     template = _env.get_template(template_name)
     return HTMLResponse(template.render(**context), status_code=status_code)
 
@@ -343,6 +350,92 @@ def connect_agent_page(principal: Principal = Depends(current_principal)) -> HTM
     )
 
 
+@app.get("/agents/register", response_class=HTMLResponse)
+def register_agent_page(principal: Principal = Depends(current_principal)) -> HTMLResponse:
+    """Form for registering an HTTP target by endpoint, without shipping a YAML file."""
+    return _render(
+        "agent_register.html",
+        sandboxes=KNOWN_SANDBOXES,
+        values={},
+        error=None,
+        csrf_token=principal.csrf_token,
+        active="agents",
+    )
+
+
+@app.post("/agents/register")
+def register_agent(
+    target_id: str = Form(...),
+    endpoint: str = Form(...),
+    sandbox: str = Form(""),
+    method: str = Form("POST"),
+    text_path: str = Form("$.text"),
+    csrf_token: str = Form(""),  # noqa: ARG001
+    principal: Principal = Depends(require_admin),
+) -> Response:
+    """Persist a tenant-authored HTTP target.
+
+    The endpoint host seeds the egress allowlist: a target the tenant typed is
+    only reachable at the host they typed. `load_target_dict` validates the
+    same shape a shipped YAML config would produce, so a bad endpoint is a 400
+    here rather than a worker crash later.
+    """
+
+    def _fail(message: str) -> HTMLResponse:
+        return _render(
+            "agent_register.html",
+            sandboxes=KNOWN_SANDBOXES,
+            values={
+                "target_id": target_id,
+                "endpoint": endpoint,
+                "sandbox": sandbox,
+                "method": method,
+                "text_path": text_path,
+            },
+            error=message,
+            csrf_token=principal.csrf_token,
+            active="agents",
+            status_code=400,
+        )
+
+    target_id = target_id.strip()
+    endpoint = endpoint.strip()
+    if not target_id:
+        return _fail("Target id is required.")
+
+    parts = urlsplit(endpoint)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return _fail("Endpoint must be an absolute http:// or https:// URL.")
+
+    raw = {
+        "id": target_id,
+        "agent": {
+            "type": "http",
+            "endpoint": endpoint,
+            "method": method,
+            "response": {"text_path": text_path or "$.text"},
+        },
+    }
+    if sandbox:
+        raw["sandbox"] = sandbox
+    try:
+        load_target_dict(raw, source=f"target '{target_id}'")
+    except ConfigError as exc:
+        return _fail(str(exc))
+
+    try:
+        get_store().save_target(
+            principal.org_id,
+            target_id,
+            target_id,
+            raw,
+            allowed_hosts=[parts.hostname],
+        )
+    except (LoaderError, ValueError) as exc:
+        return _fail(str(exc))
+    return RedirectResponse(url=f"/agents/{quote(target_id)}", status_code=303)
+
+
 # :path so URL-shaped agent ids (e.g. "http://127.0.0.1:9911/") keep their slashes.
 @app.get("/agents/{agent_id:path}", response_class=HTMLResponse)
 def agent_detail(agent_id: str, principal: Principal = Depends(current_principal)) -> HTMLResponse:
@@ -353,12 +446,17 @@ def agent_detail(agent_id: str, principal: Principal = Depends(current_principal
     run_views = [runview.run_row(r) for r in runs]
     failures = [r for r in run_views if r["needs_attention"]]
     # An agent id is the target id it was run against (`_import_first_party`),
-    # so the profile keys off the same value. A target that was never imported
-    # as a row has no profile to show rather than a 404.
+    # so the profile keys off the same value. `agents` rows are written by
+    # every save_run, but `targets` rows only by a run launched from the web
+    # UI -- so a CLI-launched agent lists here with no target to profile.
+    # Discovery needs that row (it reads the endpoint from it), so offer the
+    # button only when it exists rather than letting it 404.
     try:
-        profile = get_store().get_target_profile(principal.org_id, agent_id)
+        profile = store.get_target_profile(principal.org_id, agent_id)
+        registered = True
     except KeyError:
         profile = None
+        registered = False
     return _render(
         "agent_detail.html",
         agent_id=agent_id,
@@ -369,9 +467,43 @@ def agent_detail(agent_id: str, principal: Principal = Depends(current_principal
         latest_run_id=latest_run_id,
         profile=profile[0] if profile else None,
         profiled_at=profile[1] if profile else None,
+        registered=registered,
+        allowed_hosts=(
+            store.get_target_allowed_hosts(principal.org_id, agent_id) if registered else []
+        ),
         csrf_token=principal.csrf_token,
         active="agents",
     )
+
+
+@app.post("/agents/{agent_id:path}/allowlist")
+def update_allowlist(
+    agent_id: str,
+    allowed_hosts: str = Form(""),
+    csrf_token: str = Form(""),  # noqa: ARG001
+    principal: Principal = Depends(require_admin),
+) -> Response:
+    """Edit the hosts a registered target may be dialled at.
+
+    This is the one piece of run configuration that is genuinely per-tenant and
+    persisted; the process-level settings on /settings are deployment-owned and
+    stay read-only on purpose (see `worker.py` on AGENTAUDIT_EGRESS_ALLOW_LOCAL).
+    """
+    store = get_store()
+    try:
+        raw = store.get_target(principal.org_id, agent_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"unknown target '{agent_id}'") from None
+    hosts = [h.strip() for h in allowed_hosts.replace(",", " ").split() if h.strip()]
+    store.save_target(
+        principal.org_id,
+        agent_id,
+        agent_id,
+        raw,
+        secret_ref=store.get_target_secret_ref(principal.org_id, agent_id),
+        allowed_hosts=hosts,
+    )
+    return RedirectResponse(url=f"/agents/{quote(agent_id)}", status_code=303)
 
 
 @app.post("/agents/{agent_id:path}/discover")
@@ -666,11 +798,19 @@ def _load_run_or_404(org_id: str, run_id: str):
 
 
 @app.get("/harness", response_class=HTMLResponse)
-def latest_harness(principal: Principal = Depends(current_principal)) -> Response:
-    latest_runs = get_store().list_runs(principal.org_id, limit=1)
-    if not latest_runs:
+def harness_index(principal: Principal = Depends(current_principal)) -> Response:
+    """Every recorded harness, newest first.
+
+    A harness is not a stored entity: `runview.harness` derives it from a run,
+    so "the harnesses" are exactly "the runs" viewed through that lens. Listing
+    them beats the old redirect-to-latest, which hid every earlier run.
+    """
+    store = get_store()
+    runs = store.list_runs(principal.org_id, limit=100)
+    if not runs:
         return _render("harness_empty.html", active="harness")
-    return RedirectResponse(url=f"/runs/{latest_runs[0].id}/harness", status_code=302)
+    rows = [runview.run_row(r) for r in runs]
+    return _render("harness_index.html", harnesses=rows, active="harness")
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
@@ -703,6 +843,39 @@ def run_harness(run_id: str, principal: Principal = Depends(current_principal)) 
         report=report,
         harness=runview.harness(run, report),
         active="harness",
+    )
+
+
+# Reuses the CLI's renderers so a downloaded report is byte-identical to
+# `agentaudit report --format ...`. Redaction already happened before the run
+# was stored, so these render redacted evidence by construction.
+_EXPORT_FORMATS = {
+    "md": (to_markdown, "text/markdown; charset=utf-8", "md"),
+    "json": (to_json, "application/json", "json"),
+    "junit": (to_junit, "application/xml", "xml"),
+    "html": (to_html, "text/html; charset=utf-8", "html"),
+}
+
+
+@app.get("/runs/{run_id}/export/{fmt}")
+def export_run(
+    run_id: str,
+    fmt: str,
+    principal: Principal = Depends(current_principal),
+) -> Response:
+    """Download one run's report in a CLI-equivalent format."""
+    if fmt not in _EXPORT_FORMATS:
+        raise HTTPException(status_code=404, detail=f"unknown format '{fmt}'")
+    run, report = _load_run_or_404(principal.org_id, run_id)
+    render, media_type, suffix = _EXPORT_FORMATS[fmt]
+    return Response(
+        content=render(run, report),
+        media_type=media_type,
+        headers={
+            "content-disposition": (
+                f'attachment; filename="agentaudit-{run_id[:8]}.{suffix}"'
+            )
+        },
     )
 
 

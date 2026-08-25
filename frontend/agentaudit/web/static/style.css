@@ -56,6 +56,116 @@
   /* Linear carries depth with the surface ladder + hairlines, not shadow. */
   --shadow: none;
   --shadow-float: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --sidebar-bg: rgba(1, 1, 2, 0.86);
+}
+
+/* Light theme. Same token contract as the dark :root above -- every rule in this
+   file already reads through these names, so the theme is a palette swap and
+   nothing else. Applied when the user picks light, or when they have expressed
+   no preference and the OS asks for light. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surface ladder inverts: the canvas is the *darkest* neutral here so raised
+     panels can climb toward white, keeping the same "higher = lighter" logic. */
+  --canvas: #f7f8f9;
+  --surface-1: #ffffff;
+  --surface-2: #fbfbfc;
+  --surface-3: #f4f5f7;
+  --surface-4: #eef0f3;
+  --hairline: #e3e5e9;
+  --hairline-strong: #ccd0d7;
+  --hairline-tertiary: #b1b6bf;
+
+  /* Ink ramp inverts. --ink-subtle stays >=4.5:1 on white so muted body copy
+     and table labels remain readable, not decorative grey. */
+  --ink: #14161a;
+  --ink-muted: #35393f;
+  --ink-subtle: #5b6069;
+  --ink-tertiary: #767b84;
+
+  /* Accent darkens: the dark theme's #5e6ad2 is only ~3.6:1 on white, which
+     fails text contrast for links and the primary CTA label. */
+  --accent: #4c56b8;
+  --accent-hover: #3b449b;
+  --accent-focus: #4c56b8;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(76, 86, 184, 0.10);
+
+  /* Status palette re-tuned for a white ground. The dark theme's #3fcf62 /
+     #e0a343 are legible on near-black but drop under 3:1 on white, so the text
+     tones are darkened while the tinted fills stay light. */
+  --pass-bg: rgba(23, 130, 60, 0.10);
+  --pass-text: #17823c;
+  --pass-border: rgba(23, 130, 60, 0.28);
+  --fail-bg: rgba(197, 43, 43, 0.09);
+  --fail-text: #c22b2b;
+  --fail-border: rgba(197, 43, 43, 0.26);
+  --warn-bg: rgba(166, 106, 10, 0.11);
+  --warn-text: #8a5808;
+  --warn-border: rgba(166, 106, 10, 0.28);
+  --neutral-bg: var(--surface-3);
+  --neutral-text: var(--ink-subtle);
+
+  /* Light UI carries depth with soft shadow, since hairlines alone read flat. */
+  --shadow: 0 1px 2px rgba(16, 20, 28, 0.06);
+  --shadow-float: 0 12px 32px rgba(16, 20, 28, 0.14);
+  --sidebar-bg: rgba(255, 255, 255, 0.86);
+}
+
+/* Same palette when the OS asks for light and the user has not chosen a
+   theme explicitly. Guarded on :not([data-theme]) so an explicit dark pick
+   still wins over the OS preference. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    /* Surface ladder inverts: the canvas is the *darkest* neutral here so raised
+       panels can climb toward white, keeping the same "higher = lighter" logic. */
+    --canvas: #f7f8f9;
+    --surface-1: #ffffff;
+    --surface-2: #fbfbfc;
+    --surface-3: #f4f5f7;
+    --surface-4: #eef0f3;
+    --hairline: #e3e5e9;
+    --hairline-strong: #ccd0d7;
+    --hairline-tertiary: #b1b6bf;
+
+    /* Ink ramp inverts. --ink-subtle stays >=4.5:1 on white so muted body copy
+       and table labels remain readable, not decorative grey. */
+    --ink: #14161a;
+    --ink-muted: #35393f;
+    --ink-subtle: #5b6069;
+    --ink-tertiary: #767b84;
+
+    /* Accent darkens: the dark theme's #5e6ad2 is only ~3.6:1 on white, which
+       fails text contrast for links and the primary CTA label. */
+    --accent: #4c56b8;
+    --accent-hover: #3b449b;
+    --accent-focus: #4c56b8;
+    --on-accent: #ffffff;
+    --accent-soft: rgba(76, 86, 184, 0.10);
+
+    /* Status palette re-tuned for a white ground. The dark theme's #3fcf62 /
+       #e0a343 are legible on near-black but drop under 3:1 on white, so the text
+       tones are darkened while the tinted fills stay light. */
+    --pass-bg: rgba(23, 130, 60, 0.10);
+    --pass-text: #17823c;
+    --pass-border: rgba(23, 130, 60, 0.28);
+    --fail-bg: rgba(197, 43, 43, 0.09);
+    --fail-text: #c22b2b;
+    --fail-border: rgba(197, 43, 43, 0.26);
+    --warn-bg: rgba(166, 106, 10, 0.11);
+    --warn-text: #8a5808;
+    --warn-border: rgba(166, 106, 10, 0.28);
+    --neutral-bg: var(--surface-3);
+    --neutral-text: var(--ink-subtle);
+
+    /* Light UI carries depth with soft shadow, since hairlines alone read flat. */
+    --shadow: 0 1px 2px rgba(16, 20, 28, 0.06);
+    --shadow-float: 0 12px 32px rgba(16, 20, 28, 0.14);
+    --sidebar-bg: rgba(255, 255, 255, 0.86);
+  }
 }
 
 * { box-sizing: border-box; }
@@ -128,7 +238,7 @@ main:focus-visible {
   width: 240px;
   height: 100vh;
   padding: 1rem;
-  background: rgba(1, 1, 2, 0.86);
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   backdrop-filter: blur(14px);
 }
@@ -157,6 +267,9 @@ main:focus-visible {
   font-weight: 700;
   letter-spacing: 0;
 }
+
+/* Desktop: the sidebar is always open, so the hamburger has no job. */
+.nav-toggle-button { display: none; }
 
 .sidebar nav {
   display: flex;
@@ -207,10 +320,17 @@ main:focus-visible {
 }
 
 main {
+  position: relative;
   width: min(100%, 1180px);
   min-width: 0;
   margin: 0 auto;
   padding: clamp(1.25rem, 4vw, 3rem) clamp(1rem, 3vw, 2rem) 4rem;
+  /* Column so the footer's margin-top:auto pins it to the viewport bottom on
+     short pages, and gets pushed down by long ones. `position: fixed` would
+     overlap content instead. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 h1, h2, h3, p { margin-top: 0; }
@@ -926,6 +1046,57 @@ pre {
   white-space: nowrap;
 }
 
+/* Theme toggle, pinned to the top-right of the content column. Absolute rather
+   than a flex child so it does not sit in main's column and disturb the
+   footer's margin-top:auto pinning. */
+.theme-toggle {
+  position: absolute;
+  top: clamp(1.25rem, 4vw, 3rem);
+  right: clamp(1rem, 3vw, 2rem);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.theme-icon {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Show only the icon for the theme the click switches *to*: a sun while dark
+   is active, a moon while light is. Default (no data-theme) is dark, so the
+   media query mirrors this for OS-driven light. */
+.theme-icon-dark { display: none; }
+.theme-icon-light { display: block; }
+
+:root[data-theme="light"] .theme-icon-light { display: none; }
+:root[data-theme="light"] .theme-icon-dark { display: block; }
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .theme-icon-light { display: none; }
+  :root:not([data-theme]) .theme-icon-dark { display: block; }
+}
+
 @media (max-width: 640px) {
   .bar-list li {
     grid-template-columns: 1fr auto;
@@ -1216,6 +1387,10 @@ pre {
     border-bottom: 1px solid var(--border);
   }
 
+  /* The sidebar stacks above main here rather than beside it, so a full-viewport
+     main would push the page past 100vh and strand the footer below the fold. */
+  main { min-height: 0; }
+
   h1 { font-size: 3rem; }
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-grid,
@@ -1230,16 +1405,37 @@ pre {
   .sidebar {
     align-items: stretch;
     gap: 0.65rem;
+    /* Brand and hamburger share a row; nav drops below when opened. */
+    display: grid;
+    grid-template-columns: 1fr auto;
   }
 
+  .nav-toggle-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.5rem;
+    padding: 0 0.7rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .nav-toggle-button:hover { color: var(--text); background: var(--surface); }
+
+  /* Collapsed by default; the checkbox is the only state, so no JS runs. */
   .sidebar nav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 0.1rem;
-    /* Without this the flex item sizes to its content and widens the page
-       instead of scrolling inside itself. */
+    display: none;
+    grid-column: 1 / -1;
+    flex-direction: column;
     min-width: 0;
   }
+
+  .nav-toggle:checked ~ nav { display: flex; }
 
   .sidebar nav a { flex: 0 0 auto; }
 
@@ -1323,4 +1519,27 @@ pre {
   .finding-side {
     justify-content: start;
   }
+}
+
+.page-header-actions-group {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.site-footer {
+  margin-top: auto;
+  padding-bottom: 0.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.site-footer p { margin: 0 0 0.4rem; max-width: 60ch; }
+
+.site-footer-brand {
+  color: var(--text);
+  font-weight: 600;
 }

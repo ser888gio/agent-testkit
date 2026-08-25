@@ -2,6 +2,14 @@
 
 Use this folder as the documentation entry point for the repository.
 
+## User-facing documentation
+
+The product documentation (install, quickstart, guides, CLI and assertion
+reference) is a Docusaurus site in [`website/`](../website/). Build it with
+`npm install && npm run build` from that directory.
+
+This `docs/` folder holds contributor and architecture material instead.
+
 ## Sections
 
 - `keycloak.md` - local identity stack, token contract, and realm lifecycle.
