@@ -1,42 +1,68 @@
-# feat/web-ui — Spec
+# feat/react-spa — Spec
 
-**Task 18 · Depends on: 13,12 · Files:** `agentaudit/web/app.py`,
-`agentaudit/web/templates/*.html`, `agentaudit/web/static/*`, `tests/test_web.py`
+**Rewrite of task 18 · Files:** `frontend/spa/**`, `agentaudit/web/api.py`,
+`agentaudit/web/app.py`, `agentaudit/web/runtime.py`, `tests/test_web.py`
 
 ## Goal
-A FastAPI + Jinja/HTMX dashboard (no JS build) over the `Store`, read-only for the MVP plus a
-"run again" trigger.
 
-## Routes → page acceptance criteria
-| route | page | must show |
-|-------|------|-----------|
-| `GET /` | Dashboard | list of latest runs (agent, time, gate verdict), overall pass rate, **critical failure count** prominent |
-| `GET /agents` | Agents | each agent + latest score/status |
-| `GET /agents/{id}` | Agent detail | run history for the agent + latest pass/fail matrix |
-| `GET /runs/{run_id}` | Run detail | score header (overall/pass rate/critical); **category × test matrix**; **failed tests listed first** |
-| `GET /runs/{run_id}/tests/{test_id}` | Test detail | input, **redacted** response, each assertion (pass/fail + detail), **sandbox diff**, latency |
-| `POST /runs?target=…` | Run again | triggers a run (HTMX), then redirects/swaps to the new run detail |
-| `GET /runs/{run_id}/status` | poll fragment | HTMX polling target for an in-progress run |
+The same dashboard, rewritten from FastAPI + Jinja to a React single-page app.
+FastAPI keeps auth, authorization, and derivation; it now serves JSON under
+`/api/*` plus the built SPA bundle. No server-side templating remains.
+
+## Architecture
+
+| layer | location | owns |
+|-------|----------|------|
+| Pages | `frontend/spa/src/pages/*.tsx` (React 18 + TS + Vite) | rendering, filters, polling |
+| JSON API | `frontend/agentaudit/web/api.py` | the same derivation the Jinja pages did, serialized |
+| Shell | `frontend/agentaudit/web/app.py` | auth routes, static mounts, SPA catch-all |
+| Runtime | `frontend/agentaudit/web/runtime.py` | Store singleton, path safety |
+
+Build: `npm ci && npm run build` in `frontend/spa` → output in
+`web/spa_dist`, served at `/assets/*` with `index.html` handed out for every
+application GET (behind a Principal, like every other read).
+
+## Routes → page acceptance criteria (unchanged semantics)
+
+| SPA route | API endpoint | must show |
+|-----------|--------------|-----------|
+| `/` | `GET /api/analytics` | trend sparkline, gate pass rate, **critical failure count**, failure rates by category/risk, flakiest tests |
+| `/runs` | `GET /api/runs` | latest runs (agent, time, gate verdict), stats band, needs-attention queue, filters (q/status/agent/sort) |
+| `/runs/:id` | `GET /api/runs/{run_id}` | score header; **category × test matrix**; **failed tests listed first**; plan rationale |
+| `/runs/:id/tests/:test_id` | `GET /api/runs/{run_id}/tests/{test_id}` | input, **redacted** response, each assertion, sandbox diff, latency, cross-run history |
+| `/runs/:id/harness` | `GET /api/runs/{run_id}/harness` | environment, skills, memory & context, chronological workflow; export links |
+| `/agents` etc. | `GET /api/agents*` | agents + latest score; register-by-endpoint; connect/run form |
+| `/tests`, `/tests/new` | `GET/POST /api/tests` | library with filters; authoring form storing DB rows |
+| `/generated` | `GET /api/generated` + promote/reject | machine-authored queue; promote freezes the id |
+| `/jobs/:id` | `GET /api/jobs/{job_id}(/status)` | live progress (2s polling), cancel |
+| `/compare?a&b` | `GET /api/compare` | newly failing/passing, still failing, coverage change, score delta |
+| `/settings` | `GET /api/settings` | deployment-owned runtime config (read-only) |
 
 ## Behavior
-- All data comes from `Store` read helpers (task 13). No business logic in templates.
-- Colors: passed=green, failed=red, error=amber, skipped=grey. Matrix cells link to test detail.
-- Evidence shown is whatever the store holds — already redacted; the UI never un-redacts and
-  shows `«redacted:…»` markers as-is.
-- `POST /runs` runs synchronously for the MVP if fast, else kicks a background task and the
-  status fragment polls until `finished_at` is set.
 
-## Failure behavior
-- Unknown `run_id`/`test_id` → 404 page (not a stack trace).
-- Empty DB → dashboard shows an empty state with a "run your first pack" hint.
+- All data comes from `Store` read helpers via `core.runview`. No business
+  logic in components; no derivation in handlers.
+- Colors stay semantic: passed=green, failed=red, error=amber, skipped=grey.
+  Matrix cells link to test detail. The stylesheet (`static/style.css`) is
+  shared unchanged; both themes keep their contrast guarantees.
+- Evidence shown is whatever the store holds — already redacted; the UI shows
+  `«redacted:…»` markers as-is and uses no HTML-injection sinks.
+- Mutations are admin-gated; browser sessions echo the CSRF token from
+  `/api/session` in `x-csrf-token`. Job progress polls every 2s while running
+  and follows the job to its run when done.
+- Unknown ids → JSON 404 `{detail}`; the SPA renders an empty-state error page.
 
-## Tests required (FastAPI `TestClient`)
-- Seed the store with one run; `GET /` shows it and the critical count.
-- `GET /runs/{id}` renders the category matrix and lists a failed test before passed ones.
-- `GET /runs/{id}/tests/{tid}` shows redacted response + assertion details + latency.
-- Unknown ids → 404.
+## Tests required (FastAPI `TestClient` over `/api/*`)
+
+- Seed the store with one run; `GET /api/runs` lists it with the critical count.
+- `GET /api/runs/{id}` returns the matrix with failures ordered first.
+- `GET /api/runs/{id}/tests/{tid}` carries redacted response, assertion details,
+  latency.
+- Unknown ids → 404. Every route 401s without a token (route-table walk).
+- SPA sources keep their `data-testid` hooks and use no HTML injection sinks.
 
 ## Done when
-With a seeded DB, the dashboard renders latest runs + critical count, run detail shows the
-category matrix (failures first), and test detail shows redacted evidence, assertions, sandbox
-diff, and latency.
+
+With a seeded DB, `/api/runs` serves the run list + critical count, run detail
+serves the category matrix (failures first), test detail serves redacted
+evidence, assertions, sandbox diff, and latency — all rendered by the React SPA.

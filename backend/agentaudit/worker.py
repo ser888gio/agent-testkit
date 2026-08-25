@@ -50,13 +50,19 @@ class PermanentJobError(Exception):
 
 
 class JobCancelled(Exception):
-    """Raised by `execute_job` once `runner.run`'s `should_stop` has fired.
+    """Raised by `execute_job` once the audit's `should_stop` has fired.
 
     Cancellation is cooperative: `should_stop` is only polled between tests, so
     this is the earliest point the worker can react. Tests already dispatched
-    to the agent still finish; nothing after them starts, and the partial
-    result is discarded rather than saved as a `done` run.
+    to the agent still finish; nothing after them starts. When at least one
+    test had finished, its partial run is saved first and `run_id` carries it,
+    so the job can link the evidence that exists.
     """
+
+    def __init__(self, job_id: str, run_id: str | None = None):
+        super().__init__(job_id)
+        self.job_id = job_id
+        self.run_id = run_id
 
 
 def _heartbeat(store: Store, job_id: str, owner: str, stop: threading.Event, lease: int) -> None:
@@ -250,7 +256,15 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         should_stop=should_stop,
     )
     if should_stop():
-        raise JobCancelled(job.id)
+        # A cancellation after some tests finished still saves what ran as a
+        # (shorter) run -- partial evidence is evidence. Before the first test
+        # there is nothing to keep, so the job ends without a run.
+        result, report = audit.result, audit.report
+        run_id: str | None = None
+        if result.results:
+            store.save_run(job.org_id, target, result, report, job.created_by, plan=audit.plan)
+            run_id = result.run_id
+        raise JobCancelled(job.id, run_id)
     result, report = audit.result, audit.report
     if audit.unexecuted:
         log.info(
@@ -281,9 +295,16 @@ def work_once(
     beat.start()
     try:
         run_id = execute_job(store, job)
-    except JobCancelled:
+    except JobCancelled as exc:
         log.info("job %s: cancelled", job.id)
-        store.jobs.release(job.id, owner, state="cancelled")
+        if exc.run_id:
+            # Partial evidence exists; report the cancel like any other failure
+            # so the linked run is never mistaken for a complete gate decision.
+            store.jobs.release(
+                job.id, owner, state="failed", run_id=exc.run_id, error=CANCELLED_ERROR
+            )
+        else:
+            store.jobs.release(job.id, owner, state="cancelled")
     except PermanentJobError as exc:
         error = _safe_job_error(store, job, str(exc))
         log.warning("job %s failed permanently: %s", job.id, error)
@@ -297,7 +318,7 @@ def work_once(
         # putting secrets in logs.
         log.error("job %s hit an infrastructure fault; leaving it to lease expiry", job.id)
     else:
-        if store.jobs.is_cancel_requested(job.id):
+        if store.jobs.is_cancelled(job.id):
             store.jobs.release(
                 job.id, owner, state="failed", run_id=run_id, error=CANCELLED_ERROR
             )

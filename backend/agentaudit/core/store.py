@@ -244,6 +244,10 @@ class JobRow:
 JOB_STATES = ("queued", "running", "done", "failed", "cancelled")
 _TERMINAL_JOB_STATES = ("done", "failed", "cancelled")
 
+# worker.py releases a job cancelled after its last test as 'failed' with this
+# error text, matching how any other job failure is reported.
+CANCELLED_ERROR = "cancelled by user"
+
 Matrix = dict[str, dict[str, str]]
 
 # A discovery job carries no pack: it probes the endpoint and writes a profile.
@@ -569,29 +573,39 @@ class JobQueue:
             )
         return cursor.rowcount == 1
 
-    def request_cancel(self, org_id: str, job_id: str) -> bool:
-        """Ask a queued or running job to stop. Returns False if it already finished.
+    def request_cancel(self, org_id: str, job_id: str) -> str:
+        """Ask a job to stop. Returns the resulting state word.
 
         A queued job has no worker to interrupt, so it goes straight to
         'cancelled'. A running job only gets the flag set: the worker checks it
         between tests (see `is_cancelled`) and releases the job itself, the same
-        way any other terminal transition happens under its own lease.
+        way any other terminal transition happens under its own lease. A job
+        that already reached a terminal state is left alone. Unknown ids raise
+        KeyError, like `get`.
         """
+        job = self.get(org_id, job_id)
         now = datetime.now(timezone.utc).isoformat()
-        with self._store._connection() as conn, conn:
-            cursor = conn.execute(
-                "UPDATE jobs SET state = 'cancelled', finished_at = ? "
-                "WHERE org_id = ? AND id = ? AND state = 'queued'",
-                (now, org_id, job_id),
-            )
-            if cursor.rowcount == 1:
-                return True
-            cursor = conn.execute(
-                "UPDATE jobs SET cancel_requested = 1 "
-                "WHERE org_id = ? AND id = ? AND state = 'running'",
-                (org_id, job_id),
-            )
-            return cursor.rowcount == 1
+        if job.state == "queued":
+            with self._store._connection() as conn, conn:
+                conn.execute(
+                    "UPDATE jobs SET state = 'cancelled', finished_at = ? "
+                    "WHERE org_id = ? AND id = ? AND state = 'queued'",
+                    (now, org_id, job_id),
+                )
+            return "cancelled"
+        if job.state == "running":
+            with self._store._connection() as conn, conn:
+                conn.execute(
+                    "UPDATE jobs SET cancel_requested = 1 "
+                    "WHERE org_id = ? AND id = ? AND state = 'running'",
+                    (org_id, job_id),
+                )
+            return "running"
+        return job.state
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        """Whether a running job's worker should stop (`is_cancelled` alias)."""
+        return self.is_cancelled(job_id)
 
     def is_cancelled(self, job_id: str) -> bool:
         """Whether a running job's worker should stop. Best-effort, no lease check."""

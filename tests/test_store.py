@@ -618,15 +618,14 @@ def test_release_rejects_a_non_terminal_state():
         store.jobs.release(job.id, "worker-1", state="running")
 
 
-def test_request_cancel_on_a_queued_job_fails_it_immediately():
+def test_request_cancel_on_a_queued_job_cancels_it_immediately():
     store = Store(":memory:")
     job_id = _queue(store)
 
-    assert store.jobs.request_cancel("org-a", job_id) == "failed"
+    assert store.jobs.request_cancel("org-a", job_id) == "cancelled"
 
     job = store.jobs.get("org-a", job_id)
-    assert job.state == "failed"
-    assert job.error == "cancelled by user"
+    assert job.state == "cancelled"
     assert job.finished_at is not None
 
 

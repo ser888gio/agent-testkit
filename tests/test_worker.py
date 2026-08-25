@@ -263,7 +263,7 @@ def test_work_once_releases_a_cancelled_job_without_a_run(tmp_path, monkeypatch)
 def test_request_cancel_on_a_queued_job_finishes_it_immediately(tmp_path):
     store, job_id = _store_with_job(tmp_path)
 
-    assert store.jobs.request_cancel("org-a", job_id) is True
+    assert store.jobs.request_cancel("org-a", job_id) == "cancelled"
 
     job = store.jobs.get("org-a", job_id)
     assert job.state == "cancelled"
@@ -274,7 +274,7 @@ def test_request_cancel_on_a_finished_job_is_a_no_op(tmp_path):
     store, job_id = _store_with_job(tmp_path)
     work_once(store, "w1")
 
-    assert store.jobs.request_cancel("org-a", job_id) is False
+    assert store.jobs.request_cancel("org-a", job_id) == "done"
     assert store.jobs.get("org-a", job_id).state == "done"
 
 

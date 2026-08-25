@@ -1543,3 +1543,12 @@ pre {
   color: var(--text);
   font-weight: 600;
 }
+
+/* React SPA shell: the mobile menu is state-driven (a button + .open class)
+   rather than the checkbox hack the Jinja markup used. Same visual behavior. */
+@media (max-width: 700px) {
+  .sidebar nav.open {
+    display: flex;
+    grid-column: 1 / -1;
+  }
+}
