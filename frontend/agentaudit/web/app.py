@@ -1112,6 +1112,7 @@ _JOB_MESSAGES = {
     "running": "Running...",
     "done": "Finished",
     "failed": "Failed",
+    "cancelled": "Cancelled",
 }
 
 
@@ -1159,15 +1160,15 @@ def job_detail(job_id: str, principal: Principal = Depends(current_principal)) -
 @app.post("/jobs/{job_id}/cancel")
 def cancel_job(
     job_id: str,
-    csrf_token: str = Form(""),  # noqa: ARG001 -- read by require_admin off the form body
+    # Read by require_admin off the form body; unused here.
+    csrf_token: str = Form(""),  # noqa: ARG001
     principal: Principal = Depends(require_admin),
 ) -> RedirectResponse:
-    """Abort a queued or running job.
+    """Request cancellation of a queued or running job.
 
-    A queued job is cancelled immediately (there is no worker to ask). A
-    running job only gets a flag set here -- the worker that holds its lease
-    is the one that stops it, between tests (`worker.py:execute_job`), and
-    may be a different process or machine than this one.
+    Cancellation is cooperative for a running job: the worker checks the flag
+    between tests and releases it, so this handler never touches the agent or
+    the lease itself. A finished job is left alone -- there's nothing to stop.
     """
     _load_job_or_404(principal.org_id, job_id)
     get_store().jobs.request_cancel(principal.org_id, job_id)

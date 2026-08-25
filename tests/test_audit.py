@@ -48,7 +48,14 @@ def _spy(monkeypatch) -> list[dict]:
     seen: list[dict] = []
 
     def fake_run(
-        cfg, cases, *, redactor=None, endpoint=None, on_test=None, on_result=None, cancel_check=None
+        cfg,
+        cases,
+        *,
+        redactor=None,
+        endpoint=None,
+        on_test=None,
+        on_result=None,
+        should_stop=None,
     ):
         seen.append({"cases": list(cases), "redactor": redactor, "endpoint": endpoint})
         now = datetime.now(timezone.utc)

@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     org_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     pack_id TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
+    state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed', 'cancelled')),
     run_id TEXT,
     created_by TEXT,
     error TEXT,
@@ -238,14 +238,11 @@ class JobRow:
     tests_total: int | None = None
     tests_done: int = 0
     progress_json: str | None = None
-    # Set by `JobQueue.request_cancel` on a running job; the worker polls it
-    # between tests (`worker.py:execute_job`) and stops early when it sees it.
-    cancel_requested: bool = False
+    cancel_requested: int = 0
 
 
-JOB_STATES = ("queued", "running", "done", "failed")
-_TERMINAL_JOB_STATES = ("done", "failed")
-CANCELLED_ERROR = "cancelled by user"
+JOB_STATES = ("queued", "running", "done", "failed", "cancelled")
+_TERMINAL_JOB_STATES = ("done", "failed", "cancelled")
 
 Matrix = dict[str, dict[str, str]]
 
@@ -572,41 +569,32 @@ class JobQueue:
             )
         return cursor.rowcount == 1
 
-    def request_cancel(self, org_id: str, job_id: str) -> str:
-        """Ask a job to stop. Returns the state it ends up in.
+    def request_cancel(self, org_id: str, job_id: str) -> bool:
+        """Ask a queued or running job to stop. Returns False if it already finished.
 
-        A queued job has no worker to ask, so this cancels it directly -- a
-        state flip to 'failed' that the CHECK constraint already allows. A
-        running job cannot be stopped from here (the worker may be a different
-        process, possibly on a different machine), so this only sets a flag;
-        `worker.execute_job` polls it between tests and releases the job
-        itself once it sees it. A terminal job is a no-op.
+        A queued job has no worker to interrupt, so it goes straight to
+        'cancelled'. A running job only gets the flag set: the worker checks it
+        between tests (see `is_cancelled`) and releases the job itself, the same
+        way any other terminal transition happens under its own lease.
         """
         now = datetime.now(timezone.utc).isoformat()
         with self._store._connection() as conn, conn:
             cursor = conn.execute(
-                "UPDATE jobs SET state = 'failed', error = ?, finished_at = ?, "
-                "lease_owner = NULL, lease_expires_at = NULL "
+                "UPDATE jobs SET state = 'cancelled', finished_at = ? "
                 "WHERE org_id = ? AND id = ? AND state = 'queued'",
-                (CANCELLED_ERROR, now, org_id, job_id),
+                (now, org_id, job_id),
             )
             if cursor.rowcount == 1:
-                return "failed"
+                return True
             cursor = conn.execute(
                 "UPDATE jobs SET cancel_requested = 1 "
                 "WHERE org_id = ? AND id = ? AND state = 'running'",
                 (org_id, job_id),
             )
-            if cursor.rowcount == 1:
-                return "running"
-            row = conn.execute(
-                "SELECT state FROM jobs WHERE org_id = ? AND id = ?", (org_id, job_id)
-            ).fetchone()
-        if row is None:
-            raise KeyError(job_id)
-        return row["state"]
+            return cursor.rowcount == 1
 
-    def is_cancel_requested(self, job_id: str) -> bool:
+    def is_cancelled(self, job_id: str) -> bool:
+        """Whether a running job's worker should stop. Best-effort, no lease check."""
         with self._store._connection() as conn:
             row = conn.execute(
                 "SELECT cancel_requested FROM jobs WHERE id = ?", (job_id,)

@@ -1222,6 +1222,40 @@ def test_job_status_reports_queued_running_and_done(tmp_path, monkeypatch):
     assert client.get(f"/runs/{body['run_id']}").status_code == 200
 
 
+def test_post_cancel_stops_a_queued_job_immediately(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+
+    cancel = client.post(f"/jobs/{job_id}/cancel", follow_redirects=False)
+    assert cancel.status_code == 303
+    assert cancel.headers["location"] == f"/jobs/{job_id}"
+
+    body = client.get(f"/jobs/{job_id}/status").json()
+    assert (body["state"], body["running"]) == ("cancelled", False)
+
+    from agentaudit.worker import work_once
+
+    store = Store(str(tmp_path / "web.db"))
+    assert work_once(store, "w1") is None  # nothing left in the queue to claim
+
+
+def test_post_cancel_flags_a_running_job_for_the_worker_to_stop(tmp_path, monkeypatch):
+    """A running job can't be released from the web process -- only the flag is set;
+    `test_worker.py` covers the worker actually stopping on it."""
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    resp = client.post("/runs", data=_TREASURY, follow_redirects=False)
+    job_id = resp.headers["location"].rsplit("/", 1)[-1]
+
+    store = Store(str(tmp_path / "web.db"))
+    store.jobs.claim("w1")
+    client.post(f"/jobs/{job_id}/cancel")
+
+    job = store.jobs.get(DEFAULT_ORG, job_id)
+    assert job.cancel_requested == 1
+    assert job.state == "running"
+
+
 def test_job_of_another_org_is_404(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
     resp = client.post(

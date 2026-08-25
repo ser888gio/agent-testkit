@@ -111,11 +111,11 @@ def test_on_test_fires_once_per_test_in_order():
     assert seen == [(0, "progress.case.0"), (1, "progress.case.1"), (2, "progress.case.2")]
 
 
-def test_cancel_check_stops_before_the_next_test():
+def test_should_stop_ends_the_loop_early_without_raising():
     cfg = _target(f"{MODULE}:create_passing_agent")
     tests = [
         TestCase(
-            id=f"cancel.case.{n}",
+            id=f"progress.case.{n}",
             category=Category.reliability,
             input="hi",
             assertions=[Assertion(name="status_ok")],
@@ -123,13 +123,29 @@ def test_cancel_check_stops_before_the_next_test():
         for n in range(3)
     ]
     seen: list[str] = []
-    rr = run(
-        cfg,
-        tests,
-        cancel_check=lambda: len(seen) >= 1,
-        on_result=lambda i, r: seen.append(r.test_id),
-    )
-    assert [r.test_id for r in rr.results] == ["cancel.case.0"]
+
+    def note(_index, result) -> None:
+        seen.append(result.test_id)
+
+    rr = run(cfg, tests, on_result=note, should_stop=lambda: len(seen) >= 2)
+
+    # Stopped after the second test's on_result fired; the third never ran.
+    assert [r.test_id for r in rr.results] == ["progress.case.0", "progress.case.1"]
+    assert seen == ["progress.case.0", "progress.case.1"]
+
+
+def test_should_stop_true_before_the_first_test_runs_none():
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    tests = [
+        TestCase(
+            id="progress.case.0",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="status_ok")],
+        )
+    ]
+    rr = run(cfg, tests, should_stop=lambda: True)
+    assert rr.results == []
 
 
 def test_erroring_agent_yields_error_status():
