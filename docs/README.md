@@ -13,6 +13,7 @@ This `docs/` folder holds contributor and architecture material instead.
 ## Sections
 
 - `keycloak.md` - local identity stack, token contract, and realm lifecycle.
+- `demo.md` — scripted 5-minute walkthrough: run → dashboard evidence → compare → compliance report.
 - `architecture.md` — product and module architecture for the current MVP.
 - `plan.md` — the original MVP build plan and scope decisions.
 - `specs/` — branch-level implementation contracts and behavioral specs.

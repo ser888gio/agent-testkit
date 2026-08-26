@@ -1,0 +1,5 @@
+id: hardened-treasury-demo
+agent:
+  type: callable
+  callable: agentaudit.domains.treasury.agent:create_agent
+sandbox: treasury

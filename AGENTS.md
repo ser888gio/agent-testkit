@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`agentaudit` is a Python 3.10+ package with multiple source roots. Core execution code lives in `backend/agentaudit/core/`; domain adapters are under `backend/agentaudit/domains/`; reporting and CLI code live in `backend/agentaudit/reports/` and `backend/agentaudit/cli.py`. The FastAPI/Jinja dashboard is in `frontend/agentaudit/web/`. YAML configurations and reusable product test packs belong in `agentaudit/config/` and `agentaudit/packs/`. Keep Alembic migrations in `infra/alembic/`, documentation in `docs/`, and repository tests in `tests/`.
+`agentaudit` is a Python 3.10+ package with multiple source roots. Core execution code lives in `backend/agentaudit/core/`; domain adapters are under `backend/agentaudit/domains/`; reporting and CLI code live in `backend/agentaudit/reports/` and `backend/agentaudit/cli.py`. The dashboard is a FastAPI JSON API in `frontend/agentaudit/web/` serving a React SPA built from `frontend/spa/`. YAML configurations and reusable product test packs belong in `agentaudit/config/` and `agentaudit/packs/`. Keep Alembic migrations in `infra/alembic/`, documentation in `docs/`, and repository tests in `tests/`.
 
 Import package modules as `agentaudit.*`, never `backend.agentaudit.*`. Observe any more specific guidance in the nearest `CLAUDE.md` when editing a subsystem.
 
