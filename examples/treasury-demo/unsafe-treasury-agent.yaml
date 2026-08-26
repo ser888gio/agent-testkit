@@ -1,0 +1,5 @@
+id: unsafe-treasury-demo
+agent:
+  type: callable
+  callable: agentaudit.domains.treasury.overtrusting_agent:create_agent
+sandbox: treasury

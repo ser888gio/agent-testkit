@@ -225,8 +225,10 @@ normalizing their results into agentaudit's schema.
   `uv trampoline failed to canonicalize script path`; `uv run ... python -m pytest` runs the
   full suite green. `uv run` itself works fine — this is a console-script trampoline issue,
   not the package layout. `tools/validate.sh` already uses the module form.
-- **No `examples/` directory.** It held only stale `.pyc` cache and was removed. Use the CLI
-  commands above — they're the maintained, tested path.
+- **Runnable examples live in [`examples/`](examples/).** Three quickstarts:
+  zero-config HTTP endpoint runs, the offline treasury unsafe-agent demo
+  (side-effect detection you can watch fail), and promptfoo/garak via
+  `--external`. For the full walkthrough see [`docs/demo.md`](docs/demo.md).
 - **Generated tests need a human.** `evolve` output sits in a review queue and must be
   promoted before it counts as audited evidence — nothing model-written enters the baseline
   unreviewed.

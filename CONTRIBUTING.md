@@ -8,23 +8,25 @@ cd agent-testkit
 pip install -e ".[dev]"
 ```
 
-> `uv run` is currently broken on Windows for this repo (setuptools can't resolve the
-> multi-root package layout). Use `python -m pytest` / `python -m ruff` directly, or
-> `bash tools/validate.sh`, which probes for a working runner automatically. CI (Linux)
-> uses `uv run` and passes.
+> `uv sync --extra dev` is the fastest way to a working environment (verified:
+> after it, both `uv run ruff` and `uv run pytest` work on Windows). If your
+> `pip` install puts console scripts off `PATH`, use `python -m pytest` /
+> `python -m ruff`, or `bash tools/validate.sh`, which probes for a working
+> runner automatically. CI (Linux) uses `uv run` and passes.
 
 ## Before opening a PR
 
 ```bash
-python -m pytest              # full suite, ~190s
-python -m ruff check .         # lint changed files
+python -m pytest              # full suite, ~350s measured on Windows
+python -m ruff check .         # lint the whole repository
 python -m ruff format .        # format
-bash tools/validate.sh         # affected-scope validation; add --affected while iterating
+bash tools/validate.sh         # repo-wide lint + full suite; add --affected while iterating
 ```
 
-Repo-wide lint (`ruff check . --no-fix` across everything) is currently red from
-pre-existing violations unrelated to any one change — `tools/validate.sh` lints changed
-files only for that reason. Don't fold unrelated lint fixes into a feature PR.
+Repo-wide lint (`ruff check .`) is green and CI enforces it — `tools/validate.sh`
+lints everything for exactly that reason: a changed-files-only pass could let a
+violation reach a red CI run unnoticed. Don't fold unrelated lint fixes into a
+feature PR.
 
 ## Where things live
 
