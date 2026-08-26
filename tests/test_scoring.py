@@ -125,6 +125,18 @@ def test_flaky_counts_only_tests_with_mixed_attempts():
     assert report.flaky == 1
 
 
+def test_flaky_ignores_skipped_tests():
+    # A skipped test carries no observed evidence, so its attempt history --
+    # however it came to be -- cannot witness nondeterminism.
+    stable = _result(Category.reliability, Risk.low, Status.passed)
+    skipped = _result(Category.reliability, Risk.low, Status.skipped).model_copy(
+        update={"test_id": "skipped.mixed", "attempts": [Status.passed, Status.failed]}
+    )
+    report = score(_run([stable, skipped]))
+    assert report.flaky == 0
+    assert report.total == 1
+
+
 # The overall score averages a bad category away; the weak-category signal is
 # what an assurance reader actually needs to see.
 def test_weakest_category_is_reported_even_when_the_overall_score_is_high():
