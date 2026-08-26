@@ -61,7 +61,9 @@ from agentaudit.web.runtime import (
     get_packs_dir,
     get_store,
     import_first_party,
+    import_pack,
     is_pack_dir,
+    resolve_within_allowed,
     shipped_tests,
 )
 
@@ -557,9 +559,15 @@ def connect_options(principal: Principal = Depends(current_principal)) -> dict: 
             for t in cases
             if isinstance(t, TestCase)
         ]
+    store = get_store()
+    # Targets the tenant registered by endpoint URL: runnable straight from
+    # their stored rows, no shipped config needed.
+    registered_targets = [
+        {"id": row.id, "name": row.name} for row in store.list_targets(principal.org_id)
+    ]
     # Default to whatever this org last launched -- derived, not a stored
     # preference.
-    last_jobs = get_store().jobs.list_recent(principal.org_id, limit=1)
+    last_jobs = store.jobs.list_recent(principal.org_id, limit=1)
     default_target = default_pack = None
     if last_jobs:
         for rel in targets:
@@ -570,12 +578,18 @@ def connect_options(principal: Principal = Depends(current_principal)) -> dict: 
             if isinstance(raw, dict) and str(raw.get("id")) == last_jobs[0].target_id:
                 default_target = rel
                 break
+        else:
+            default_target = next(
+                (t["id"] for t in registered_targets if t["id"] == last_jobs[0].target_id),
+                None,
+            )
         default_pack = next(
             (rel for rel in pack_roots if Path(rel).name == last_jobs[0].pack_id),
             None,
         )
     return {
         "targets": targets,
+        "registered_targets": registered_targets,
         "pack_roots": pack_roots,
         "default_target": default_target,
         "default_pack": default_pack,
@@ -593,11 +607,27 @@ class EnqueueRunBody(BaseModel):
 def enqueue_run(body: EnqueueRunBody, principal: Principal = Depends(require_admin)) -> dict:
     """Queue a run. The worker executes it; this handler never blocks on an agent.
 
+    `target` is either a shipped config path under the allowed roots or the id
+    of a target the tenant registered by endpoint URL (its row already exists).
     `test_ids` narrows the run to part of the pack. The ids are checked against
     the pack that was just imported rather than trusted from the client.
     """
     store = get_store()
-    target_id, pack_id = import_first_party(store, principal.org_id, body.target, body.packs)
+    try:
+        store.get_target(principal.org_id, body.target)
+        # Registered target: its config row already exists, only the pack
+        # needs importing.
+        target_id = body.target
+        pack_id = import_pack(store, principal.org_id, body.packs)
+    except KeyError:
+        try:
+            resolve_within_allowed(body.target)
+        except HTTPException:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown target '{body.target}'",
+            ) from None
+        target_id, pack_id = import_first_party(store, principal.org_id, body.target, body.packs)
 
     selection: list[str] | None = None
     if body.test_ids:

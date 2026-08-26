@@ -10,18 +10,29 @@ interface PackCase {
   risk: string;
 }
 
+interface RegisteredTarget {
+  id: string;
+  name: string;
+}
+
 interface ConnectOptions {
   targets: string[];
+  registered_targets: RegisteredTarget[];
   pack_roots: string[];
   default_target: string | null;
   default_pack: string | null;
   pack_tests: Record<string, PackCase[]>;
 }
 
+// Sentinel option that switches the form to endpoint-URL mode.
+const URL_OPTION = "__endpoint-url__";
+
 export function AgentConnectPage() {
   const navigate = useNavigate();
   const [options, setOptions] = useState<ConnectOptions | null>(null);
   const [target, setTarget] = useState("");
+  const [endpointUrl, setEndpointUrl] = useState("");
+  const [newAgentId, setNewAgentId] = useState("");
   const [pack, setPack] = useState("");
   // Only the selected pack's tests are offered: the form submits one pack.
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -31,21 +42,30 @@ export function AgentConnectPage() {
   useEffect(() => {
     apiGet<ConnectOptions>("/connect-options").then((data) => {
       setOptions(data);
-      setTarget(data.default_target ?? data.targets[0] ?? "");
+      setTarget(
+        data.default_target ??
+          data.registered_targets[0]?.id ??
+          data.targets[0] ??
+          URL_OPTION,
+      );
       setPack(data.default_pack ?? data.pack_roots[0] ?? "");
     });
   }, []);
 
   const cases = useMemo(() => options?.pack_tests[pack] ?? [], [options, pack]);
+  const urlMode = target === URL_OPTION;
+  const hasTargets = Boolean(
+    options && (options.targets.length || options.registered_targets.length),
+  );
 
   if (!options) return <EmptyState title="Loading" body="Fetching run configuration..." />;
-  if (!error && !options.targets.length && !options.pack_roots.length) {
+  if (!error && !hasTargets && !options.pack_roots.length) {
     return (
       <>
         <PageHeader eyebrow="Agent setup" title="Connect an agent" />
         <EmptyState
           title="Connection inputs missing"
-          body="Add a target config and at least one pack before running an agent."
+          body="Register an agent by endpoint URL and add at least one pack before running."
         />
       </>
     );
@@ -65,8 +85,18 @@ export function AgentConnectPage() {
     setBusy(true);
     setError(null);
     try {
+      let targetId = target;
+      if (urlMode) {
+        // Register first so the run has a target row to resolve; the enqueue
+        // endpoint then accepts the id like any registered agent.
+        await apiSend<{ agent_id: string }>("/agents/register", "POST", {
+          target_id: newAgentId,
+          endpoint: endpointUrl,
+        });
+        targetId = newAgentId;
+      }
       const result = await apiSend<{ job_id: string }>("/runs/enqueue", "POST", {
-        target,
+        target: targetId,
         packs: pack,
         test_ids: [...selected],
       });
@@ -88,8 +118,8 @@ export function AgentConnectPage() {
         title="Connect an agent"
         subtitle={
           <>
-            Choose a target config and a test pack, then start the run. Results appear on Home when
-            it finishes.
+            Pick an agent (registered or shipped) and a test pack, then start the run. Results
+            appear on Home when it finishes.
           </>
         }
       />
@@ -99,29 +129,72 @@ export function AgentConnectPage() {
           <div>
             <h2>Run configuration</h2>
             <p>
-              Target configs come from <code>agentaudit/config</code>, packs from{" "}
-              <code>agentaudit/packs</code>. Testing a new agent?{" "}
-              <Link to="/agents/register">Register it by endpoint URL</Link> first.
+              Pick a registered agent or a shipped target config, choose a test pack from{" "}
+              <code>agentaudit/packs</code>, then start the run. Agent deployed somewhere new?{" "}
+              Select <em>other endpoint URL</em> and paste its address.
             </p>
           </div>
         </div>
         {error ? <ErrorNote message={error} /> : null}
         <form onSubmit={submit} className="test-form" data-testid="connect-form">
           <label>
-            Target config
+            Agent
             <select
               name="target"
               required
               value={target}
               onChange={(event) => setTarget(event.target.value)}
             >
-              {options.targets.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
+              {options.registered_targets.length ? (
+                <optgroup label="Registered agents">
+                  {options.registered_targets.map((t) => (
+                    <option key={`reg:${t.id}`} value={t.id}>
+                      {t.name === t.id ? t.id : `${t.name} (${t.id})`}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {options.targets.length ? (
+                <optgroup label="Shipped configs">
+                  {options.targets.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              <option value={URL_OPTION}>other endpoint URL…</option>
             </select>
           </label>
+
+          {urlMode ? (
+            <>
+              <label>
+                Endpoint URL
+                <input
+                  type="url"
+                  name="endpoint"
+                  required
+                  placeholder="https://agent.example.com/chat"
+                  value={endpointUrl}
+                  onChange={(event) => setEndpointUrl(event.target.value)}
+                  data-testid="connect-endpoint"
+                />
+              </label>
+              <label>
+                Agent id
+                <input
+                  type="text"
+                  name="agent-id"
+                  required
+                  placeholder="my-agent"
+                  value={newAgentId}
+                  onChange={(event) => setNewAgentId(event.target.value)}
+                  data-testid="connect-agent-id"
+                />
+              </label>
+            </>
+          ) : null}
 
           <label>
             Test pack

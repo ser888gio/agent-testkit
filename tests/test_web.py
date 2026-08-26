@@ -1370,6 +1370,73 @@ def test_connect_options_lists_selectable_tests(tmp_path, monkeypatch):
     assert any(cases for cases in body["pack_tests"].values())
 
 
+def test_connect_options_lists_registered_targets(tmp_path, monkeypatch):
+    """An agent registered by endpoint URL must be selectable on the connect page."""
+    db = str(tmp_path / "connect-registered.db")
+    Store(db)
+    client = _client(db, monkeypatch)
+    resp = client.post(
+        "/api/agents/register",
+        json={"target_id": "support-bot", "endpoint": "https://agent.example.com/chat"},
+    )
+    assert resp.status_code == 200
+
+    body = client.get("/api/connect-options").json()
+
+    assert {"id": "support-bot", "name": "support-bot"} in body["registered_targets"]
+
+
+def test_post_runs_enqueues_against_a_registered_target(tmp_path, monkeypatch):
+    """The connect page can run against a registered agent id, not just a config path."""
+    db = str(tmp_path / "enqueue-registered.db")
+    client = _client(db, monkeypatch)
+    client.post(
+        "/api/agents/register",
+        json={"target_id": "support-bot", "endpoint": "https://agent.example.com/chat"},
+    )
+
+    resp = client.post(
+        "/api/runs/enqueue", json={"target": "support-bot", "packs": _TREASURY["packs"]}
+    )
+
+    assert resp.status_code == 200
+    store = Store(db)
+    job = store.jobs.get(DEFAULT_ORG, resp.json()["job_id"])
+    assert job.state == "queued"
+    assert job.target_id == "support-bot"
+    # The registered row is reused as-is; only the pack was imported.
+    assert len(store.get_pack_tests(DEFAULT_ORG, job.pack_id)) == 6
+
+
+def test_post_runs_rejects_an_unknown_target(tmp_path, monkeypatch):
+    db = str(tmp_path / "enqueue-unknown.db")
+    client = _client(db, monkeypatch)
+
+    resp = client.post(
+        "/api/runs/enqueue", json={"target": "no-such-agent", "packs": _TREASURY["packs"]}
+    )
+
+    assert resp.status_code == 400
+    assert "no-such-agent" in resp.json()["detail"]
+    assert Store(db).jobs.list_recent(DEFAULT_ORG) == []
+
+
+def test_connect_options_defaults_to_last_run_even_when_registered(tmp_path, monkeypatch):
+    db = str(tmp_path / "connect-default.db")
+    client = _client(db, monkeypatch)
+    client.post(
+        "/api/agents/register",
+        json={"target_id": "support-bot", "endpoint": "https://agent.example.com/chat"},
+    )
+    client.post(
+        "/api/runs/enqueue", json={"target": "support-bot", "packs": _TREASURY["packs"]}
+    )
+
+    body = client.get("/api/connect-options").json()
+
+    assert body["default_target"] == "support-bot"
+
+
 def test_post_runs_carries_a_test_selection_to_the_job(tmp_path, monkeypatch):
     db = str(tmp_path / "selection.db")
     client = _client(db, monkeypatch)

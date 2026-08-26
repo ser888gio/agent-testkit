@@ -130,17 +130,11 @@ def first_party_hosts(raw: dict) -> list[str] | None:
     return [host] if host else []
 
 
-def import_first_party(store: Store, org_id: str, target: str, packs: str) -> tuple[str, str]:
-    """Copy a shipped target and pack into the caller's org as rows.
+def import_pack(store: Store, org_id: str, packs: str) -> str:
+    """Copy a shipped pack into the caller's org as rows; returns the pack id.
 
-    The worker resolves jobs from the database only, so a run launched against
-    a first-party target has to exist as rows before it can be queued. Both
-    writes are idempotent upserts, so re-running the same pack is free.
-
-    The config is stored **unexpanded**: only the worker resolves secrets, and
-    only for the run it is executing.
+    Idempotent upsert, so re-running the same pack is free.
     """
-    target_path = resolve_within_allowed(target)
     pack_dir = resolve_within_allowed(packs)
     tests = discover(str(pack_dir))
     rows = []
@@ -152,6 +146,24 @@ def import_first_party(store: Store, org_id: str, target: str, packs: str) -> tu
             )
         rows.append(test.model_dump(mode="json", exclude_defaults=True))
 
+    try:
+        store.save_pack(org_id, pack_dir.name, pack_dir.name, rows)
+    except (LoaderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return pack_dir.name
+
+
+def import_first_party(store: Store, org_id: str, target: str, packs: str) -> tuple[str, str]:
+    """Copy a shipped target and pack into the caller's org as rows.
+
+    The worker resolves jobs from the database only, so a run launched against
+    a first-party target has to exist as rows before it can be queued. Both
+    writes are idempotent upserts, so re-running the same pack is free.
+
+    The config is stored **unexpanded**: only the worker resolves secrets, and
+    only for the run it is executing.
+    """
+    target_path = resolve_within_allowed(target)
     try:
         raw = yaml.safe_load(target_path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
@@ -169,7 +181,6 @@ def import_first_party(store: Store, org_id: str, target: str, packs: str) -> tu
             secret_ref=first_party_secret_ref(raw),
             allowed_hosts=first_party_hosts(raw),
         )
-        store.save_pack(org_id, pack_dir.name, pack_dir.name, rows)
     except (LoaderError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return target_id, pack_dir.name
+    return target_id, import_pack(store, org_id, packs)
