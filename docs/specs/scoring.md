@@ -22,6 +22,10 @@ class ScoreReport(BaseModel):
     passed: int
     gate_passed: bool                  # vs threshold
     threshold: float
+    incomplete: bool                   # True only on the empty/all-skipped edge
+    flaky: int                         # non-skipped tests whose attempts disagreed
+    weak_category_score: float         # lower quartile of category scores; 1.0 if none
+    weakest_category: Category | None
 
 def score(run: RunResult, *, fail_under: float = 0.0,
           block_on_critical: bool = True) -> ScoreReport
@@ -37,9 +41,18 @@ overall_score = sum(weight for passed tests) / sum(weight for non-skipped tests)
 pass_rate     = count(passed) / count(non-skipped)
 category score= passed_in_cat / non_skipped_in_cat
 critical_failures = count(tests where risk==critical and status in {failed, error})
+flaky         = count(non-skipped tests whose folded attempts disagree)
+                (skipped tests never count: no evidence, no nondeterminism)
 gate_passed   = (overall_score >= fail_under) and not (block_on_critical and critical_failures > 0)
 ```
-Edge: if all tests skipped → `overall_score = pass_rate = 1.0`, `gate_passed = True`.
+Edge: if there are zero non-skipped tests (empty run or all-skipped) → **fail
+closed**: `overall_score = pass_rate = 0.0`, `total = passed = 0`,
+`critical_failures = 0`, `gate_passed = False`, `incomplete = True`. A green
+gate on zero evidence is the worst failure mode for a compliance tool.
+
+**Tiered-mode invariant (PRD-004):** when gating gains tiers (blocking vs
+reporting), the empty-run early return above must stay *first* — the fail-closed
+verdict is computed before and regardless of any tier policy.
 
 ## Example
 ```
@@ -52,7 +65,7 @@ Critical failures: 1  ->  gate: BLOCK (block_on_critical)
 ```
 
 ## Failure behavior
-- `score` is pure/total: never raises on empty runs (returns the all-skipped edge case).
+- `score` is pure/total: never raises on empty runs (returns the fail-closed edge case).
 
 ## Tests required
 - Hand-built run with known statuses/risks → assert exact `overall_score`, `pass_rate`,
@@ -60,7 +73,8 @@ Critical failures: 1  ->  gate: BLOCK (block_on_critical)
 - `fail_under` boundary: score exactly at threshold → `gate_passed True`.
 - One critical failure with `block_on_critical=True` → `gate_passed False` even at 100%
   non-critical.
-- All-skipped run → 1.0 / gate pass.
+- All-skipped run → fail closed: `0.0` / gate BLOCK / `incomplete=True`.
+- `flaky`: counts only non-skipped tests with disagreeing attempts.
 
 ## Done when
 `score()` yields overall risk-weighted %, pass rate, per-category %, critical count, and a

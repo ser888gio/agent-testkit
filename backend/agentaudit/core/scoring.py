@@ -50,6 +50,8 @@ class ScoreReport(BaseModel):
     threshold: float
     incomplete: bool = False
     # pass^k tests whose attempts disagreed: the agent is non-deterministic here.
+    # Skipped tests are excluded, like every other metric in this report: a
+    # test with no observed evidence cannot witness nondeterminism.
     flaky: int = 0
     # The lower quartile of the per-category scores. `overall_score` averages a
     # bad category away -- an agent that is perfect on eight categories and
@@ -126,7 +128,7 @@ def score(
         passed=passed_count,
         gate_passed=gate_passed,
         threshold=fail_under,
-        flaky=sum(1 for r in run.results if len(set(r.attempts)) > 1),
+        flaky=sum(1 for r in non_skipped if len(set(r.attempts)) > 1),
         weak_category_score=lower_quartile([c.score for c in category_scores]),
         weakest_category=weakest.category if weakest else None,
     )
