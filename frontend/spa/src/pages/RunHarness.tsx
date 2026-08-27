@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { ChevronDown, Download } from "lucide-react";
 import { useView, Loading } from "../useView";
 import { EmptyState, formatMs, PageHeader, ScoreBar, StatCard, StatusBadge } from "../ui";
 
@@ -106,62 +107,44 @@ const EXPORTS = [
   },
 ] as const;
 
+// Radix owns the menu behaviour. The hand-rolled version declared role="menu"
+// and role="menuitem" but implemented only outside-click and Escape -- no arrow
+// keys, no focus trap, no focus return to the trigger. Announcing the menu
+// pattern to a screen reader and then not providing it is worse than not
+// announcing it, since the user is told to expect keys that do nothing.
 function ExportMenu({ runId }: { runId: string }) {
-  const [open, setOpen] = useState(false);
-  const wrap = useRef<HTMLDivElement>(null);
-
-  // A menu that outlives a click elsewhere reads as stuck.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   const href = (fmt: string) => `/api/runs/${encodeURIComponent(runId)}/export/${fmt}`;
 
   return (
-    <div className="export-menu" ref={wrap}>
-      <button
-        type="button"
-        data-testid="export-report"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <Icon>
-          <path d="M12 3v12" />
-          <path d="m7 10 5 5 5-5" />
-          <path d="M5 21h14" />
-        </Icon>
-        Download report
-        <Icon>
-          <path d="m6 9 6 6 6-6" />
-        </Icon>
-      </button>
-      {open ? (
-        <div className="export-menu-list" role="menu">
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" data-testid="export-report" className="export-menu-trigger">
+          <Download className="export-icon" aria-hidden="true" />
+          Download report
+          <ChevronDown className="export-icon" aria-hidden="true" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="export-menu-list"
+          aria-label="Report formats"
+          align="end"
+          sideOffset={6}
+        >
           {EXPORTS.map(({ fmt, label, note, icon }) => (
-            <a key={fmt} role="menuitem" href={href(fmt)} download onClick={() => setOpen(false)}>
-              {icon}
-              <span>
-                <strong>{label}</strong>
-                <small>{note}</small>
-              </span>
-            </a>
+            <DropdownMenu.Item key={fmt} asChild>
+              <a href={href(fmt)} download>
+                {icon}
+                <span>
+                  <strong>{label}</strong>
+                  <small>{note}</small>
+                </span>
+              </a>
+            </DropdownMenu.Item>
           ))}
-        </div>
-      ) : null}
-    </div>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 

@@ -135,6 +135,9 @@ export function AnalyticsPage() {
                 role="img"
                 aria-label={`Score across the last ${trend.length} runs, from ${trend[0].score}% to ${trend[trend.length - 1].score}%`}
               >
+                <title>
+                  {`Score across the last ${trend.length} runs, from ${trend[0].score}% to ${trend[trend.length - 1].score}%`}
+                </title>
                 <line className="chart-grid" x1="0" y1="20" x2="100" y2="20" />
                 <line className="chart-grid" x1="0" y1="8" x2="100" y2="8" />
                 <polyline className="chart-line" points={view.sparkline} />

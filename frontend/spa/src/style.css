@@ -1594,7 +1594,7 @@ pre {
 
 /* Sized on the element itself: an SVG with no intrinsic size expands to fill
    its container if this rule ever fails to match. */
-.export-menu svg.export-icon {
+svg.export-icon {
   width: 1rem;
   height: 1rem;
   min-width: 1rem;
@@ -1607,32 +1607,28 @@ pre {
   stroke-linejoin: round;
 }
 
-.export-menu {
-  position: relative;
-}
-
-.export-menu > button {
+.export-menu-trigger {
   gap: 0.5rem;
   min-height: 2.75rem;
   border-radius: var(--radius-pill);
   padding: 0 1rem;
 }
 
-/* The caret is the affordance; rotating it confirms the menu opened. */
-.export-menu > button > .export-icon:last-child {
+/* The caret is the affordance; rotating it confirms the menu opened. Radix
+   sets data-state on the trigger. */
+.export-menu-trigger > .export-icon:last-child {
   transition: transform 160ms ease;
 }
 
-.export-menu > button[aria-expanded="true"] > .export-icon:last-child {
+.export-menu-trigger[data-state="open"] > .export-icon:last-child {
   transform: rotate(180deg);
 }
 
+/* Radix portals the content to <body> and positions it itself, so this is no
+   longer absolutely positioned against a wrapper. */
 .export-menu-list {
-  position: absolute;
-  right: 0;
   z-index: 20;
   min-width: 15rem;
-  margin-top: 0.375rem;
   padding: 0.25rem;
   display: flex;
   flex-direction: column;
@@ -1661,12 +1657,12 @@ pre {
   text-align: left;
   text-decoration: none;
   transform: none;
+  outline: none;
 }
 
-.export-menu-list a[role="menuitem"]:hover,
-.export-menu-list button[role="menuitem"]:hover,
-.export-menu-list a[role="menuitem"]:focus-visible,
-.export-menu-list button[role="menuitem"]:focus-visible {
+/* Radix drives the active item with data-highlighted, which covers both the
+   pointer and the keyboard walk -- it does not rely on real DOM focus. */
+.export-menu-list [role="menuitem"][data-highlighted] {
   background: var(--surface-soft);
   color: var(--text);
   transform: none;
@@ -1691,13 +1687,6 @@ pre {
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.35;
-}
-
-@media (max-width: 720px) {
-  .export-menu-list {
-    right: auto;
-    left: 0;
-  }
 }
 
 .site-footer {
