@@ -54,6 +54,7 @@ from agentaudit.reports.html import to_html
 from agentaudit.reports.json import to_json
 from agentaudit.reports.junit import to_junit
 from agentaudit.reports.md import to_markdown
+from agentaudit.reports.pdf import to_pdf
 from agentaudit.web.auth import Principal, auth_enabled, current_principal, require_admin
 from agentaudit.web.runtime import (
     PACKAGE_DIR,
@@ -325,6 +326,8 @@ _EXPORT_FORMATS = {
     "json": (to_json, "application/json", "json"),
     "junit": (to_junit, "application/xml", "xml"),
     "html": (to_html, "text/html; charset=utf-8", "html"),
+    # Renders to bytes rather than str; Response accepts either.
+    "pdf": (to_pdf, "application/pdf", "pdf"),
 }
 
 

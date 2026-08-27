@@ -21,6 +21,7 @@ dependencies = [
     "alembic",
     "sqlalchemy",
     "pyjwt[crypto]>=2.13.0",
+    "reportlab>=4.0",
 ]
 
 [project.optional-dependencies]

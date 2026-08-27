@@ -11,6 +11,7 @@ from agentaudit.reports.html import to_html
 from agentaudit.reports.json import to_json
 from agentaudit.reports.junit import to_junit
 from agentaudit.reports.md import to_markdown
+from agentaudit.reports.pdf import to_pdf
 from agentaudit.reports.plan import to_plan_markdown
 
 # Renderers of a run's results. `plan` is not one of them -- a plan is not a
@@ -58,6 +59,7 @@ __all__ = [
     "to_junit",
     "to_html",
     "to_markdown",
+    "to_pdf",
     "to_plan_markdown",
     "to_compliance",
     "to_compliance_json",

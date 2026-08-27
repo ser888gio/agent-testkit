@@ -1,4 +1,5 @@
 import json
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
@@ -23,6 +24,7 @@ from agentaudit.reports import (
     to_json,
     to_junit,
     to_markdown,
+    to_pdf,
     to_plan_markdown,
 )
 
@@ -459,3 +461,54 @@ def test_single_turn_results_render_no_timeline_section(run_and_score):
     root = ET.fromstring(xml_text)
     for tc in root.findall("testcase"):
         assert tc.find("system-out") is None
+
+
+def _pdf_text(rr, report) -> str:
+    """Drawn text of a rendered PDF, in order.
+
+    Page streams are Flate-compressed by default, so the assertions below would
+    have nothing to match. Turning compression off makes the content stream
+    plain ASCII; it changes only this fixture's bytes, not the shipped renderer.
+    """
+    import reportlab.rl_config as rl_config
+
+    previous = rl_config.pageCompression
+    rl_config.pageCompression = 0
+    try:
+        data = to_pdf(rr, report)
+    finally:
+        rl_config.pageCompression = previous
+    runs = re.findall(r"\((?:\.|[^\()])*\)", data.decode("latin-1"))
+    return "\n".join(run[1:-1] for run in runs)
+
+
+def test_pdf_report_is_a_valid_pdf(run_and_score):
+    rr, report = run_and_score
+    data = to_pdf(rr, report)
+    assert isinstance(data, bytes)
+    assert data.startswith(b"%PDF-")
+    assert b"%%EOF" in data[-2048:]
+
+
+def test_pdf_report_renders_score_and_failures(run_and_score):
+    """The PDF must agree with the Markdown report; a blank but structurally
+    valid PDF would otherwise pass the header check above."""
+    rr, report = run_and_score
+    text = _pdf_text(rr, report)
+    assert "agentaudit report - demo" in text
+    assert "BLOCK" in text
+    for test_id in ("b.fail.case", "c.error.case"):
+        assert test_id in text
+    assert "found 1 payment" in text
+    # Every test appears in the "All tests" table, not just the failures.
+    assert "a.pass.case" in text
+    assert "d.skip.case" in text
+
+
+def test_pdf_report_escapes_markup_in_evidence(run_and_score):
+    """Platypus parses a mini-markup, so an unescaped `<` in a test id would
+    raise at build time rather than render."""
+    rr, report = run_and_score
+    rr.results[0].test_id = "a.<b>&.case"
+    data = to_pdf(rr, report)
+    assert data.startswith(b"%PDF-")
