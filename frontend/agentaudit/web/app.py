@@ -41,6 +41,17 @@ _SPA_PLACEHOLDER = """<!doctype html><html lang="en"><body style="
 <p>The dashboard bundle is not built yet. Run <code>npm ci &amp;&amp; npm run build</code>
 inside <code>frontend/spa</code>, then reload.</p></body></html>"""
 
+# Sources for the bundle above; used only to detect a stale build in dev.
+SPA_SRC = BASE_DIR.parents[1] / "spa" / "src"
+
+_SPA_STALE_BANNER = """<div style="
+  font: 14px system-ui, sans-serif; background: #7a2e00; color: #fff;
+  padding: 8px 14px; text-align: center;">
+Stale bundle: frontend/spa/src changed since the last build. Reloading will not
+show it. Run <code>bash infra/dev.sh</code> for hot reload on
+<code>:5173</code>, or <code>npm run build</code> in <code>frontend/spa</code>.
+</div>"""
+
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
@@ -125,10 +136,29 @@ def logout(request: Request) -> RedirectResponse:
     return response
 
 
+def _spa_is_stale() -> bool:
+    """True when a source file is newer than the built bundle.
+
+    The bundle is content-hashed, so a stale build is invisible to the browser:
+    it caches nothing wrong, it is simply served the last thing that was built.
+    Editing frontend/spa/src and reloading then looks like a broken reload.
+    """
+    if not SPA_SRC.is_dir():
+        return False
+    try:
+        built = max(f.stat().st_mtime for f in SPA_DIST.iterdir() if f.is_file())
+        return any(f.stat().st_mtime > built for f in SPA_SRC.rglob("*") if f.is_file())
+    except OSError:
+        return False
+
+
 def _spa_index() -> HTMLResponse:
     index = SPA_DIST / "index.html"
     if index.is_file():
-        return HTMLResponse(index.read_text(encoding="utf-8"))
+        html = index.read_text(encoding="utf-8")
+        if _spa_is_stale():
+            html = html.replace("<body>", f"<body>{_SPA_STALE_BANNER}", 1)
+        return HTMLResponse(html)
     return HTMLResponse(_SPA_PLACEHOLDER, status_code=200)
 
 
