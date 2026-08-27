@@ -134,6 +134,20 @@ def _print_table(rr, report) -> None:
     )
     typer.echo(f"Gate: {'PASS' if report.gate_passed else 'BLOCK'}")
 
+    trialed = [r for r in rr.results if r.attempts]
+    if trialed:
+        typer.echo("")
+        typer.echo(f"{'TRIAL TEST':<40}{'N':>4}{'PASS RATE':>11}{'THRESHOLD':>11}")
+        extra_calls = 0
+        for r in trialed:
+            rate = sum(1 for s in r.attempts if s.value == "passed") / len(r.attempts)
+            threshold = r.trial_threshold if r.trial_threshold is not None else 1.0
+            typer.echo(
+                f"{r.test_id:<40}{len(r.attempts):>4}{rate * 100:>10.0f}%{threshold * 100:>10.0f}%"
+            )
+            extra_calls += len(r.attempts) - 1
+        typer.echo(f"Trial cost: +{extra_calls} agent call(s) beyond a single-run baseline")
+
 
 def _print_plan(harness: HarnessPlan) -> None:
     profile = harness.profile

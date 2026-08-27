@@ -11,7 +11,7 @@ from agentaudit.core.attacker import AttackerError, RefiningStrategy
 from agentaudit.core.config import CallableSpec, TargetConfig
 from agentaudit.core.loader import PythonTestCase
 from agentaudit.core.redaction import EvidencePolicy, RedactionConfig, Redactor
-from agentaudit.core.runner import _fold_attempts, _run_turns, run, run_one
+from agentaudit.core.runner import _decided, _fold_attempts, _run_turns, run, run_one
 from agentaudit.core.schema import (
     AdaptiveSpec,
     Assertion,
@@ -21,6 +21,7 @@ from agentaudit.core.schema import (
     Status,
     TestCase,
     TestResult,
+    TrialPolicy,
 )
 
 MODULE = "tests.test_runner"
@@ -54,6 +55,25 @@ def create_passing_agent():
 
 def create_slow_agent():
     return _slow_agent
+
+
+# Counter lives in the spawned isolated-run child process, which stays alive
+# for every attempt within one `run()` call -- see core/isolation.py -- so it
+# correctly counts calls across trial attempts of the *same* test.
+_flaky_calls = {"n": 0}
+
+
+def _flaky_1_in_5_agent(input: str) -> str:
+    """Fails exactly the 1st call of every 5 -- a clean, deterministic 20%."""
+    _flaky_calls["n"] += 1
+    if _flaky_calls["n"] % 5 == 1:
+        return "nope"
+    return "ok everything approved"
+
+
+def create_flaky_1_in_5_agent():
+    _flaky_calls["n"] = 0
+    return _flaky_1_in_5_agent
 
 
 def _target(callable_ref: str, evidence: EvidencePolicy | None = None) -> TargetConfig:
@@ -532,6 +552,151 @@ def test_fold_attempts_fails_on_any_failing_attempt():
 
     errored = _fold_attempts([_attempt(Status.error, "boom"), _attempt(Status.passed, "ok")])
     assert errored.status == Status.error
+
+
+def test_fold_attempts_passes_when_pass_rate_meets_trial_threshold():
+    def _attempt(status):
+        return TestResult(
+            test_id="trial.case",
+            category=Category.reliability,
+            risk=Risk.medium,
+            status=status,
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+        )
+
+    # 4/5 = 80% >= 75% threshold -> passes, even though one attempt failed.
+    folded = _fold_attempts(
+        [_attempt(Status.passed)] * 4 + [_attempt(Status.failed)], threshold=0.75
+    )
+    assert folded.status == Status.passed
+    assert folded.trial_threshold == 0.75
+    assert len(folded.attempts) == 5
+
+    # 3/5 = 60% < 75% -> fails.
+    folded_fail = _fold_attempts(
+        [_attempt(Status.passed)] * 3 + [_attempt(Status.failed)] * 2, threshold=0.75
+    )
+    assert folded_fail.status == Status.failed
+
+
+def test_decided_stops_on_clear_all_pass_or_all_fail():
+    # 3 passes out of 3 with n=10, threshold=0.75: even if all 7 remaining
+    # fail, final rate is 3/10=30% < 75%... not yet decided on the low side,
+    # but every attempt so far passing at n small enough that a perfect
+    # remainder still cannot clear threshold is the fail-early case below.
+    # Clear pass case: enough passes banked that failing everything else still clears.
+    # 8/10=80%, worst case (no more passes) is still 8/10 >= 0.75.
+    assert _decided(passed=8, ran=8, n=10, threshold=0.75) is True
+    # Clear fail case: even a perfect remainder cannot reach threshold.
+    # best case (0+7)/10 = 70% < 0.75.
+    assert _decided(passed=0, ran=3, n=10, threshold=0.75) is True
+    # Not yet decided: best 9/10 clears, worst 2/10 doesn't -- straddles threshold.
+    assert _decided(passed=2, ran=3, n=10, threshold=0.75) is False
+
+
+def test_trial_policy_early_stop_cuts_cost_on_clear_cut_pass_case():
+    """An always-passing agent under trial(n=20, threshold=0.5) stops once
+    passed/n itself already clears 0.5 (10 of 20) -- the worst case from
+    there (every remaining attempt failing) still meets the bar. This is the
+    PRD's cost-control claim: >=50% fewer calls than running all n.
+    """
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    tests = [
+        TestCase(
+            id="trial.cheap.pass",
+            category=Category.reliability,
+            input="hi",
+            assertions=[Assertion(name="contains_any", args={"values": ["ok"]})],
+            trial=TrialPolicy(n=20, threshold=0.5),
+        )
+    ]
+    rr = run(cfg, tests)
+    result = rr.results[0]
+    assert result.status == Status.passed
+    assert result.trial_threshold == 0.5
+    assert len(result.attempts) <= 10  # >= 50% fewer calls than running all n=20
+
+
+def test_trial_policy_passes_a_flaky_agent_that_fails_20_percent():
+    """PRD-008 success criterion: a test failing 20% of the time passes
+    under trial(n=5, threshold=0.75) and fails under strict default (no
+    trial policy, single run landing on the one-in-five failure)."""
+    cfg = _target(f"{MODULE}:create_flaky_1_in_5_agent")
+    trial_test = TestCase(
+        id="trial.flaky.n5",
+        category=Category.reliability,
+        input="hi",
+        assertions=[Assertion(name="contains_any", args={"values": ["ok"]})],
+        trial=TrialPolicy(n=5, threshold=0.75),
+    )
+    rr = run(cfg, [trial_test])
+    result = rr.results[0]
+    assert result.status == Status.passed
+    assert result.attempts.count(Status.failed) == 1
+    assert result.attempts.count(Status.passed) == 4
+
+
+def test_no_trial_policy_leaves_single_run_behavior_unchanged():
+    """Without an opt-in trial policy, a test still runs exactly once and
+    behavior is unchanged from before trial policies existed."""
+    cfg = _target(f"{MODULE}:create_flaky_1_in_5_agent")
+    plain_test = TestCase(
+        id="plain.flaky.single",
+        category=Category.reliability,
+        input="hi",
+        assertions=[Assertion(name="contains_any", args={"values": ["ok"]})],
+    )
+    rr = run(cfg, [plain_test])
+    result = rr.results[0]
+    assert result.attempts == []
+    assert result.trial_threshold is None
+    # First call is the 1-in-5 failure -- deterministic given the counter reset.
+    assert result.status == Status.failed
+
+
+def test_adaptive_test_defaults_to_trial_n3_strict():
+    test = _adaptive_test()
+    policy = test.effective_trial()
+    assert policy is not None
+    assert policy.n == 3
+    assert policy.threshold == 1.0
+
+
+def test_adaptive_test_can_opt_out_of_default_trial():
+    test = TestCase(
+        id="core.jailbreak.opt_out",
+        category=Category.prompt_injection,
+        input="goal",
+        adaptive=AdaptiveSpec(strategy="crescendo", max_turns=2),
+        assertions=[Assertion(name="status_ok")],
+        no_default_trial=True,
+    )
+    assert test.effective_trial() is None
+
+
+def test_explicit_trial_overrides_adaptive_default():
+    test = TestCase(
+        id="core.jailbreak.explicit_trial",
+        category=Category.prompt_injection,
+        input="goal",
+        adaptive=AdaptiveSpec(strategy="crescendo", max_turns=2),
+        assertions=[Assertion(name="status_ok")],
+        trial=TrialPolicy(n=7, threshold=0.6),
+    )
+    policy = test.effective_trial()
+    assert policy.n == 7
+    assert policy.threshold == 0.6
+
+
+def test_non_adaptive_test_has_no_default_trial():
+    test = TestCase(
+        id="plain.no_trial",
+        category=Category.reliability,
+        input="hi",
+        assertions=[Assertion(name="status_ok")],
+    )
+    assert test.effective_trial() is None
 
 
 def _adaptive_test(**spec_kwargs) -> TestCase:

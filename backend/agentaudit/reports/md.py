@@ -27,7 +27,33 @@ def to_markdown(run: RunResult, score: ScoreReport) -> str:
     else:
         lines.extend(_failure_lines(failing))
 
+    trial_lines = _trial_lines(run.results)
+    if trial_lines:
+        lines += ["", "## Trial policies", ""] + trial_lines
+
     return "\n".join(lines)
+
+
+def _trial_lines(results) -> list[str]:
+    """Per-test n / pass-rate / threshold, plus the extra agent-call cost,
+    for every result that ran under `repeat:`/`trial:` (i.e. has `attempts`).
+    """
+    trialed = [r for r in results if r.attempts]
+    if not trialed:
+        return []
+    lines = ["| Test | N | Pass rate | Threshold | Extra calls |", "|---|---|---|---|---|"]
+    extra_calls = 0
+    for r in trialed:
+        n = len(r.attempts)
+        rate = sum(1 for s in r.attempts if s.value == "passed") / n
+        threshold = r.trial_threshold if r.trial_threshold is not None else 1.0
+        extra_calls += n - 1
+        lines.append(
+            f"| {r.test_id} | {n} | {rate * 100:.0f}% | {threshold * 100:.0f}% | {n - 1} |"
+        )
+    lines.append("")
+    lines.append(f"Total trial cost: +{extra_calls} agent call(s) beyond a single-run baseline.")
+    return lines
 
 
 def _failure_lines(failing) -> list[str]:

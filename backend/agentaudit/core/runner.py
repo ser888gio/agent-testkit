@@ -28,6 +28,7 @@ from agentaudit.core.schema import (
     Status,
     TestCase,
     TestResult,
+    TrialPolicy,
 )
 
 log = logging.getLogger("agentaudit.runner")
@@ -315,12 +316,78 @@ def _repeat_count(test: TestCase | PythonTestCase) -> int:
     return getattr(test, "repeat", 1)
 
 
-def _fold_attempts(attempts: list[TestResult]) -> TestResult:
-    """pass^k: one result standing for k attempts, passing only if all k passed."""
+def _trial_policy(test: TestCase | PythonTestCase) -> TrialPolicy | None:
+    # PythonTestCase (a dataclass) has no trial support -- only YAML TestCase does.
+    effective = getattr(test, "effective_trial", None)
+    return effective() if effective is not None else None
+
+
+def _decided(passed: int, ran: int, n: int, threshold: float) -> bool:
+    """True if no possible outcome of the remaining `n - ran` attempts can
+    change whether the final pass rate clears `threshold`.
+
+    Exact best/worst-case bound, not a probabilistic estimate: the best case
+    is every remaining attempt passing, the worst is every remaining attempt
+    failing. If both land on the same side of `threshold`, more attempts
+    cannot change the verdict, so running them is pure cost with no
+    information value. This is what makes early-stop safe to apply
+    unconditionally -- it never produces a different verdict than running
+    all `n`.
+    """
+    remaining = n - ran
+    best_rate = (passed + remaining) / n
+    worst_rate = passed / n
+    return (best_rate >= threshold) == (worst_rate >= threshold)
+
+
+def _fold_attempts(attempts: list[TestResult], threshold: float = 1.0) -> TestResult:
+    """One result standing for however many attempts ran.
+
+    `threshold=1.0` (the default, and the only mode `repeat:` without a
+    `trial:` policy ever uses) is strict pass^k: every attempt must pass.
+    A lower threshold passes once the pass rate over `attempts` meets it --
+    trial semantics. `attempts` may be shorter than the test's configured
+    `n` when the caller stopped early via `_decided`.
+    """
     statuses = [a.status for a in attempts]
-    # Report the first non-passing attempt, so the evidence explains the verdict.
-    representative = next((a for a in attempts if a.status is not Status.passed), attempts[-1])
-    return representative.model_copy(update={"attempts": statuses})
+    passed = sum(1 for s in statuses if s is Status.passed)
+    pass_rate = passed / len(statuses)
+    if pass_rate >= threshold and threshold < 1.0:
+        # Trial policy cleared: pass, using the last attempt as the evidence
+        # representative since there is no single "the" failing attempt.
+        representative = attempts[-1]
+        status = Status.passed
+    else:
+        # Strict pass^k (threshold == 1.0, including plain `repeat:`): the
+        # first non-passing attempt decides both the status and the evidence,
+        # exactly as before trial policies existed.
+        representative = next((a for a in attempts if a.status is not Status.passed), attempts[-1])
+        status = representative.status
+    return representative.model_copy(
+        update={
+            "attempts": statuses,
+            "status": status,
+            "trial_threshold": None if threshold >= 1.0 else threshold,
+        }
+    )
+
+
+def _run_trial(
+    isolated: IsolatedRunner,
+    test: TestCase | PythonTestCase,
+    redactor: Redactor,
+    policy: TrialPolicy,
+) -> TestResult:
+    attempts: list[TestResult] = []
+    passed = 0
+    for i in range(policy.n):
+        result = _run_isolated(isolated, test, redactor)
+        attempts.append(result)
+        if result.status is Status.passed:
+            passed += 1
+        if _decided(passed, i + 1, policy.n, policy.threshold):
+            break
+    return _fold_attempts(attempts, policy.threshold)
 
 
 def run(
@@ -361,9 +428,13 @@ def run(
                 break
             if on_test is not None:
                 on_test(index, test)
-            repeat = _repeat_count(test)
-            attempts = [_run_isolated(isolated, test, redactor) for _ in range(repeat)]
-            result = attempts[0] if repeat == 1 else _fold_attempts(attempts)
+            policy = _trial_policy(test)
+            if policy is not None:
+                result = _run_trial(isolated, test, redactor, policy)
+            else:
+                repeat = _repeat_count(test)
+                attempts = [_run_isolated(isolated, test, redactor) for _ in range(repeat)]
+                result = attempts[0] if repeat == 1 else _fold_attempts(attempts)
             results.append(result)
             if on_result is not None:
                 # Progress reporting must never take the run down with it: the

@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from agentaudit.core.schema import (
+    AdaptiveSpec,
     Assertion,
     AssertionResult,
     Category,
@@ -13,6 +14,7 @@ from agentaudit.core.schema import (
     Status,
     TestCase,
     TestResult,
+    TrialPolicy,
 )
 
 
@@ -128,3 +130,65 @@ def test_repeat_must_be_at_least_one():
             assertions=[Assertion(name="status_ok")],
             repeat=0,
         )
+
+
+@pytest.mark.parametrize("n", [0, -1])
+def test_trial_policy_n_must_be_at_least_one(n):
+    with pytest.raises(ValidationError):
+        TrialPolicy(n=n)
+
+
+@pytest.mark.parametrize("threshold", [-0.1, 1.1])
+def test_trial_policy_threshold_must_be_a_fraction(threshold):
+    with pytest.raises(ValidationError):
+        TrialPolicy(n=5, threshold=threshold)
+
+
+def test_trial_policy_defaults_to_strict_threshold():
+    assert TrialPolicy(n=5).threshold == 1.0
+
+
+def test_effective_trial_is_none_for_a_plain_test():
+    tc = TestCase(
+        id="a.b",
+        category=Category.reliability,
+        input="hi",
+        assertions=[Assertion(name="status_ok")],
+    )
+    assert tc.effective_trial() is None
+
+
+def test_effective_trial_defaults_adaptive_tests_to_n3_strict():
+    tc = TestCase(
+        id="a.b",
+        category=Category.prompt_injection,
+        input="goal",
+        adaptive=AdaptiveSpec(),
+        assertions=[Assertion(name="status_ok")],
+    )
+    policy = tc.effective_trial()
+    assert policy == TrialPolicy(n=3, threshold=1.0)
+
+
+def test_effective_trial_adaptive_default_can_be_opted_out():
+    tc = TestCase(
+        id="a.b",
+        category=Category.prompt_injection,
+        input="goal",
+        adaptive=AdaptiveSpec(),
+        assertions=[Assertion(name="status_ok")],
+        no_default_trial=True,
+    )
+    assert tc.effective_trial() is None
+
+
+def test_effective_trial_explicit_policy_wins_over_adaptive_default():
+    tc = TestCase(
+        id="a.b",
+        category=Category.prompt_injection,
+        input="goal",
+        adaptive=AdaptiveSpec(),
+        assertions=[Assertion(name="status_ok")],
+        trial=TrialPolicy(n=10, threshold=0.8),
+    )
+    assert tc.effective_trial() == TrialPolicy(n=10, threshold=0.8)
