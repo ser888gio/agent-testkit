@@ -189,6 +189,31 @@ def test_to_markdown_unchanged_without_variants(run_and_score):
     )
 
 
+def test_to_markdown_has_no_trial_section_without_trial_results(run_and_score):
+    rr, report = run_and_score
+    assert "## Trial policies" not in to_markdown(rr, report)
+
+
+def test_to_markdown_shows_trial_n_pass_rate_and_threshold():
+    result = TestResult(
+        test_id="trial.flaky.case",
+        category=Category.reliability,
+        risk=Risk.medium,
+        status=Status.passed,
+        attempts=[Status.passed, Status.failed, Status.passed, Status.passed],
+        trial_threshold=0.75,
+        started_at=_now(),
+        finished_at=_now(),
+    )
+    rr = RunResult(
+        run_id="r2", agent_name="demo", started_at=_now(), finished_at=_now(), results=[result]
+    )
+    md = to_markdown(rr, score(rr))
+    assert "## Trial policies" in md
+    assert "| trial.flaky.case | 4 | 75% | 75% | 3 |" in md
+    assert "Total trial cost: +3 agent call(s)" in md
+
+
 def test_render_dispatches_by_format(run_and_score):
     rr, report = run_and_score
     assert render(rr, report, "json") == to_json(rr, report)
