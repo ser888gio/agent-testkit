@@ -102,7 +102,6 @@ tight loops and run the default before finishing.
   paths (`dist/`, `uv.lock`, `agentaudit.db`, `__pycache__/`, `docs/diagrams/*.svg`,
   `agentaudit.egg-info/`, `.venv/`) and prints how to regenerate each. It fails open, so a
   malformed payload never blocks ordinary work.
-- **PostToolUse** → `aislop hook claude`, the pre-existing code-quality scan.
 
 ## Session hygiene
 

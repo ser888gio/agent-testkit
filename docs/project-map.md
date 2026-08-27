@@ -47,11 +47,9 @@ frontend/agentaudit/ Web: FastAPI dashboard, Jinja templates, auth
 infra/               Docker, compose, dev launcher, Alembic migrations, Keycloak realm
 tests/               pytest suite for agentaudit itself (37 files, one per module)
 docs/                Architecture, 25 specs, plans, D2 diagrams, component map
-tools/               validate.sh · affected.sh · guard-protected-paths.sh · install-hooks.sh
+tools/               validate.sh · affected.sh · guard-protected-paths.sh
 .claude/             Agents, slash commands, path-scoped rules for Claude Code
 .github/             CI, security workflow, templates, branch-protection notes
-.qlty/               Pre-push quality gate (bandit, trufflehog, shellcheck, actionlint)
-.aislop/             Per-edit slop scanner config and session log
 ```
 
 Reading order for someone new: this file → [`docs/architecture.md`](architecture.md) for
@@ -342,16 +340,6 @@ files cannot prevent direct pushes on their own.
 > the gate applies only at the `develop` → `main` promotion. Verified against
 > `.github/workflows/*.yml` and `git symbolic-ref refs/remotes/origin/HEAD`.
 
-## `.qlty/` — the pre-push quality gate
-
-`qlty.toml` configures plugins beyond ruff: `bandit` (excluded on `tests/`, since B101
-flags the `assert` pytest is built on), `trufflehog` (secrets), `shellcheck`, `hadolint`,
-`actionlint` + `zizmor` (workflow linting), `radarlint`. `hooks/pre-push.sh` runs it.
-`.qlty/out/` is generated scan output — ignored, never edited.
-
-An aislop PostToolUse hook also scans on every Edit/Write; its findings are blocking, and
-`.aislop/config.yaml` is authoritative for thresholds.
-
 ## Root files
 
 `pyproject.toml` (the package map — see the top of this document) · `alembic.ini`
@@ -363,7 +351,7 @@ target comes from `agentaudit migrate --db`) · `uv.lock` (generated) · `CLAUDE
 ## Never edit by hand
 
 `dist/` · `agentaudit.egg-info/` · `.venv/` · `agentaudit.db` · `**/__pycache__/` ·
-`.qlty/out/` · `uv.lock` (regenerate with `uv lock`) · `docs/diagrams/*.svg` (rendered
+`uv.lock` (regenerate with `uv lock`) · `docs/diagrams/*.svg` (rendered
 from the `.d2` sources beside them).
 
 > A stale `agentkit.db` sits at the repo root from before the `agentaudit` rename. The
