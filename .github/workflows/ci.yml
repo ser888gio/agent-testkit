@@ -65,6 +65,24 @@ jobs:
       - name: Run ruff
         run: uv run --frozen --extra dev ruff check .
 
+  complexity:
+    name: Complexity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+
+      - name: Run complexipy
+        uses: rohaquinlop/complexipy-action@v2
+        with:
+          paths: .
+          max_complexity_allowed: 26
+          output_json: true
+
   package:
     name: Build package
     runs-on: ubuntu-latest

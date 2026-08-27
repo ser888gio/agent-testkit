@@ -16,7 +16,7 @@ agent:
     Authorization: "Bearer ${AGENT_TOKEN}"
   request:
     json:
-      input: "{{ input }}"
+      input: "input"
   response:
     text_path: "$.text"
   timeout_s: 10

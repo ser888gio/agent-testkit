@@ -1,0 +1,6 @@
+repos:
+  - repo: https://github.com/rohaquinlop/complexipy-pre-commit
+    rev: v5.1.0
+    hooks:
+      - id: complexipy
+        args: [--max-complexity-allowed, "26"]

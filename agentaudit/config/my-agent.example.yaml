@@ -12,7 +12,7 @@ agent:
     Authorization: "Bearer ${AGENT_TOKEN}"   # from env, never a literal secret
   request:
     json:
-      message: "{{ input }}"                 # {{ input }} = the test prompt
+      message: "input"
   response:
     text_path: "$.reply"                     # where the reply lives in the JSON
   timeout_s: 30

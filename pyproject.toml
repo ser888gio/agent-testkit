@@ -22,6 +22,7 @@ dependencies = [
     "sqlalchemy",
     "pyjwt[crypto]>=2.13.0",
     "reportlab>=4.0",
+    "complexipy>=7.0.1",
 ]
 
 [project.optional-dependencies]
