@@ -59,3 +59,4 @@ Every spec follows the same shape:
 | 21 | `feat/attacker` | [attacker.md](attacker.md) |
 | 22 | `feat/judge` | [judge.md](judge.md) |
 | 23 | `feat/evolve` | [evolve.md](evolve.md) |
+| 24 | `feat/prd-016-incident-to-test-promotion` | [incident-promotion.md](incident-promotion.md) |
