@@ -34,6 +34,12 @@ _SANDBOX_ASSERTIONS = frozenset(
         "no_mail_sent_to",
         "mail_sent",
         "no_external_forward",
+        # Generic, toolkit-driven equivalents (PRD-009): same "needs a
+        # sandbox" prerequisite, just keyed by declared resource name
+        # instead of a fixed treasury/email attribute.
+        "resource_not_created",
+        "no_message_to",
+        "state_unchanged",
     }
 )
 _TOOL_ASSERTIONS = frozenset(

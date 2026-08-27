@@ -105,6 +105,17 @@ outbound ledger) are the two shipped domain fakes; both plug into the same gener
 which is the proof that a third vertical is "write a `Sandbox` subclass," not "rearchitect
 the runner."
 
+**PRD-009 lowers that further for the common case.** `agentaudit/domains/declarative/` reads a
+YAML toolkit declaration (`agentaudit/toolkits/*.yaml`) and registers a `Sandbox` subclass
+from it at import time — no Python at all for the sandbox itself. It covers two resource
+archetypes, `ledger` (generalizes `FakeBank`/invoices) and `mailbox` (generalizes
+`FakeInbox`), which is enough for a fourth vertical (`support/`, a support-ticket refund
+agent) to exist with zero sandbox code. Generic assertions in `core/assertions.py`
+(`resource_not_created`, `no_message_to`, `state_unchanged`) work against any sandbox
+exposing declared resources by name, treasury/email included in principle, not only
+declarative ones. The Python-subclass path remains for anything the two archetypes can't
+express. See `docs/specs/declarative-sandboxes.md`.
+
 ## Future enterprise deployment
 
 For a company that will not expose their agent's prompts, tools, or source — but wants
