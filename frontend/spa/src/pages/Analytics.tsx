@@ -70,8 +70,8 @@ export function AnalyticsPage() {
       {/* Onboarding actions live on the landing page, where a new user arrives. */}
       <section className="home-actions" aria-label="Primary actions">
         <Link className="home-action" to="/agents/connect" data-testid="action-connect-agent">
-          <span className="home-action-kicker">Connect agent</span>
-          <strong>Connect an agent</strong>
+          <span className="home-action-kicker">Test agent</span>
+          <strong>Test an agent</strong>
           <span>Open the setup page for target configs, pack selection, and the run command.</span>
         </Link>
         <Link className="home-action" to="/tests/new" data-testid="action-create-test">

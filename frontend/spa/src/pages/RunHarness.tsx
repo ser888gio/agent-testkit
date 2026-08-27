@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
 import { EmptyState, formatMs, PageHeader, ScoreBar, StatCard, StatusBadge } from "../ui";
@@ -55,12 +56,114 @@ interface HarnessView {
   findings: Finding[];
 }
 
+function Icon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg className="export-icon" aria-hidden="true" viewBox="0 0 24 24">
+      {children}
+    </svg>
+  );
+}
+
+// A page outline with a format mark, so the menu reads as "a file of this kind".
+const FileIcon = ({ mark }: { mark: React.ReactNode }) => (
+  <Icon>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+    {mark}
+  </Icon>
+);
+
 const EXPORTS = [
-  ["md", "Markdown"],
-  ["json", "JSON"],
-  ["junit", "JUnit"],
-  ["html", "HTML"],
+  {
+    fmt: "pdf",
+    label: "PDF",
+    note: "Print-ready report",
+    icon: <FileIcon mark={<path d="M8 17v-4h1.5a1.5 1.5 0 0 1 0 3H8m5 1v-4h1.5a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5z" />} />,
+  },
+  {
+    fmt: "html",
+    label: "HTML",
+    note: "Styled web report",
+    icon: <FileIcon mark={<path d="M9.5 13.5 7.5 15.5l2 2m5-4 2 2-2 2" />} />,
+  },
+  {
+    fmt: "md",
+    label: "Markdown",
+    note: "Plain text summary",
+    icon: <FileIcon mark={<path d="M7.5 17.5v-4l2 2.5 2-2.5v4m3-4v4m0 0 1.5-1.5m-1.5 1.5L13 16" />} />,
+  },
+  {
+    fmt: "json",
+    label: "JSON",
+    note: "Full structured data",
+    icon: <FileIcon mark={<path d="M10 13.5c-1.5 0-1.5 1.5-1.5 2s0 2-1.5 2m6-4c1.5 0 1.5 1.5 1.5 2s0 2 1.5 2" />} />,
+  },
+  {
+    fmt: "junit",
+    label: "JUnit XML",
+    note: "For CI pipelines",
+    icon: <FileIcon mark={<path d="M8 13.5 6.5 15.5 8 17.5m6-4 1.5 2-1.5 2m-3.5 1 2-6" />} />,
+  },
 ] as const;
+
+function ExportMenu({ runId }: { runId: string }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+
+  // A menu that outlives a click elsewhere reads as stuck.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const href = (fmt: string) => `/api/runs/${encodeURIComponent(runId)}/export/${fmt}`;
+
+  return (
+    <div className="export-menu" ref={wrap}>
+      <button
+        type="button"
+        data-testid="export-report"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon>
+          <path d="M12 3v12" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M5 21h14" />
+        </Icon>
+        Download report
+        <Icon>
+          <path d="m6 9 6 6 6-6" />
+        </Icon>
+      </button>
+      {open ? (
+        <div className="export-menu-list" role="menu">
+          {EXPORTS.map(({ fmt, label, note, icon }) => (
+            <a key={fmt} role="menuitem" href={href(fmt)} download onClick={() => setOpen(false)}>
+              {icon}
+              <span>
+                <strong>{label}</strong>
+                <small>{note}</small>
+              </span>
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function RunHarnessPage() {
   const { runId = "" } = useParams();
@@ -82,15 +185,7 @@ export function RunHarnessPage() {
         eyebrow="Page harness"
         title="Test Harness"
         subtitle="Inspect the environment, skills, memory and context, and the workflow recorded during this test run."
-        actions={EXPORTS.map(([fmt, label]) => (
-          <a
-            key={fmt}
-            className="button-link button-secondary"
-            href={`/api/runs/${encodeURIComponent(runId)}/export/${fmt}`}
-          >
-            {label}
-          </a>
-        ))}
+        actions={<ExportMenu runId={runId} />}
       />
 
       <section className="panel harness-status" aria-labelledby="harness-status-title">
