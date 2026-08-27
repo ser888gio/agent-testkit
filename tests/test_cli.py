@@ -382,3 +382,34 @@ def test_evolve_refuses_without_an_attacker_model(tmp_path, monkeypatch):
     # The local-model path is the answer for anyone who cannot send transcripts
     # to a third party, so the error names it.
     assert "ollama" in result.output.lower()
+
+
+def test_force_utf8_stdio_survives_a_legacy_codepage(monkeypatch):
+    # reports/md.py writes U+274C in its failure bullets, so a cp1252 console
+    # made `report --format md` die with UnicodeEncodeError -- but only on runs
+    # that had failures, which is exactly when the report is worth reading.
+    import io
+
+    from agentaudit.cli import _force_utf8_stdio
+
+    calls = []
+
+    class LegacyStream(io.StringIO):
+        def reconfigure(self, **kwargs):  # noqa: D102 - test double
+            calls.append(kwargs)
+
+    monkeypatch.setattr("sys.stdout", LegacyStream())
+    monkeypatch.setattr("sys.stderr", LegacyStream())
+    _force_utf8_stdio()
+
+    assert calls == [{"encoding": "utf-8", "errors": "replace"}] * 2
+
+
+def test_force_utf8_stdio_tolerates_a_stream_without_reconfigure(monkeypatch):
+    # Captured/wrapped stdout (pytest, some CI runners) has no reconfigure.
+    monkeypatch.setattr("sys.stdout", object())
+    monkeypatch.setattr("sys.stderr", object())
+
+    from agentaudit.cli import _force_utf8_stdio
+
+    _force_utf8_stdio()  # must not raise
