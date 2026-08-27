@@ -14,7 +14,6 @@ import { AgentConnectPage } from "./pages/AgentConnect";
 import { TestsPage } from "./pages/Tests";
 import { TestNewPage } from "./pages/TestNew";
 import { GeneratedPage } from "./pages/Generated";
-import { HarnessIndexPage } from "./pages/HarnessIndex";
 import { JobPage } from "./pages/Job";
 import { ComparePage } from "./pages/Compare";
 import { SettingsPage } from "./pages/Settings";
@@ -48,7 +47,6 @@ export function App() {
         <Route path="/runs/:runId" element={<RunDetailPage />} />
         <Route path="/runs/:runId/harness" element={<RunHarnessPage />} />
         <Route path="/runs/:runId/tests/:testId" element={<TestDetailPage />} />
-        <Route path="/harness" element={<HarnessIndexPage />} />
         <Route path="/agents" element={<AgentsPage />} />
         {/* Agent ids may be URL-shaped and carry slashes; match the rest of
             the path exactly like the server's {agent_id:path} converter. */}

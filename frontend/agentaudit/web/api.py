@@ -364,16 +364,6 @@ def compare_runs(
 
 
 # ---------------------------------------------------------------------------
-# Harness index
-
-
-@router.get("/harnesses")
-def harness_index(principal: Principal = Depends(current_principal)) -> dict:
-    runs = get_store().list_runs(principal.org_id, limit=100)
-    return {"harnesses": [_run_view(runview.run_row(r)) for r in runs]}
-
-
-# ---------------------------------------------------------------------------
 # Agents
 
 

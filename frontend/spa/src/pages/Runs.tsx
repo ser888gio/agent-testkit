@@ -140,6 +140,7 @@ export function RunsPage() {
                       <th scope="col">Gate</th>
                       <th scope="col">Score</th>
                       <th scope="col">Evidence</th>
+                      <th scope="col">Harness</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -169,6 +170,9 @@ export function RunsPage() {
                             {r.critical_failures}
                           </span>{" "}
                           critical, {r.failed} failed
+                        </td>
+                        <td data-label="Harness">
+                          <Link to={`/runs/${r.id}/harness`}>View</Link>
                         </td>
                       </tr>
                     ))}

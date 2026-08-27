@@ -18,17 +18,6 @@ const NAV = [
     ),
   },
   {
-    to: "/harness",
-    testid: "nav-harness",
-    label: "Harness",
-    icon: (
-      <>
-        <path d="M4 17l6-5-6-5" />
-        <path d="M12 19h8" />
-      </>
-    ),
-  },
-  {
     to: "/runs",
     testid: "nav-runs",
     label: "Runs",

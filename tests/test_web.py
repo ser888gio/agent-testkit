@@ -164,30 +164,6 @@ def test_run_harness_view_shows_findings_skills_context_summary(tmp_path, monkey
     assert body["memory"]["total"] == 0
 
 
-def test_harness_index_lists_every_harness(tmp_path, monkeypatch):
-    """It used to redirect to the latest run, which hid every earlier one."""
-    db = str(tmp_path / "web.db")
-    _cfg, rr_first, _report = _seed_store(db)
-    _cfg2, rr_second, _report2 = _seed_store(db)
-    client = _client(db, monkeypatch)
-
-    resp = client.get("/api/harnesses")
-    assert resp.status_code == 200
-    ids = [h["id"] for h in resp.json()["harnesses"]]
-    assert ids == [rr_second.run_id, rr_first.run_id] or set(ids) == {
-        rr_first.run_id,
-        rr_second.run_id,
-    }
-
-
-def test_harness_index_is_empty_without_runs(tmp_path, monkeypatch):
-    db = str(tmp_path / "empty.db")
-    Store(db)
-    client = _client(db, monkeypatch)
-
-    assert client.get("/api/harnesses").json()["harnesses"] == []
-
-
 def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     cfg, rr, report = _seed_store(db)
@@ -676,7 +652,6 @@ def test_spa_source_keeps_nav_and_action_hooks():
     """UI automation anchors on data-testid, not display copy. Keep them stable."""
     layout = (SPA_SRC / "layout.tsx").read_text(encoding="utf-8")
     for hook in (
-        "nav-harness",
         "nav-analytics",
         "nav-runs",
         "nav-agents",
