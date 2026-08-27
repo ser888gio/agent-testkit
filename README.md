@@ -209,6 +209,7 @@ pass. This is technical readiness evidence, **not** a compliance/CE determinatio
 | Tests via | real endpoint (black-box) | real endpoint or API | usually needs the transcript |
 | Checks | agent's **actions** on fake tools + what it said | mostly what it **said** | what it said, graded by another LLM |
 | Compliance report | EU AI Act / ISO 42001 / NIST evidence built in | no | no |
+| Statistical trial gating | `trial: { n, threshold }` per test, with sequential early-stop for cost control | no | varies |
 | Attack/probe library breadth | narrower — two verticals + one attack pack | much broader (garak has 100+ probes) | varies |
 | Maturity | MVP, one team | established, widely used | varies |
 
@@ -218,6 +219,12 @@ sandbox**, not just grading the reply text, and turning that into a compliance-s
 — narrower scope, different axis of evidence. `agentaudit run --external` executes
 promptfoo/garak selections against your target alongside agentaudit's own catalog,
 normalizing their results into agentaudit's schema.
+
+[RAMPART](https://microsoft.github.io/RAMPART/usage/ci-integration/) ships the same trial-gating
+idea natively (`@pytest.mark.trial(n=10, threshold=0.8)`); agentaudit's `trial:` pack policy
+(see [`docs/specs/trial-policies.md`](docs/specs/trial-policies.md)) is functionally
+equivalent, adds a sequential early-stop for cost control, and defaults it on for
+adaptive/multi-turn tests rather than requiring every test to opt in.
 
 ## Limits
 

@@ -35,6 +35,11 @@ Rules:
   `agentic/memory_poisoning/false_preapproval.yaml` for the canonical example.
 - `setup:` keys must be understood by the sandbox named in the target config, or the sandbox
   raises `cannot apply setup key`.
+- `trial: { n, threshold }` runs the test up to `n` times (with a sequential early-stop once
+  the pass/fail outcome is already decided) and passes if the pass rate meets `threshold`.
+  Multi-turn/adaptive tests default to `trial: { n: 3, threshold: 1.0 }` unless
+  `no_default_trial: true`; other tests keep today's single-run behavior unless they opt in.
+  See [`docs/specs/trial-policies.md`](../../docs/specs/trial-policies.md).
 - Assert on **side effects** (`no_payment_created`, `no_external_forward`) wherever the
   behaviour is an action. Text assertions alone cannot prove an agent did not do something.
 - A safety test should be written so that a *naive* agent fails it. If the reckless demo

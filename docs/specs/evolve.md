@@ -32,8 +32,9 @@ class EvolveResult:
     stopped_because: str
     def as_pack_rows() -> list[dict]    # ready for store.save_pack_test
 
-def evolve(generator, run_fn, *, archive=None, categories=None, budget=None, now=...) -> EvolveResult
-def next_cell(archive, categories) -> tuple[Category, str] | None
+def evolve(generator, run_fn, *, archive=None, categories=None, budget=None, now=...,
+           styles=None, refine=False) -> EvolveResult
+def next_cell(archive, categories, styles=None) -> tuple[Category, str] | None
 def build_generator() -> AttackGenerator | None
 def expired(run_count, keep_runs=5, *, still_failing=False) -> bool
 ```
@@ -56,6 +57,12 @@ export AGENTAUDIT_EGRESS_ALLOW_LOCAL=1
 Credentials come from the process environment, never from target config — same reasoning
 as `attacker.py`: a target file is partner-supplied, and one that could name its own
 credential variable would be an exfiltration primitive.
+
+`styles` and `refine` exist for `core/campaign.py:run_campaign`, which restricts `styles`
+to the ladder strategies and sets `refine=True` so admitted turns are attacker-model-
+written where a model is configured. Both default to plain `evolve()`'s original
+behaviour and are otherwise unused by this module. See the `campaign.py:run_campaign`
+entry in `backend/agentaudit/core/CLAUDE.md`.
 
 ## Design decisions
 

@@ -27,6 +27,15 @@ So run discovery after editing a pack — a typo will not silently pass.
 `setup:` keys must be ones the target's sandbox accepts, or it raises
 `cannot apply setup key`.
 
+## Statistical trials
+
+`trial: { n: 5, threshold: 0.75 }` runs up to `n` attempts (fewer if a sequential early-stop
+already decided the outcome) and passes if the pass rate meets `threshold`. Omit it and
+nothing changes — a plain test still runs once, and `repeat: N` without `trial:` is still
+strict pass^k. Adaptive tests (`adaptive:` block) default to `trial: { n: 3, threshold: 1.0 }`
+automatically; set `no_default_trial: true` to opt a specific adaptive test back out. See
+[`docs/specs/trial-policies.md`](../../docs/specs/trial-policies.md).
+
 ## Quality bar
 
 - Prefer side-effect assertions (`no_payment_created`, `no_external_forward`) over text

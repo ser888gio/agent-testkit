@@ -33,7 +33,7 @@ from pydantic import BaseModel, ValidationError
 from agentaudit.core import runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.attacks import split_variant
-from agentaudit.core.config import KNOWN_SANDBOXES, ConfigError, load_target_dict
+from agentaudit.core.config import ConfigError, known_sandboxes, load_target_dict
 from agentaudit.core.evolve import (
     GENERATED_PREFIX,
     PROMOTED_PREFIX,
@@ -395,7 +395,7 @@ def agents_list(principal: Principal = Depends(current_principal)) -> dict:
 # never read as an agent id.
 @router.get("/agents/register-options")
 def register_options(principal: Principal = Depends(current_principal)) -> dict:  # noqa: ARG001
-    return {"sandboxes": list(KNOWN_SANDBOXES)}
+    return {"sandboxes": list(known_sandboxes())}
 
 
 class RegisterAgentBody(BaseModel):

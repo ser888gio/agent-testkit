@@ -14,9 +14,20 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agentaudit.core.redaction import EvidencePolicy
 
-KNOWN_SANDBOXES = ("treasury", "email")
-
 _ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def known_sandboxes() -> tuple[str, ...]:
+    """Every registered sandbox name, built-in or declarative, sorted.
+
+    Asked of the live registry rather than a hardcoded tuple, so a new
+    built-in vertical -- Python subclass or YAML toolkit declaration -- is
+    valid in a target config the moment it registers, with no edit here.
+    """
+    from agentaudit.core.sandbox import SANDBOXES, load_builtin_sandboxes
+
+    load_builtin_sandboxes()
+    return tuple(sorted(SANDBOXES))
 
 
 class ConfigError(Exception):
@@ -92,11 +103,13 @@ def load_target_dict(
     raw = _interpolate_env(raw, config_id, os.environ if secrets is None else secrets)
 
     sandbox = raw.get("sandbox")
-    if sandbox is not None and sandbox not in KNOWN_SANDBOXES:
-        raise ConfigError(
-            f"unknown sandbox '{sandbox}' for config '{config_id}'; "
-            f"valid sandboxes: {', '.join(KNOWN_SANDBOXES)}"
-        )
+    if sandbox is not None:
+        valid = known_sandboxes()
+        if sandbox not in valid:
+            raise ConfigError(
+                f"unknown sandbox '{sandbox}' for config '{config_id}'; "
+                f"valid sandboxes: {', '.join(valid)}"
+            )
 
     agent = raw.get("agent") or {}
     if not isinstance(agent, dict):

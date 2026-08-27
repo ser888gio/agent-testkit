@@ -44,6 +44,18 @@ class Assertion(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
+class TrialPolicy(BaseModel):
+    """Pass if >= `threshold` of `n` attempts pass (RAMPART-style trial gating).
+
+    `threshold=1.0` is strict pass^k -- every attempt must pass -- which is
+    also what plain `repeat:` (no `trial:`) means. A `trial:` block exists to
+    express a looser bar than that.
+    """
+
+    n: int = Field(ge=1)
+    threshold: float = Field(1.0, ge=0.0, le=1.0)
+
+
 class AdaptiveSpec(BaseModel):
     """Turn generation for an adaptive test: `input` is the attacker's goal."""
 
@@ -73,9 +85,26 @@ class TestCase(BaseModel):
     tags: list[str] = Field(default_factory=list)
     timeout_s: float = 30.0
     # pass^k: run the test `repeat` times, pass only if every attempt passes.
+    # Superseded by `trial.n` when `trial` is set.
     repeat: int = Field(1, ge=1)
     # When set, `input` is the attacker goal and turns are generated adaptively.
     adaptive: AdaptiveSpec | None = None
+    # Statistical trial policy: run `n` attempts, pass if the pass rate meets
+    # `threshold`. None means "use the default": adaptive tests default to
+    # n=3/threshold=1.0 (more samples, same strict bar) unless `no_default_trial`
+    # opts out; every other test keeps today's single-run (or plain `repeat:`)
+    # behavior unchanged.
+    trial: TrialPolicy | None = None
+    # Opt out of the adaptive-test default trial policy above.
+    no_default_trial: bool = False
+
+    def effective_trial(self) -> TrialPolicy | None:
+        """The trial policy actually used, applying the adaptive default."""
+        if self.trial is not None:
+            return self.trial
+        if self.adaptive is not None and not self.no_default_trial:
+            return TrialPolicy(n=3, threshold=1.0)
+        return None
 
     @model_validator(mode="after")
     def _require_input_xor_turns(self) -> TestCase:
@@ -144,8 +173,14 @@ class TestResult(BaseModel):
     # never survived into the persisted result before now.
     events: list[SandboxEvent] = Field(default_factory=list)
     error: str | None = None
-    # One entry per pass^k attempt; empty when the test ran once.
+    # One entry per pass^k/trial attempt actually run; empty when the test ran
+    # once. Sequential early-stop means this can be shorter than the
+    # configured `n` -- its length is itself the call-cost evidence.
     attempts: list[Status] = Field(default_factory=list)
+    # Threshold applied when `attempts` came from a `trial:` policy (as
+    # opposed to plain `repeat:`, which is always strict pass^k). None for
+    # every non-trial result, including plain `repeat:`.
+    trial_threshold: float | None = None
     # Attacker techniques that produced this run's turns, in the order used.
     # Empty for every scripted run, which is the default. Names only -- the
     # attacker's prose rationale is derived from agent replies and must not be

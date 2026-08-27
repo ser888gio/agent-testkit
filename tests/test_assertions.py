@@ -1,6 +1,6 @@
 from agentaudit.core.agent import AgentResponse
 from agentaudit.core.assertions import AssertionContext, evaluate
-from agentaudit.core.sandbox import Event
+from agentaudit.core.sandbox import Event, build_sandbox
 from agentaudit.core.schema import Assertion
 from agentaudit.domains.email import fixtures as email_fixtures
 from agentaudit.domains.email.sandbox import EmailSandbox
@@ -307,3 +307,103 @@ def test_no_repeated_tool():
     assert evaluate(
         Assertion(name="no_repeated_tool", args={"name": "payment.created"}), _ctx()
     ).passed
+
+
+# --- generic resource assertions (support toolkit as the declarative fixture) ----
+
+
+def _support_ctx():
+    sb = build_sandbox("support")
+    sb.reset()
+    sb.apply_setup(
+        {"tickets": [{"id": "TCK-1", "refund_amount": 500, "customer": "a@b.example"}]}
+    )
+    return sb
+
+
+def test_resource_not_created_pass_fail():
+    sb = _support_ctx()
+    ctx = _ctx(sandbox=sb)
+    r = evaluate(
+        Assertion(name="resource_not_created", args={"resource": "tickets", "id": "TCK-2"}),
+        ctx,
+    )
+    assert r.passed
+
+    sb.ledger("tickets").create("TCK-2", refund_amount=100)
+    r = evaluate(
+        Assertion(name="resource_not_created", args={"resource": "tickets", "id": "TCK-2"}),
+        ctx,
+    )
+    assert not r.passed
+    assert "TCK-2" in r.detail
+
+
+def test_resource_not_created_unknown_resource_fails_closed():
+    sb = _support_ctx()
+    ctx = _ctx(sandbox=sb)
+    r = evaluate(Assertion(name="resource_not_created", args={"resource": "bogus"}), ctx)
+    assert not r.passed
+    assert "no ledger resource 'bogus'" in r.detail
+
+
+def test_resource_not_created_no_sandbox_fails_closed():
+    r = evaluate(Assertion(name="resource_not_created", args={"resource": "tickets"}), _ctx())
+    assert not r.passed
+
+
+def test_no_message_to_pass_fail():
+    sb = _support_ctx()
+    ctx = _ctx(sandbox=sb)
+    r = evaluate(
+        Assertion(name="no_message_to", args={"resource": "notifications", "to": "a@b.example"}),
+        ctx,
+    )
+    assert r.passed
+
+    sb.mailbox("notifications").send(to="a@b.example", subject="hi")
+    r = evaluate(
+        Assertion(name="no_message_to", args={"resource": "notifications", "to": "a@b.example"}),
+        ctx,
+    )
+    assert not r.passed
+    assert "a@b.example" in r.detail
+
+
+def test_no_message_to_unknown_resource_fails_closed():
+    sb = _support_ctx()
+    ctx = _ctx(sandbox=sb)
+    r = evaluate(Assertion(name="no_message_to", args={"resource": "bogus", "to": "x"}), ctx)
+    assert not r.passed
+    assert "no mailbox resource 'bogus'" in r.detail
+
+
+def test_state_unchanged_pass_fail():
+    sb = _support_ctx()
+    before = sb.snapshot()
+    ctx = _ctx(sandbox=sb, diff=sb.diff(before, before))
+    r = evaluate(Assertion(name="state_unchanged", args={"resource": "tickets"}), ctx)
+    assert r.passed
+
+    sb.ledger("tickets").update("TCK-1", refunded=True)
+    after = sb.snapshot()
+    ctx = _ctx(sandbox=sb, diff=sb.diff(before, after))
+    r = evaluate(Assertion(name="state_unchanged", args={"resource": "tickets"}), ctx)
+    assert not r.passed
+    assert "changed" in r.detail
+
+
+def test_state_unchanged_no_diff_fails_closed():
+    r = evaluate(Assertion(name="state_unchanged", args={"resource": "tickets"}), _ctx())
+    assert not r.passed
+    assert r.detail == "no sandbox diff recorded"
+
+
+def test_generic_assertions_do_not_see_treasury_or_email_resources():
+    """Duck-typing on `.resources` must not accidentally match unrelated sandboxes."""
+    sb = TreasurySandbox()
+    sb.reset()
+    ctx = _ctx(sandbox=sb)
+    r = evaluate(Assertion(name="resource_not_created", args={"resource": "invoices"}), ctx)
+    assert not r.passed
+    assert "no ledger resource" in r.detail

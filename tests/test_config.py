@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentaudit.core.config import ConfigError, load_target, load_target_dict
+from agentaudit.core.config import ConfigError, known_sandboxes, load_target, load_target_dict
 
 TREASURY_CALLABLE_YAML = "agentaudit/config/treasury-agent.yaml"
 TREASURY_HTTP_YAML = "agentaudit/config/treasury-http.yaml"
@@ -69,3 +69,23 @@ def test_file_and_dict_loaders_match_for_all_shipped_configs(path, monkeypatch):
 def test_non_mapping_agent_raises_config_error(agent):
     with pytest.raises(ConfigError, match="agent.*mapping"):
         load_target_dict({"id": "bad-agent", "agent": agent})
+
+
+def test_known_sandboxes_reads_the_live_registry_not_a_hardcoded_list():
+    """A declarative toolkit vertical (`support`) must be usable with no edit here.
+
+    Regression guard for the bug PRD-009 fixed: `KNOWN_SANDBOXES` used to be a
+    hardcoded tuple that predated even the existing `mcp` vertical, so no
+    sandbox added after treasury/email could ever be referenced from a target
+    config.
+    """
+    valid = known_sandboxes()
+    assert "treasury" in valid
+    assert "email" in valid
+    assert "support" in valid
+
+
+def test_support_toolkit_target_config_loads():
+    cfg = load_target("agentaudit/config/support-agent.yaml")
+    assert cfg.sandbox == "support"
+    assert cfg.agent.callable == "agentaudit.domains.support.agent:create_agent"
