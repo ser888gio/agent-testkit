@@ -29,11 +29,15 @@ from agentaudit.core.evolve import (
     build_generator,
 )
 from agentaudit.core.evolve import evolve as run_evolution
+from agentaudit.core.incident_promotion import DerivationError, derive_candidate
+from agentaudit.core.incident_promotion import reproduce as reproduce_candidate
+from agentaudit.core.incidents import parse_transcript, redact_incident
 from agentaudit.core.loader import LoaderError, discover, filter_tests
 from agentaudit.core.planner import plan as build_plan
 from agentaudit.core.profile import HarnessPlan
+from agentaudit.core.redaction import Redactor
 from agentaudit.core.regressions import compare
-from agentaudit.core.schema import Category
+from agentaudit.core.schema import Category, Risk
 from agentaudit.core.store import DEFAULT_ORG, Store
 from agentaudit.reports import render as render_report
 
@@ -363,6 +367,114 @@ def evolve_cmd(
         f"(expire after {keep_runs} run(s) unless promoted)"
         if keep_runs
         else f"stored {stored} test(s) in the '{GENERATED_PREFIX}' pack (never expire)"
+    )
+
+
+incident_app = typer.Typer(no_args_is_help=True)
+app.add_typer(incident_app, name="incident")
+
+
+@incident_app.command("import")
+def incident_import_cmd(
+    transcript: str = typer.Argument(..., help="Path to a plain-text incident transcript."),
+    target: str | None = typer.Option(None, "--target"),
+    endpoint: str | None = typer.Option(
+        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+    ),
+    db: str | None = typer.Option(None, "--db"),
+    category: str | None = typer.Option(
+        None, "--category", help="Override the inferred category (skips the prompt)."
+    ),
+    risk: str | None = typer.Option(
+        None, "--risk", help="Override the inferred risk (skips the prompt)."
+    ),
+) -> None:
+    """Promote a production incident transcript into a queued review candidate.
+
+    Parses + redacts the transcript (core/incidents.py), derives a candidate
+    test with proposed side-effect assertions, verifies it reproduces the
+    failure against the current agent, and queues it in the same 'generated'
+    review pack evolve.py already uses -- promotion happens through
+    `agentaudit ui`'s existing review queue, not a second path.
+    """
+    cfg = _load_target_or_exit(target, endpoint)
+    path = Path(transcript)
+    if not path.is_file():
+        typer.echo(f"error: transcript not found: {transcript}", err=True)
+        raise typer.Exit(2)
+
+    try:
+        parsed = parse_transcript(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    # Redact before this incident is used for anything else -- the same
+    # ingest-boundary discipline incidents.py documents for its own callers.
+    redacted = redact_incident(parsed, Redactor(cfg.evidence.redact))
+
+    category_override = None
+    if category is not None:
+        try:
+            category_override = Category(category)
+        except ValueError:
+            typer.echo(
+                f"error: unknown category '{category}'. "
+                f"Available: {', '.join(c.value for c in Category)}.",
+                err=True,
+            )
+            raise typer.Exit(2) from None
+    risk_override = None
+    if risk is not None:
+        try:
+            risk_override = Risk(risk)
+        except ValueError:
+            typer.echo(
+                f"error: unknown risk '{risk}'. Available: {', '.join(r.value for r in Risk)}.",
+                err=True,
+            )
+            raise typer.Exit(2) from None
+
+    try:
+        candidate = derive_candidate(
+            redacted,
+            has_sandbox=bool(cfg.sandbox),
+            category=category_override,
+            risk=risk_override,
+        )
+    except DerivationError as exc:
+        typer.echo(f"error: could not derive a candidate: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    if category is None or risk is None:
+        typer.echo(
+            f"inferred category={candidate.test.category.value} risk={candidate.test.risk.value} "
+            "(override with --category/--risk if this looks wrong)",
+            err=True,
+        )
+
+    typer.echo(f"verifying candidate {candidate.test.id} reproduces against {cfg.id}...", err=True)
+
+    def run_fn(tests):
+        return execute_audit(cfg, tests).result
+
+    candidate = reproduce_candidate(candidate, run_fn)
+    verdict = "REPRODUCES" if candidate.reproduced else "does not reproduce"
+    typer.echo(f"  {candidate.test.id}: {verdict} ({candidate.detail})")
+
+    store = Store(_resolve_db_path(db))
+    store.ensure_pack(DEFAULT_ORG, GENERATED_PREFIX, "Generated tests (provisional)")
+    try:
+        store.save_pack_test(
+            DEFAULT_ORG, GENERATED_PREFIX, candidate.as_pack_row(), created_by="incident-import"
+        )
+    except LoaderError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+    typer.echo(
+        f"queued {candidate.test.id} for review in the '{GENERATED_PREFIX}' pack "
+        f"({verdict.lower()}) -- promote or reject it in `agentaudit ui`"
     )
 
 
