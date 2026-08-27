@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from importlib.resources import files
 from ipaddress import ip_address
 from pathlib import Path, PurePosixPath
@@ -37,6 +38,20 @@ from agentaudit.core.store import DEFAULT_ORG, Store
 from agentaudit.reports import render as render_report
 
 DEFAULT_DB_PATH = "database/agentaudit.db"
+
+
+def _force_utf8_stdio() -> None:
+    """Print UTF-8 regardless of console codepage.
+
+    Reports contain non-ASCII (the failure bullets in `reports/md.py` use U+274C),
+    and a Windows console defaults to cp1252, so `report --format md` on a run with
+    failures died with UnicodeEncodeError -- only ever on failing runs, which is
+    exactly when the report matters. `--out` never hit this: it writes UTF-8 itself.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def _resolve_db_path(db: str | None) -> str:
@@ -90,7 +105,7 @@ def main(
         False, "--version", callback=_version_callback, is_eager=True
     ),
 ) -> None:
-    pass
+    _force_utf8_stdio()
 
 
 def _print_table(rr, report) -> None:
