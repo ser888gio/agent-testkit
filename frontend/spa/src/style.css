@@ -1152,14 +1152,9 @@ pre {
   stroke-linejoin: round;
 }
 
-/* Show only the icon for the theme the click switches *to*: a sun while dark
-   is active, a moon while light is. Default (no data-theme) is dark, so the
-   media query mirrors this for OS-driven light. */
-.theme-icon-dark { display: none; }
-.theme-icon-light { display: block; }
-
-:root[data-theme="light"] .theme-icon-light { display: none; }
-:root[data-theme="light"] .theme-icon-dark { display: block; }
+/* ThemeToggle renders only the icon for the theme the click switches *to* -- a
+   sun while dark is active, a moon while light is -- so the CSS show/hide pair
+   this used to need is gone. */
 
 @media (max-width: 640px) {
   .bar-list li {
