@@ -1,3 +1,72 @@
+@import "tailwindcss";
+
+/* Tailwind reads the tokens below rather than defining its own. `inline` is
+   load-bearing: it compiles `bg-surface-1` to `background-color:
+   var(--surface-1)` instead of snapshotting the hex at build time, so a theme
+   swap changes what every utility resolves to. That is why this app needs no
+   `dark:` variant despite being dark by default -- the variable moves, not the
+   class. Encode theme differences as tokens, never as variants.
+
+   The second half aliases shadcn/ui's vocabulary onto ours so components
+   copied in via `npx shadcn@latest add` are correctly themed on arrival. */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-ink-tertiary: var(--ink-tertiary);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-pass-bg: var(--pass-bg);
+  --color-pass-text: var(--pass-text);
+  --color-pass-border: var(--pass-border);
+  --color-fail-bg: var(--fail-bg);
+  --color-fail-text: var(--fail-text);
+  --color-fail-border: var(--fail-border);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-text: var(--warn-text);
+  --color-warn-border: var(--warn-border);
+  --color-neutral-bg: var(--neutral-bg);
+  --color-neutral-text: var(--neutral-text);
+
+  --radius-sm: var(--radius-sm);
+  --radius-card: var(--radius-card);
+  --radius-pill: var(--radius-pill);
+
+  /* shadcn/ui token names, aliased onto the palette above. */
+  --color-background: var(--canvas);
+  --color-foreground: var(--ink);
+  --color-card: var(--surface-1);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface-2);
+  --color-popover-foreground: var(--ink);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--ink-subtle);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--surface-3);
+  --color-secondary-foreground: var(--ink);
+  --color-accent-foreground: var(--on-accent);
+  --color-border: var(--hairline);
+  --color-input: var(--hairline);
+  --color-ring: var(--focus);
+  --color-destructive: var(--fail-text);
+  --color-destructive-foreground: var(--on-accent);
+}
+
+/* shadcn components ship `dark:` utilities. This app is dark by default with an
+   opt-in light theme -- the inverse of Tailwind's model -- so define the light
+   side explicitly rather than redefining `dark:`. Our own code should not need
+   either; see the note above. */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
 :root {
   color-scheme: dark;
   /* Linear primitives: canvas + four-step surface ladder, hairline borders. */
@@ -112,60 +181,6 @@
   --sidebar-bg: rgba(255, 255, 255, 0.86);
 }
 
-/* Same palette when the OS asks for light and the user has not chosen a
-   theme explicitly. Guarded on :not([data-theme]) so an explicit dark pick
-   still wins over the OS preference. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) {
-    color-scheme: light;
-
-    /* Surface ladder inverts: the canvas is the *darkest* neutral here so raised
-       panels can climb toward white, keeping the same "higher = lighter" logic. */
-    --canvas: #f7f8f9;
-    --surface-1: #ffffff;
-    --surface-2: #fbfbfc;
-    --surface-3: #f4f5f7;
-    --surface-4: #eef0f3;
-    --hairline: #e3e5e9;
-    --hairline-strong: #ccd0d7;
-    --hairline-tertiary: #b1b6bf;
-
-    /* Ink ramp inverts. --ink-subtle stays >=4.5:1 on white so muted body copy
-       and table labels remain readable, not decorative grey. */
-    --ink: #14161a;
-    --ink-muted: #35393f;
-    --ink-subtle: #5b6069;
-    --ink-tertiary: #767b84;
-
-    /* Accent darkens: the dark theme's #5e6ad2 is only ~3.6:1 on white, which
-       fails text contrast for links and the primary CTA label. */
-    --accent: #4c56b8;
-    --accent-hover: #3b449b;
-    --accent-focus: #4c56b8;
-    --on-accent: #ffffff;
-    --accent-soft: rgba(76, 86, 184, 0.10);
-
-    /* Status palette re-tuned for a white ground. The dark theme's #3fcf62 /
-       #e0a343 are legible on near-black but drop under 3:1 on white, so the text
-       tones are darkened while the tinted fills stay light. */
-    --pass-bg: rgba(23, 130, 60, 0.10);
-    --pass-text: #17823c;
-    --pass-border: rgba(23, 130, 60, 0.28);
-    --fail-bg: rgba(197, 43, 43, 0.09);
-    --fail-text: #c22b2b;
-    --fail-border: rgba(197, 43, 43, 0.26);
-    --warn-bg: rgba(166, 106, 10, 0.11);
-    --warn-text: #8a5808;
-    --warn-border: rgba(166, 106, 10, 0.28);
-    --neutral-bg: var(--surface-3);
-    --neutral-text: var(--ink-subtle);
-
-    /* Light UI carries depth with soft shadow, since hairlines alone read flat. */
-    --shadow: 0 1px 2px rgba(16, 20, 28, 0.06);
-    --shadow-float: 0 12px 32px rgba(16, 20, 28, 0.14);
-    --sidebar-bg: rgba(255, 255, 255, 0.86);
-  }
-}
 
 * { box-sizing: border-box; }
 
@@ -192,11 +207,15 @@ a {
 
 a:hover { color: var(--ink); }
 
+/* summary and [tabindex] are focusable too -- without them the test picker's
+   disclosure and .test-info got only the UA default, or nothing. */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
 main:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
@@ -334,13 +353,16 @@ main {
 
 h1, h2, h3, p { margin-top: 0; }
 
+/* Sized for a data-dense dashboard: three of the six nav destinations are
+   tables the user came to scan, and a 4rem title over a 13rem header pushed
+   the first row below the fold. */
 h1 {
-  max-width: 13ch;
-  font-size: 4rem;
+  max-width: 32ch;
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
   font-weight: 600;
-  line-height: 1.05;
-  letter-spacing: -3px;
-  margin-bottom: 0.65rem;
+  line-height: 1.15;
+  letter-spacing: -1px;
+  margin-bottom: 0.5rem;
   text-wrap: balance;
 }
 
@@ -386,9 +408,8 @@ h3 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1.5rem;
-  min-height: 13rem;
-  margin-bottom: 1.5rem;
-  padding: clamp(2rem, 6vw, 4rem) 0 clamp(1.25rem, 4vw, 2rem);
+  margin-bottom: 1.25rem;
+  padding: clamp(1rem, 2vw, 1.5rem) 0 clamp(0.75rem, 1.5vw, 1.25rem);
 }
 
 .page-header::after {
@@ -1139,11 +1160,6 @@ pre {
 
 :root[data-theme="light"] .theme-icon-light { display: none; }
 :root[data-theme="light"] .theme-icon-dark { display: block; }
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .theme-icon-light { display: none; }
-  :root:not([data-theme]) .theme-icon-dark { display: block; }
-}
 
 @media (max-width: 640px) {
   .bar-list li {

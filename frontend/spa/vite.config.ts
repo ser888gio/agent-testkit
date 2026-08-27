@@ -1,10 +1,26 @@
 import { defineConfig } from "vite";
+import type { ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+
+// index.html is not in the module graph the way a .tsx is, so editing it (the
+// theme boot script, the shell) leaves the page stale until a manual reload.
+// Watch it and push a full reload instead.
+function reloadOnHtmlChange() {
+  return {
+    name: "reload-on-html-change",
+    configureServer(server: ViteDevServer) {
+      server.watcher.on("change", (file: string) => {
+        if (file.endsWith(".html")) server.ws.send({ type: "full-reload" });
+      });
+    },
+  };
+}
 
 // base "/assets/" matches the StaticFiles mount agentaudit.web.app serves the
 // built bundle from; dev requests are proxied to the FastAPI server instead.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss(), reloadOnHtmlChange()],
   base: "/assets/",
   build: {
     outDir: "../agentaudit/web/spa_dist",

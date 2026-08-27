@@ -15,10 +15,23 @@ interface ResultJson {
   status: string;
   latency_ms: number | null;
   error: string | null;
-  request: string;
-  response: string | null;
-  sandbox_diff: string | null;
+  // Evidence fields are whatever the agent and sandbox produced: a plain string
+  // for a text agent, but an object for an HTTP one ({text, raw, status_code,
+  // error}) or a sandbox diff ({added, removed, changed}). They were typed as
+  // `string | null`, which was wrong and crashed the page -- React refuses an
+  // object as a child, so the whole route rendered blank. Render via evidence().
+  request: unknown;
+  response: unknown;
+  sandbox_diff: unknown;
   assertion_results: AssertionJson[];
+}
+
+// Evidence is already redacted on the way into the store, so this only has to
+// make it printable.
+function evidence(value: unknown, empty = ""): string {
+  if (value === null || value === undefined) return empty;
+  if (typeof value === "string") return value || empty;
+  return JSON.stringify(value, null, 2);
 }
 
 interface TimelineEvent {
@@ -194,7 +207,7 @@ export function TestDetailPage() {
           <div className="panel-header">
             <h2>Request</h2>
           </div>
-          <pre>{result.request}</pre>
+          <pre>{evidence(result.request)}</pre>
         </article>
 
         <article className="panel">
@@ -202,7 +215,7 @@ export function TestDetailPage() {
             <h2>Response (redacted)</h2>
           </div>
           {/* Redaction happened before storage; markers render as-is. */}
-          <pre>{result.response ?? ""}</pre>
+          <pre>{evidence(result.response)}</pre>
         </article>
       </section>
 
@@ -210,7 +223,7 @@ export function TestDetailPage() {
         <div className="panel-header">
           <h2>Sandbox diff</h2>
         </div>
-        <pre>{result.sandbox_diff || "No sandbox changes were recorded."}</pre>
+        <pre>{evidence(result.sandbox_diff, "No sandbox changes were recorded.")}</pre>
       </section>
 
       {view.timeline ? (

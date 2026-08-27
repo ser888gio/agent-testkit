@@ -1,6 +1,5 @@
-// Shared UI primitives, ported one-for-one from the Jinja macros in
-// templates/_components.html and the layout in base.html. Class names are the
-// stylesheet's; the design contract lives in /static/style.css.
+// Shared UI primitives. Class names are the stylesheet's; the design contract
+// lives in ./style.css, which main.tsx imports so Vite owns it.
 
 import { Link } from "react-router-dom";
 
