@@ -27,33 +27,31 @@ The dependency list is deliberately short. Two constraints drive it:
 | --- | --- | --- |
 | `react` / `react-dom` | ^18.3.1 | Everything. Not React 19. |
 | `react-router-dom` | ^6.28.0 | Routing (`BrowserRouter`, no data router / loaders). |
+| `tailwindcss` + `@tailwindcss/vite` | ^4.3.3 | Utility CSS. v4 is Vite-plugin based — no `tailwind.config.js`, no PostCSS config, no `content` globs. |
+| `lucide-react` | ^1.34.0 | Icons. Tree-shakes to the ~9 actually imported. |
+| `@radix-ui/react-dropdown-menu` | ^2.1.24 | The export menu's keyboard and focus behavior. |
 | `vite` | ^5.4.11 | Build and dev server. |
 | `typescript` | ^5.6.3 | `tsc -b` runs as part of `npm run build`. |
 
-That is the complete runtime dependency list: **three packages**. There is currently no
-component library, no icon package, no chart library, no state-management library, and no
-CSS framework. Everything below is hand-written.
+Radix is installed **per component, only where its behavior is needed** — not as a bundle.
+It costs ~30 kB gzipped for the one dropdown, which is the largest single dependency here;
+that was judged worth it because the hand-rolled menu announced the menu ARIA pattern
+without implementing it. Do not add more Radix packages without the same justification.
 
-### Being adopted (UI modernization, in progress)
+shadcn/ui is a **source**, not a dependency: `npx shadcn@latest add <component>` copies code
+into the repo. Nothing has been pulled in wholesale yet — `Panel` and `DataTable` are local
+because neither needed shadcn's structure.
 
-| Library | Role | Status |
-| --- | --- | --- |
-| `tailwindcss` + `@tailwindcss/vite` | Utility CSS, v4 (Vite plugin — no `tailwind.config.js`) | pending |
-| shadcn/ui | Component source, copied into the repo via `npx shadcn@latest add` — not a dependency | pending |
-| Radix UI | Accessible primitives behind shadcn (dropdown, dialog, tooltip) | pending, per-component |
-| `clsx` + `tailwind-merge` + `class-variance-authority` | Class composition and variants | pending |
-| `lucide-react` | Icons, replacing ~9 hand-inlined SVG sets | pending |
-| `vitest` + `@testing-library/react` | Component tests (the SPA has no test runner today) | pending |
-
-**Token bridging:** the existing CSS custom properties stay the single source of truth.
-Tailwind reads them via `@theme inline`, and shadcn's vocabulary (`--color-card`,
-`--color-primary`, …) is aliased onto ours in the same block, so pasted components are
-correctly themed on arrival.
+**Token bridging:** the CSS custom properties are the single source of truth. Tailwind reads
+them via `@theme inline` in [src/style.css](src/style.css), and shadcn's vocabulary
+(`--color-card`, `--color-primary`, …) is aliased onto ours in the same block, so components
+copied in are correctly themed on arrival.
 
 **No `dark:` or `light:` variants in our own code.** The app is dark-by-default with an
 opt-in light theme — the inverse of Tailwind's model. Because `@theme inline` resolves
-utilities through the custom properties at runtime, every utility is already theme-correct.
-Encode any theme difference as a *token*, not a variant.
+utilities through the custom properties at runtime, every utility is already theme-correct:
+the variable moves, not the class. Encode any theme difference as a *token*, not a variant.
+A `light:` variant is defined only so shadcn components shipping `dark:` classes behave.
 
 ### Deliberately not used
 
@@ -66,21 +64,26 @@ Encode any theme difference as a *token*, not a variant.
 
 ## Styling
 
-All styling is global CSS classes in **one stylesheet**:
-`../agentaudit/web/static/style.css`. It is currently served by FastAPI's `/static` mount
-and linked from `index.html` — **Vite does not see it**, so there is no hashing, no style
-HMR, and no dead-code elimination. Moving it into the Vite build is Phase 1 of the
-modernization.
+Styling is global CSS classes in **one stylesheet**, [src/style.css](src/style.css), which
+`main.tsx` imports so Vite owns it — hashed, HMR'd, and emitted as its own bundle. It used
+to live under `../agentaudit/web/static/` and load via a plain `<link>`, outside the build
+graph entirely; that is why five class names could go dangling unnoticed.
 
 Design tokens are CSS custom properties on `:root`: a four-step surface ladder
 (`--surface-1..4`), an ink ramp (`--ink` / `-muted` / `-subtle` / `-tertiary`), one
 chromatic accent (`--accent`), and a semantic status palette (`--pass-*`, `--fail-*`,
 `--warn-*`, `--neutral-*`). Colors are tuned per theme for contrast — the light theme is not
-a naive inversion.
+a naive inversion; the accent darkens because `#5e6ad2` is only ~3.6:1 on white.
+
+There is **one vocabulary**. An earlier alias layer (`--surface`, `--text`, `--border`) was
+inlined and removed; use the canonical names.
 
 **Theme switching** is a `data-theme` attribute on `<html>` plus `localStorage` key
-`aa-theme`. The inline script in `index.html` stamps it before first paint; it must stay
-inline in the head, or a light-theme user gets a dark flash.
+`aa-theme`. The boot script in `index.html` resolves the OS preference and always stamps an
+explicit value before first paint — it must stay inline in the head, or a light-theme user
+gets a dark flash. Because the attribute is always present, the stylesheet needs only one
+light palette rather than a duplicate under `@media (prefers-color-scheme: light)`.
+Tradeoff: the app does not follow a live OS theme change mid-session.
 
 Inline `style={{}}` is used only for geometry that comes from data — bar widths, the score
 bar fill.
@@ -114,32 +117,42 @@ config array holding 7 inline SVG icon sets.
 whole view model. `Loading` also lives here. `api.ts` holds `apiGet`/`apiSend`, `ApiError`,
 the CSRF token echo, and the 401 → `/login` redirect. `session.tsx` is the one React Context.
 
+### Tables — [`src/table.tsx`](src/table.tsx)
+
+`DataTable` renders **all nine tables**, driven by a `Column<T>[]` descriptor.
+
+Use it for any new table. Below 700px the stylesheet hides `<thead>` and turns each `<td>`
+into a card labelled by `td::before { content: attr(data-label) }`, so **every cell must
+carry `data-label`** — the column list derives it from the header, which is why hand-written
+tables kept losing it. It also forces the `.table-wrap` scroll container and a `<caption>`.
+
 ### Page-local components (defined inline, used once)
 
 | Component | File |
 | --- | --- |
-| `ExportMenu` | [`pages/RunHarness.tsx`](src/pages/RunHarness.tsx) |
-| `Icon`, `FileIcon` | [`pages/RunHarness.tsx`](src/pages/RunHarness.tsx) |
+| `ExportMenu` (Radix) | [`pages/RunHarness.tsx`](src/pages/RunHarness.tsx) |
 | `RunsFilterBar` | [`pages/Runs.tsx`](src/pages/Runs.tsx) |
 | `TestsFilterBar` | [`pages/Tests.tsx`](src/pages/Tests.tsx) |
 | inline filter form | [`pages/RunDetail.tsx`](src/pages/RunDetail.tsx) |
-| `Panel`, `Meta` | [`pages/Settings.tsx`](src/pages/Settings.tsx) |
+| `Meta` | [`pages/Settings.tsx`](src/pages/Settings.tsx) |
 | `DeltaList` | [`pages/Compare.tsx`](src/pages/Compare.tsx) |
 | `useJobPolling` | [`pages/Job.tsx`](src/pages/Job.tsx) |
 | `NotFound` | [`src/App.tsx`](src/App.tsx) |
 
-### Patterns that exist only as class names
+### Patterns that are still only class names
 
-These are recurring UI patterns styled in `style.css` but **not** abstracted into
-components — every page hand-writes the markup. Extracting them is Phase 3 and Phase 7 of
-the modernization.
+Styled in `style.css` with no component wrapper — each page hand-writes the markup. Worth
+extracting when one of them next needs changing:
 
-`.panel` + `.panel-header` (~78 occurrences across 13 pages) · `.table-wrap` + `<table>`
-(9 tables) · `.stat-grid` (7 pages) · `.attention-list` · `.bar-list` / `.bar-track` /
-`.bar-fill` · `.matrix-row` · `.test-form` · `.detail-grid` · `.harness-meta` ·
+`.stat-grid` (7 pages) · `.attention-list` · `.bar-list` / `.bar-track` / `.bar-fill` ·
+`.matrix-row` · `.test-form` (3 near-identical forms) · `.detail-grid` · `.harness-meta` ·
 `.assertion-list` · `.artifact-list` · `.finding-stream` · `.memory-check-list` ·
 `.skill-card` · `.history-strip` · `.progress-meter` · `.test-picker` · `.option-list` ·
 `.timeline`
+
+The three filter bars are also still three implementations with three different control
+strategies (controlled + resync, uncontrolled + debounce, and uncontrolled + its own timer).
+They all build `URLSearchParams` and navigate; one `FilterBar` would cover all three.
 
 ## Conventions
 
@@ -154,15 +167,23 @@ the modernization.
 - Badge tones come from `badgeClass()`. Do not interpolate `badge-${value}` — callers pass
   open-ended server strings (profile domains, interfaces, selection sources) that have no
   status color, and an unknown tone renders as an invisible pill.
+- **API response fields are not always the type the interface claims.** `TestDetail` typed
+  `request`/`response`/`sandbox_diff` as `string | null` while the API returned objects,
+  which crashed the whole route (React refuses an object as a child) and `tsc` could not
+  catch it. Type such fields `unknown` and render them through a helper.
 
 ## Testing
 
-There is no SPA test runner yet (Vitest is planned). Today's guards are:
+There is **no SPA test runner**. Today's guards are:
 
 ```bash
 npm run build                                   # tsc typecheck + bundle
 python -m pytest tests/test_web.py              # API routes + SPA source greps
 ```
 
-`TestClient` never executes JavaScript, so rendering changes need a manual pass:
-`bash ../../infra/dev.sh`, then check both themes and at least 1440px and 380px widths.
+That is thin: `tsc` only checks the types you wrote (see the caveat above), and the pytest
+side greps source text — `TestClient` never executes JavaScript. **Rendering changes need a
+manual pass**: `bash ../../infra/dev.sh`, then check both themes at 1440px and 380px.
+
+Adding Vitest + `@testing-library/react` is the obvious next step; `DataTable`'s label
+mapping and `badgeClass`'s fallback are the two pieces most worth pinning.
