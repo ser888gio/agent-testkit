@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
 import { useEffect } from "react";
-import { EmptyState, PageHeader, ErrorNote } from "../ui";
+import { EmptyState, ErrorNote, PageHeader, Panel } from "../ui";
 
 interface RegisterOptions {
   sandboxes: string[];
@@ -54,13 +54,7 @@ export function AgentRegisterPage() {
         subtitle="Point agentaudit at an HTTP endpoint. The host you enter becomes the only address this target may be dialled at."
       />
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Endpoint</h2>
-            <p>Registered targets can be profiled and run without adding a YAML file.</p>
-          </div>
-        </div>
+      <Panel title="Endpoint" blurb={<>Registered targets can be profiled and run without adding a YAML file.</>}>
         {error ? <ErrorNote message={error} /> : null}
         <form onSubmit={submit} className="test-form" data-testid="register-form">
           <label>
@@ -134,7 +128,7 @@ export function AgentRegisterPage() {
             Register agent
           </button>
         </form>
-      </section>
+      </Panel>
     </>
   );
 }

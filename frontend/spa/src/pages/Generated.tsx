@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ApiError, apiSend } from "../api";
 import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader } from "../ui";
+import { EmptyState, ErrorNote, PageHeader } from "../ui";
+import { DataTable } from "../table";
 
 interface Candidate {
   id: string;
@@ -18,15 +19,17 @@ interface GeneratedView {
 
 export function GeneratedPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const { view, error, reload } = useView<GeneratedView>("/generated");
 
   const act = async (path: string, test_id: string) => {
     setBusyId(test_id);
+    setActionError(null);
     try {
       await apiSend(path, "POST", { test_id });
       reload();
     } catch (err) {
-      window.alert(err instanceof ApiError ? err.detail : "Action failed.");
+      setActionError(err instanceof ApiError ? err.detail : "Action failed.");
     } finally {
       setBusyId(null);
     }
@@ -55,37 +58,51 @@ export function GeneratedPage() {
         />
       ) : (
         <section className="panel">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Test</th>
-                <th scope="col">Category</th>
-                <th scope="col">Risk</th>
-                <th scope="col">Probe</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.candidates.map((c) => (
-                <tr key={c.id} data-testid="generated-row">
-                  <td>
+          {actionError ? <ErrorNote message={actionError} /> : null}
+          <DataTable
+            caption="Machine-authored candidate attacks awaiting review"
+            rows={view.candidates}
+            rowKey={(c) => c.id}
+            rowTestId="generated-row"
+            columns={[
+              {
+                key: "test",
+                header: "Test",
+                cell: (c) => (
+                  <>
                     <code>{c.id}</code>{" "}
                     {c.still_failing ? (
-                      <span className="badge badge-failed" title="This test is currently catching a defect.">
+                      <span
+                        className="badge badge-failed"
+                        title="This test is currently catching a defect."
+                        aria-label="This test is currently catching a defect."
+                      >
                         catching a defect
                       </span>
                     ) : null}
-                    <div className="muted">
+                    <div className="quiet">
                       promotes to <code>{c.promoted_id}</code>
                     </div>
-                  </td>
-                  <td>{c.category}</td>
-                  <td>{c.risk}</td>
-                  <td className="truncate">{c.input}</td>
-                  <td className="row-actions">
-                    <button type="button" disabled={busyId === c.id} onClick={() => act("/generated/promote", c.id)} data-testid="promote">
+                  </>
+                ),
+              },
+              { key: "category", header: "Category", cell: (c) => c.category },
+              { key: "risk", header: "Risk", cell: (c) => c.risk },
+              { key: "probe", header: "Probe", className: "truncate", cell: (c) => c.input },
+              {
+                key: "actions",
+                header: "Actions",
+                className: "row-actions",
+                cell: (c) => (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busyId === c.id}
+                      onClick={() => act("/generated/promote", c.id)}
+                      data-testid="promote"
+                    >
                       Promote
-                    </button>{" "}
+                    </button>
                     <button
                       type="button"
                       className="button-secondary"
@@ -95,11 +112,11 @@ export function GeneratedPage() {
                     >
                       Reject
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </>
+                ),
+              },
+            ]}
+          />
         </section>
       )}
     </>

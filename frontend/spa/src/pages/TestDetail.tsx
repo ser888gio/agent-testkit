@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
-import { EmptyState, formatMs, PageHeader, StatCard, StatusBadge, RiskBadge } from "../ui";
+import { EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../ui";
 
 interface AssertionJson {
   name: string;
@@ -15,10 +15,23 @@ interface ResultJson {
   status: string;
   latency_ms: number | null;
   error: string | null;
-  request: string;
-  response: string | null;
-  sandbox_diff: string | null;
+  // Evidence fields are whatever the agent and sandbox produced: a plain string
+  // for a text agent, but an object for an HTTP one ({text, raw, status_code,
+  // error}) or a sandbox diff ({added, removed, changed}). They were typed as
+  // `string | null`, which was wrong and crashed the page -- React refuses an
+  // object as a child, so the whole route rendered blank. Render via evidence().
+  request: unknown;
+  response: unknown;
+  sandbox_diff: unknown;
   assertion_results: AssertionJson[];
+}
+
+// Evidence is already redacted on the way into the store, so this only has to
+// make it printable.
+function evidence(value: unknown, empty = ""): string {
+  if (value === null || value === undefined) return empty;
+  if (typeof value === "string") return value || empty;
+  return JSON.stringify(value, null, 2);
 }
 
 interface TimelineEvent {
@@ -108,31 +121,17 @@ export function TestDetailPage() {
       </section>
 
       {view.selection ? (
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Why this test ran</h2>
-              <p>
-                Selected from {view.selection.source} with a relevance score of {view.selection.score}.
-              </p>
-            </div>
-          </div>
+        <Panel title="Why this test ran" blurb={<>Selected from {view.selection.source} with a relevance score of {view.selection.score}.</>}>
           <ul className="quiet">
             {view.selection.reasons.map((reason, i) => (
               <li key={i}>{reason}</li>
             ))}
           </ul>
-        </section>
+        </Panel>
       ) : null}
 
       <section className="detail-grid">
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Failure context</h2>
-              <p>Assertion outcome, error text, and neighboring results.</p>
-            </div>
-          </div>
+        <Panel title="Failure context" blurb={<>Assertion outcome, error text, and neighboring results.</>}>
           <div className="assertion-summary">
             <span className="pass">{passed} passed</span>
             <span className={failedCount ? "fail" : undefined}>{failedCount} failed</span>
@@ -157,12 +156,9 @@ export function TestDetailPage() {
               </Link>
             ) : null}
           </div>
-        </article>
+        </Panel>
 
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Artifacts</h2>
-          </div>
+        <Panel title="Artifacts">
           <ul className="artifact-list">
             {view.artifact_states.map((a) => (
               <li key={a.name}>
@@ -172,13 +168,10 @@ export function TestDetailPage() {
               </li>
             ))}
           </ul>
-        </article>
+        </Panel>
       </section>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Assertions</h2>
-        </div>
+      <Panel title="Assertions">
         <ul className="assertion-list">
           {result.assertion_results.map((a) => (
             <li key={a.name} className={a.passed ? "pass" : "fail"}>
@@ -187,40 +180,25 @@ export function TestDetailPage() {
             </li>
           ))}
         </ul>
-      </section>
+      </Panel>
 
       <section className="detail-grid">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Request</h2>
-          </div>
-          <pre>{result.request}</pre>
-        </article>
+        <Panel title="Request">
+          <pre>{evidence(result.request)}</pre>
+        </Panel>
 
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Response (redacted)</h2>
-          </div>
+        <Panel title="Response (redacted)">
           {/* Redaction happened before storage; markers render as-is. */}
-          <pre>{result.response ?? ""}</pre>
-        </article>
+          <pre>{evidence(result.response)}</pre>
+        </Panel>
       </section>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Sandbox diff</h2>
-        </div>
-        <pre>{result.sandbox_diff || "No sandbox changes were recorded."}</pre>
-      </section>
+      <Panel title="Sandbox diff">
+        <pre>{evidence(result.sandbox_diff, "No sandbox changes were recorded.")}</pre>
+      </Panel>
 
       {view.timeline ? (
-        <section className="panel" data-testid="test-timeline">
-          <div className="panel-header">
-            <div>
-              <h2>Timeline</h2>
-              <p>Turn-by-turn requests and sandbox events. The first turn where this test's failure appears is highlighted.</p>
-            </div>
-          </div>
+        <Panel testid="test-timeline" title="Timeline" blurb={<>Turn-by-turn requests and sandbox events. The first turn where this test's failure appears is highlighted.</>}>
           <ol className="timeline">
             {view.timeline.omitted_before ? (
               <li className="quiet">... {view.timeline.omitted_before} earlier turn(s) omitted ...</li>
@@ -249,7 +227,7 @@ export function TestDetailPage() {
               <li className="quiet">... {view.timeline.omitted_after} later turn(s) omitted ...</li>
             ) : null}
           </ol>
-        </section>
+        </Panel>
       ) : null}
 
       <section className="panel" aria-labelledby="history-title" data-testid="test-history">
@@ -263,9 +241,13 @@ export function TestDetailPage() {
         <ol className="history-strip">
           {[...view.history].reverse().map((entry) => (
             <li key={`${entry.run_id}-${entry.started_at}`}>
+              {/* The badge label is a single letter, so without aria-label the
+                  accessible name of this link is "F". title alone does not
+                  reach a keyboard or touch user. */}
               <Link
                 to={`/runs/${entry.run_id}/tests/${encodeURIComponent(testId)}`}
                 title={`${entry.started_at.slice(0, 16).replace("T", " ")} - ${entry.status}`}
+                aria-label={`${entry.started_at.slice(0, 16).replace("T", " ")} - ${entry.status}`}
               >
                 <StatusBadge
                   status={entry.status}

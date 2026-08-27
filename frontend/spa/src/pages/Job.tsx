@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
-import { EmptyState, PageHeader, Spinner } from "../ui";
+import { EmptyState, ErrorNote, PageHeader, Panel, Spinner } from "../ui";
 
 interface JobView {
   id: string;
@@ -54,6 +54,7 @@ export function JobPage() {
   const navigate = useNavigate();
   const [job, setJob] = useState<JobView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const followedRun = useRef<string | null>(null);
 
@@ -77,11 +78,12 @@ export function JobPage() {
 
   const cancel = async () => {
     setBusy(true);
+    setCancelError(null);
     try {
       await apiSend(`/jobs/${encodeURIComponent(jobId)}/cancel`, "POST", {});
       setJob({ ...job, running: false, state: "cancelled", message: "Cancelled" });
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Cancellation failed.");
+      setCancelError(err instanceof ApiError ? err.detail : "Cancellation failed.");
     } finally {
       setBusy(false);
     }
@@ -106,10 +108,7 @@ export function JobPage() {
         }
       />
 
-      <section className="panel" aria-labelledby="job-status-title">
-        <div className="panel-header">
-          <h2 id="job-status-title">Current Status</h2>
-        </div>
+      <Panel titleId="job-status-title" title="Current Status">
         <p id="run-status" aria-live="polite">
           {job.running ? <Spinner /> : null} {job.message || job.state}
         </p>
@@ -119,6 +118,7 @@ export function JobPage() {
             Abort run
           </button>
         ) : null}
+        {cancelError ? <ErrorNote message={cancelError} /> : null}
 
         {/* Live progress off the job row. A run is written once, when it
             finishes, so nothing here reads a half-written run. */}
@@ -154,7 +154,7 @@ export function JobPage() {
             </Link>
           </p>
         ) : null}
-      </section>
+      </Panel>
     </>
   );
 }

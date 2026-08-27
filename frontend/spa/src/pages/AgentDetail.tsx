@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { apiSend } from "../api";
+import { ApiError, apiSend } from "../api";
 import { Loading, useView } from "../useView";
+import { DataTable } from "../table";
 import {
   EmptyState,
+  ErrorNote,
   PageHeader,
   ScoreBar,
   shortDate,
@@ -56,6 +58,10 @@ export function AgentDetailPage() {
   );
   const [hosts, setHosts] = useState("");
   const [busy, setBusy] = useState(false);
+  // Separate notes: each renders beside the control that failed, so the message
+  // appears where the user is looking.
+  const [allowlistError, setAllowlistError] = useState<string | null>(null);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
 
   useEffect(() => {
     if (view) setHosts(view.allowed_hosts.join(", "));
@@ -67,11 +73,12 @@ export function AgentDetailPage() {
   const saveAllowlist = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
+    setAllowlistError(null);
     try {
       await apiSend(`/agents/${encodeAgentId(agentId)}/allowlist`, "POST", { allowed_hosts: hosts });
       reload();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Save failed.");
+      setAllowlistError(err instanceof ApiError ? err.detail : "Save failed.");
     } finally {
       setBusy(false);
     }
@@ -79,6 +86,7 @@ export function AgentDetailPage() {
 
   const discover = async () => {
     setBusy(true);
+    setDiscoverError(null);
     try {
       const result = await apiSend<{ job_id: string }>(
         `/agents/${encodeAgentId(agentId)}/discover`,
@@ -87,7 +95,7 @@ export function AgentDetailPage() {
       );
       navigate(`/jobs/${result.job_id}`);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Profiling failed.");
+      setDiscoverError(err instanceof ApiError ? err.detail : "Profiling failed.");
     } finally {
       setBusy(false);
     }
@@ -115,6 +123,7 @@ export function AgentDetailPage() {
             </button>
           ) : null}
         </div>
+        {discoverError ? <ErrorNote message={discoverError} /> : null}
         {!view.registered ? (
           <p className="quiet" data-testid="profile-unregistered">
             This agent has run history but no registered target, so there is no endpoint to probe.
@@ -234,6 +243,7 @@ export function AgentDetailPage() {
             <button type="submit" disabled={busy} data-testid="allowlist-submit">
               Save allowlist
             </button>
+            {allowlistError ? <ErrorNote message={allowlistError} /> : null}
           </form>
         </section>
       ) : null}
@@ -259,46 +269,46 @@ export function AgentDetailPage() {
         {!view.runs.length ? (
           <EmptyState title="No runs yet for this agent" body="Run a pack against this target to populate history." />
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Run</th>
-                  <th scope="col">Started</th>
-                  <th scope="col">Gate</th>
-                  <th scope="col">Score</th>
-                  <th scope="col">Evidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.runs.map((rv) => (
-                  <tr key={rv.id}>
-                    <td data-label="Run">
-                      <Link className="mono" to={`/runs/${rv.id}`}>
-                        {rv.short_id}
-                      </Link>
-                    </td>
-                    <td data-label="Started" className="mono">
-                      {rv.started}
-                    </td>
-                    <td data-label="Gate">
-                      <StatusBadge status={rv.status} />
-                    </td>
-                    <td data-label="Score">
-                      <ScoreBar value={rv.score_percent} label="Run score" /> {rv.score_percent}%
-                    </td>
-                    <td data-label="Evidence">
-                      {rv.failed} failed,{" "}
-                      <span className={rv.critical_failures ? "critical-count" : undefined}>
-                        {rv.critical_failures}
-                      </span>{" "}
-                      critical
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Every recorded run for this agent"
+            rows={view.runs}
+            rowKey={(rv) => rv.id}
+            columns={[
+              {
+                key: "run",
+                header: "Run",
+                cell: (rv) => (
+                  <Link className="mono" to={`/runs/${rv.id}`}>
+                    {rv.short_id}
+                  </Link>
+                ),
+              },
+              { key: "started", header: "Started", className: "mono", cell: (rv) => rv.started },
+              { key: "gate", header: "Gate", cell: (rv) => <StatusBadge status={rv.status} /> },
+              {
+                key: "score",
+                header: "Score",
+                cell: (rv) => (
+                  <>
+                    <ScoreBar value={rv.score_percent} label="Run score" /> {rv.score_percent}%
+                  </>
+                ),
+              },
+              {
+                key: "evidence",
+                header: "Evidence",
+                cell: (rv) => (
+                  <>
+                    {rv.failed} failed,{" "}
+                    <span className={rv.critical_failures ? "critical-count" : undefined}>
+                      {rv.critical_failures}
+                    </span>{" "}
+                    critical
+                  </>
+                ),
+              },
+            ]}
+          />
         )}
       </section>
 

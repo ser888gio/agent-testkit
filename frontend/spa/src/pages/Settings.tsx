@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader } from "../ui";
+import { EmptyState, PageHeader, Panel } from "../ui";
 
 interface SettingsView {
   settings: {
@@ -31,30 +31,6 @@ function Meta({ entries }: { entries: [string, React.ReactNode][] }) {
         </div>
       ))}
     </dl>
-  );
-}
-
-function Panel({
-  title,
-  blurb,
-  children,
-  testid,
-}: {
-  title: string;
-  blurb: string;
-  children: React.ReactNode;
-  testid?: string;
-}) {
-  return (
-    <article className="panel" data-testid={testid}>
-      <div className="panel-header">
-        <div>
-          <h2>{title}</h2>
-          <p>{blurb}</p>
-        </div>
-      </div>
-      {children}
-    </article>
   );
 }
 

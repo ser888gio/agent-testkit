@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
-import { EmptyState, ErrorNote, PageHeader } from "../ui";
+import { EmptyState, ErrorNote, PageHeader, Panel } from "../ui";
 
 interface PackCase {
   id: string;
@@ -124,17 +124,9 @@ export function AgentConnectPage() {
         }
       />
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Run configuration</h2>
-            <p>
-              Pick a registered agent or a shipped target config, choose a test pack from{" "}
+      <Panel title="Run configuration" blurb={<>Pick a registered agent or a shipped target config, choose a test pack from{" "}
               <code>agentaudit/packs</code>, then start the run. Agent deployed somewhere new?{" "}
-              Select <em>other endpoint URL</em> and paste its address.
-            </p>
-          </div>
-        </div>
+              Select <em>other endpoint URL</em> and paste its address.</>}>
         {error ? <ErrorNote message={error} /> : null}
         <form onSubmit={submit} className="test-form" data-testid="connect-form">
           <label>
@@ -263,7 +255,7 @@ export function AgentConnectPage() {
             Run Tests
           </button>
         </form>
-      </section>
+      </Panel>
     </>
   );
 }

@@ -1,24 +1,36 @@
-// Shared UI primitives, ported one-for-one from the Jinja macros in
-// templates/_components.html and the layout in base.html. Class names are the
-// stylesheet's; the design contract lives in /static/style.css.
+// Shared UI primitives. Class names are the stylesheet's; the design contract
+// lives in ./style.css, which main.tsx imports so Vite owns it.
 
 import { Link } from "react-router-dom";
 
-export function StatusBadge({ status, label }: { status: string; label?: string }) {
-  return (
-    <span className={`badge badge-${status}`}>{label ?? status}</span>
-  );
-}
-
-const RISK_BADGE: Record<string, string> = {
+// The tones the stylesheet actually defines. Callers pass server-provided
+// strings -- statuses, risks, but also profile domains, interfaces and
+// selection sources -- so anything outside this set is a legitimate value with
+// no status colour, not a bug. Interpolating `badge-${status}` instead rendered
+// those as invisible transparent pills.
+export const BADGE_TONE: Record<string, string> = {
+  passed: "badge-passed",
+  pass: "badge-pass",
   low: "badge-low",
-  medium: "badge-medium",
-  high: "badge-high",
+  failed: "badge-failed",
+  fail: "badge-fail",
   critical: "badge-critical",
+  error: "badge-error",
+  high: "badge-high",
+  skipped: "badge-skipped",
+  medium: "badge-medium",
 };
 
+export function badgeClass(value: string): string {
+  return `badge ${BADGE_TONE[value] ?? "badge-neutral"}`;
+}
+
+export function StatusBadge({ status, label }: { status: string; label?: string }) {
+  return <span className={badgeClass(status)}>{label ?? status}</span>;
+}
+
 export function RiskBadge({ risk }: { risk: string }) {
-  return <span className={`badge ${RISK_BADGE[risk] ?? ""}`}>{risk}</span>;
+  return <span className={badgeClass(risk)}>{risk}</span>;
 }
 
 // Score carries pass/fail signal, not brand color: red below 50, amber below 80.
@@ -75,8 +87,10 @@ export function EmptyState({
   actionLabel?: string;
   actionHref?: string;
 }) {
+  // No aria-live: this mounts with its content already present, so the region
+  // would not announce. See Loading in useView.tsx.
   return (
-    <section className="empty-state" aria-live="polite">
+    <section className="empty-state">
       <h2>{title}</h2>
       <p>{body}</p>
       {actionLabel && actionHref ? (
@@ -139,6 +153,42 @@ export function PageHeader({
       </div>
       {actions ? <div className="page-header-actions-group">{actions}</div> : null}
     </header>
+  );
+}
+
+// The .panel + .panel-header markup appeared 39 times across 13 pages, always
+// the same shape. Promoted out of Settings.tsx, where the only extraction lived.
+export function Panel({
+  title,
+  blurb,
+  actions,
+  children,
+  testid,
+  titleId,
+}: {
+  title: React.ReactNode;
+  blurb?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+  testid?: string;
+  /** Wires <h2 id> to the section's aria-labelledby. */
+  titleId?: string;
+}) {
+  return (
+    <section
+      className="panel"
+      data-testid={testid}
+      aria-labelledby={titleId}
+    >
+      <div className="panel-header">
+        <div>
+          <h2 id={titleId}>{title}</h2>
+          {blurb ? <p>{blurb}</p> : null}
+        </div>
+        {actions}
+      </div>
+      {children}
+    </section>
   );
 }
 

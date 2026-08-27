@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
-import {
-  EmptyState,
-  PageHeader,
-  ScoreBar,
-  StatCard,
-  StatusBadge,
-} from "../ui";
+import { DataTable } from "../table";
+import { EmptyState, PageHeader, Panel, ScoreBar, StatCard, StatusBadge } from "../ui";
 
 interface RunRowView {
   id: string;
@@ -92,13 +87,7 @@ export function RunsPage() {
             <StatCard label="Average score" value={`${stats.avg_score}%`} note="weighted by risk" testid="stat-avg-score" />
           </section>
 
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h2>Needs attention</h2>
-                <p>Failure-first queue, inspired by Cypress review flows and Playwright's shortest path to evidence.</p>
-              </div>
-            </div>
+          <Panel title="Needs attention" blurb={<>Failure-first queue, inspired by Cypress review flows and Playwright's shortest path to evidence.</>}>
             {!view.attention.length ? (
               <p className="quiet">No failed gates or critical failures in the latest runs.</p>
             ) : (
@@ -116,71 +105,66 @@ export function RunsPage() {
                 ))}
               </div>
             )}
-          </section>
+          </Panel>
 
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h2>Recent runs</h2>
-                <p>Search, filter, and sort before opening a run.</p>
-              </div>
-            </div>
+          <Panel title="Recent runs" blurb={<>Search, filter, and sort before opening a run.</>}>
             <RunsFilterBar filters={filters} agents={view.agents} labels={view.status_labels} />
-            {!view.runs.length ? (
-              <p className="quiet">No runs match the current filters.</p>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th scope="col">Run</th>
-                      <th scope="col">Agent</th>
-                      <th scope="col">Started</th>
-                      <th scope="col">Launched by</th>
-                      <th scope="col">Gate</th>
-                      <th scope="col">Score</th>
-                      <th scope="col">Evidence</th>
-                      <th scope="col">Harness</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {view.runs.map((r) => (
-                      <tr key={r.id} data-testid="run-row">
-                        <td data-label="Run">
-                          <Link className="mono" to={`/runs/${r.id}`}>
-                            {r.short_id}
-                          </Link>
-                        </td>
-                        <td data-label="Agent">
-                          <Link to={`/agents/${encodeURIComponent(r.agent_id)}`}>{r.agent_id}</Link>
-                        </td>
-                        <td className="mono" data-label="Started">
-                          {r.started}
-                        </td>
-                        <td data-label="Launched by">{r.launched_by}</td>
-                        <td data-label="Gate">
-                          <StatusBadge status={r.status} />
-                        </td>
-                        <td data-label="Score">
-                          <ScoreBar value={r.score_percent} label="Overall score" />{" "}
-                          <span>{r.score_percent}%</span>
-                        </td>
-                        <td data-label="Evidence">
-                          <span className={r.critical_failures ? "critical-count" : undefined}>
-                            {r.critical_failures}
-                          </span>{" "}
-                          critical, {r.failed} failed
-                        </td>
-                        <td data-label="Harness">
-                          <Link to={`/runs/${r.id}/harness`}>View</Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+            <DataTable
+              empty="No runs match the current filters."
+                caption="Recorded runs, with gate, score and evidence counts"
+                rows={view.runs}
+                rowKey={(r) => r.id}
+                rowTestId="run-row"
+                columns={[
+                  {
+                    key: "run",
+                    header: "Run",
+                    cell: (r) => (
+                      <Link className="mono" to={`/runs/${r.id}`}>
+                        {r.short_id}
+                      </Link>
+                    ),
+                  },
+                  {
+                    key: "agent",
+                    header: "Agent",
+                    cell: (r) => (
+                      <Link to={`/agents/${encodeURIComponent(r.agent_id)}`}>{r.agent_id}</Link>
+                    ),
+                  },
+                  { key: "started", header: "Started", className: "mono", cell: (r) => r.started },
+                  { key: "launched", header: "Launched by", cell: (r) => r.launched_by },
+                  { key: "gate", header: "Gate", cell: (r) => <StatusBadge status={r.status} /> },
+                  {
+                    key: "score",
+                    header: "Score",
+                    cell: (r) => (
+                      <>
+                        <ScoreBar value={r.score_percent} label="Overall score" />{" "}
+                        <span>{r.score_percent}%</span>
+                      </>
+                    ),
+                  },
+                  {
+                    key: "evidence",
+                    header: "Evidence",
+                    cell: (r) => (
+                      <>
+                        <span className={r.critical_failures ? "critical-count" : undefined}>
+                          {r.critical_failures}
+                        </span>{" "}
+                        critical, {r.failed} failed
+                      </>
+                    ),
+                  },
+                  {
+                    key: "harness",
+                    header: "Harness",
+                    cell: (r) => <Link to={`/runs/${r.id}/harness`}>View</Link>,
+                  },
+                ]}
+            />
+          </Panel>
         </>
       )}
     </>

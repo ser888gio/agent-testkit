@@ -1,14 +1,8 @@
 import { useRef } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
-import {
-  EmptyState,
-  formatMs,
-  PageHeader,
-  StatCard,
-  StatusBadge,
-  RiskBadge,
-} from "../ui";
+import { DataTable } from "../table";
+import { EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../ui";
 
 interface TestResultJson {
   test_id: string;
@@ -125,13 +119,7 @@ export function RunDetailPage() {
       </section>
 
       {plan ? (
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Why these tests</h2>
-              <p>The profile discovered for this target, and the selection it justified.</p>
-            </div>
-          </div>
+        <Panel title="Why these tests" blurb={<>The profile discovered for this target, and the selection it justified.</>}>
           {plan.profile ? (
             <div className="matrix-row">
               <span className="cat">profile</span>
@@ -179,16 +167,10 @@ export function RunDetailPage() {
               </ul>
             </>
           ) : null}
-        </section>
+        </Panel>
       ) : null}
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Evidence map</h2>
-            <p>Category by test status, with direct links into each result.</p>
-          </div>
-        </div>
+      <Panel title="Evidence map" blurb={<>Category by test status, with direct links into each result.</>}>
         {Object.entries(view.matrix).map(([cat, tests]) => (
           <div key={cat} className="matrix-row">
             <span className="cat">{cat}</span>
@@ -199,15 +181,9 @@ export function RunDetailPage() {
             ))}
           </div>
         ))}
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Failures for review</h2>
-            <p>Prioritized queue before the full result list.</p>
-          </div>
-        </div>
+      <Panel title="Failures for review" blurb={<>Prioritized queue before the full result list.</>}>
         {!failures.length ? (
           <p className="quiet">No failed or errored tests in the current result set.</p>
         ) : (
@@ -222,15 +198,9 @@ export function RunDetailPage() {
             ))}
           </div>
         )}
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Results (failed first)</h2>
-            <p>Filter locally recorded results while preserving links to each evidence page.</p>
-          </div>
-        </div>
+      <Panel title="Results (failed first)" blurb={<>Filter locally recorded results while preserving links to each evidence page.</>}>
         <form
           className="filter-bar"
           onSubmit={(event) => {
@@ -273,41 +243,28 @@ export function RunDetailPage() {
             Reset
           </Link>
         </form>
-        {!view.results.length ? (
-          <p className="quiet">No results match the current filters.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Test</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Risk</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Latency</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.results.map((r) => (
-                  <tr key={r.test_id}>
-                    <td data-label="Test">
-                      <Link to={`/runs/${runId}/tests/${encodeURIComponent(r.test_id)}`}>{r.test_id}</Link>
-                    </td>
-                    <td data-label="Category">{r.category}</td>
-                    <td data-label="Risk">
-                      <RiskBadge risk={r.risk} />
-                    </td>
-                    <td data-label="Status">
-                      <StatusBadge status={r.status} />
-                    </td>
-                    <td data-label="Latency">{formatMs(r.latency_ms)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+        <DataTable
+          caption="Every test in this run, with risk, outcome and latency"
+          empty="No results match the current filters."
+          rows={view.results}
+          rowKey={(r) => r.test_id}
+          columns={[
+            {
+              key: "test",
+              header: "Test",
+              cell: (r) => (
+                <Link to={`/runs/${runId}/tests/${encodeURIComponent(r.test_id)}`}>
+                  {r.test_id}
+                </Link>
+              ),
+            },
+            { key: "category", header: "Category", cell: (r) => r.category },
+            { key: "risk", header: "Risk", cell: (r) => <RiskBadge risk={r.risk} /> },
+            { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+            { key: "latency", header: "Latency", cell: (r) => formatMs(r.latency_ms) },
+          ]}
+        />
+      </Panel>
     </>
   );
 }
