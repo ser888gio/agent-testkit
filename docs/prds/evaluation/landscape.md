@@ -1,0 +1,38 @@
+# Task 1 — Competitive/tooling landscape (researched 2026-08-26)
+
+Scope: tools used to test/evaluate AI agents for security and safety — prompt injection,
+tool misuse, multi-step behavior, guardrail/policy compliance, red-teaming. Generic LLM
+eval platforms are included only where they ship agent-specific machinery.
+
+## Comparison table
+
+| Tool | What it tests | Maturity | Key strength | Key gap |
+|---|---|---|---|---|
+| **promptfoo** (OpenAI since Mar 2026, MIT) | App-layer: direct+indirect injection, jailbreaks, PII, tool misuse, excessive agency; 50+ plugins × encoding strategies; **deterministic trajectory assertions** (`trajectory:tool-sequence`, `tool-args-match`) against OTel traces; CI gate with OWASP/NIST/MITRE/EU AI Act report presets | ~18–22k stars; acquired by OpenAI 2026-03; active | Best-in-class CI story; compliance mapping; trace-backed action evidence without a sandbox | Needs instrumentation (agent must emit OTel spans) for trajectory checks; grading paths partly LLM-judged; advanced browser attacks need hosted tier |
+| **garak** (NVIDIA, Apache-2.0) | Model-layer vulnerability scanning: 120+ probes (injection, DAN, encoding, leakage, package hallucination); v0.15 added multi-turn GOAT and an **agent-breaker probe** for tool-using agents | ~8.1k stars; NVIDIA-maintained; active | Broadest probe breadth, near-zero config, structured JSONL hit logs | Tests model endpoints, not application stacks; no tool/side-effect assertions; no CI gate semantics; no built-in compliance mapping |
+| **PyRIT** (Microsoft, MIT) | Framework for authoring multi-turn attacks (Crescendo/TAP/PAIR), converters, scorers, orchestrators | **ARCHIVED 2026-03-27** — read-only, no releases | Was the reference attack-authoring SDK | Dead; community migrating to RAMPART/promptfoo |
+| **RAMPART** (Microsoft, MIT, on PyRIT primitives) | Pytest-native agent safety tests: adversarial attacks + benign probes; evaluators `ToolCalled`, `SideEffectOccurred`, `ResponseContains`; `@pytest.mark.trial(n, threshold)` statistical repetition; pytest-xdist parallelism; JSON sinks for CI | Created 2026-03-24; ~400 stars; Microsoft-backed, early but fast-moving | Closest philosophical match to agentaudit: pass/fail CI tests asserting on side effects, engineer-owned, statistical trials built in | Young (small ecosystem); coverage strongest in cross-prompt injection; requires writing a thin adapter per agent; no compliance-shaped reporting |
+| **DeepTeam** (Confident AI, Apache-2.0) | Red-teaming of LLMs & agents: agentic vulns incl. goal theft, recursive hijacking, excessive agency, tool-orchestration abuse, inter-agent trust abuse; 20+ attacks (Crescendo, sequential jailbreak, bad Likert judge); OWASP LLM + **OWASP Agentic 2026** auto-mapping; guardrails | ~2.6k stars; active; backed by Confident AI platform | Cleanest framework mapping incl. OWASP Agentic; simple onboarding; shares DeepEval ecosystem | Assertions largely text/judge-based; no fake-tool sandboxes or side-effect evidence; platform features push toward Confident AI SaaS |
+| **AgentDojo** (academic, ETH) | Benchmark environment: realistic tool-using tasks with injected untrusted data; measures whether agent defenses hold | Research-grade; used in papers; maintained sporadically | Rigorous, reproducible agent-security benchmark; good for defense comparison | A benchmark, not a CI harness; can't test your staging endpoint directly |
+| **Giskard** (Apache-2.0 core) | App-layer LLM scanning: OWASP-mapped detectors (injection, hallucination, PII), RAG-focused | Active OSS; continuous-scan Hub is commercial | Approachable scan + OWAP mapping | Ongoing monitoring paywalled; weak agentic/tool-use depth |
+| **DeepEval** (Confident AI, Apache-2.0) | Eval metrics incl. agentic trace metrics: TaskCompletion, StepEfficiency, PlanAdherence, AgentLoopDetection (deterministic), ToolCorrectness (deterministic exact/set matching, optional judged selection) | Very active; large community; pytest plugin | Most conventional CI story of the eval frameworks; explicit deterministic-vs-judge split | Metrics grade *transcripts*, not world state; needs traces fed in; no attack generation (that's DeepTeam) |
+| **Arize Phoenix** (Elastic-2.0) | OTel tracing + LLM-judge evaluators for tool selection/invocation/response handling; pytest integration since Jun 2026 | Active, wide instrumentor coverage | Strong observability-to-eval pipeline | Source-available not OSI; judges everywhere → variance in gates; no adversarial generation |
+| **LangSmith / agentevals + openevals** (MIT libs, proprietary platform) | Deterministic trajectory matchers (strict/unordered/subset/superset, per-arg comparators), judge variants; LangSmith dashboard | Libraries mature; platform proprietary | Best deterministic trajectory-matching primitives | Platform lock-in; no security probe library; you author every scenario |
+| **Langfuse** (MIT core) | Trace-attached evaluators (judge or code) anywhere in a multi-step trace; agent graph view (beta) | Active, popular self-hosted | Open-source tracing with unlimited self-hosted judges | No off-the-shelf tool-call correctness metric; evals only as good as what you attach |
+| **LLM Guard / Rebuff / Vigil** | Runtime input/output filtering (injection heuristics, secrets, PII) | Varying; mostly small OSS | Defense complement to testing | Not test harnesses at all — different layer |
+
+Sources: [dreaming.press garak/PyRIT/promptfoo](https://dreaming.press/posts/garak-vs-pyrit-vs-promptfoo.html) · [BeyondScale 2026 comparison](https://beyondscale.tech/blog/ai-red-teaming-tools-comparison-2026) · [SecureCodeReviews controls guide](https://www.securecodereviews.com/blog/ai-security-testing-tools-llm-red-teaming-guide) · [0xClaw prompt-injection tool survey](https://www.0xclaw.dev/blog/best-tools-for-testing-prompt-injection-in-ai-agents) · [appsecsanta garak vs promptfoo](https://appsecsanta.com/ai-security-tools/garak-vs-promptfoo) · [ventrova tool guide (PyRIT archived Mar 27 2026)](https://dev.to/ventrova/how-to-test-your-llm-app-for-prompt-injection-promptfoo-vs-garak-vs-giskard-vs-pyrit-vs-2oim) · [aicoolies promptfoo vs garak](https://aicoolies.com/comparisons/promptfoo-vs-garak) · [microsoft/RAMPART repo](https://github.com/microsoft/RAMPART) · [Microsoft RAMPART launch post](https://www.microsoft.com/en-us/security/blog/2026/05/20/introducing-rampart-and-clarity-open-source-tools-to-bring-safety-into-agent-development-workflow/) · [RAMPART CI docs](https://microsoft.github.io/RAMPART/usage/ci-integration/) · [confident-ai/deepteam repo](https://github.com/confident-ai/deepteam) · [dev.to step-level evals survey](https://dev.to/james_oconnor_dev/step-level-agent-evals-exist-now-most-teams-still-grade-the-finish-line-1bb5)
+
+## Three findings that change AgentAudit's position
+
+1. **The "actions vs words" moat is narrowing.** promptfoo's trajectory assertions
+   (OTel-based) and RAMPART's `SideEffectOccurred` evaluator both assert on what the agent
+   *did*. AgentAudit's remaining edge is that it ships **fake worlds** (bank + invoice store,
+   inbox + ledger) so no instrumentation of the target is required — RAMPART needs an
+   adapter, promptfoo needs spans.
+2. **Pytest-native CI testing of agents is now a Microsoft-endorsed pattern** (RAMPART),
+   validating agentaudit's premise while raising the bar: RAMPART ships statistical trials
+   (`trial(n=10, threshold=0.8)`) out of the box; agentaudit gates on single runs.
+3. **Probe-breadth comparisons are getting worse before they get better**: garak added
+   agent-breaking probes (v0.15) and DeepTeam maps OWASP Agentic 2026 natively — the
+   "narrower than garak" concession in agentaudit's README now understates the gap.
