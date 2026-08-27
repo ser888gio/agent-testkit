@@ -4,21 +4,34 @@
 
 import { Link } from "react-router-dom";
 
-export function StatusBadge({ status, label }: { status: string; label?: string }) {
-  return (
-    <span className={`badge badge-${status}`}>{label ?? status}</span>
-  );
-}
-
-const RISK_BADGE: Record<string, string> = {
+// The tones the stylesheet actually defines. Callers pass server-provided
+// strings -- statuses, risks, but also profile domains, interfaces and
+// selection sources -- so anything outside this set is a legitimate value with
+// no status colour, not a bug. Interpolating `badge-${status}` instead rendered
+// those as invisible transparent pills.
+export const BADGE_TONE: Record<string, string> = {
+  passed: "badge-passed",
+  pass: "badge-pass",
   low: "badge-low",
-  medium: "badge-medium",
-  high: "badge-high",
+  failed: "badge-failed",
+  fail: "badge-fail",
   critical: "badge-critical",
+  error: "badge-error",
+  high: "badge-high",
+  skipped: "badge-skipped",
+  medium: "badge-medium",
 };
 
+export function badgeClass(value: string): string {
+  return `badge ${BADGE_TONE[value] ?? "badge-neutral"}`;
+}
+
+export function StatusBadge({ status, label }: { status: string; label?: string }) {
+  return <span className={badgeClass(status)}>{label ?? status}</span>;
+}
+
 export function RiskBadge({ risk }: { risk: string }) {
-  return <span className={`badge ${RISK_BADGE[risk] ?? ""}`}>{risk}</span>;
+  return <span className={badgeClass(risk)}>{risk}</span>;
 }
 
 // Score carries pass/fail signal, not brand color: red below 50, amber below 80.

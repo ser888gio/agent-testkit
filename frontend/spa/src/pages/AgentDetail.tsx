@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { apiSend } from "../api";
+import { ApiError, apiSend } from "../api";
 import { Loading, useView } from "../useView";
 import {
   EmptyState,
+  ErrorNote,
   PageHeader,
   ScoreBar,
   shortDate,
@@ -56,6 +57,10 @@ export function AgentDetailPage() {
   );
   const [hosts, setHosts] = useState("");
   const [busy, setBusy] = useState(false);
+  // Separate notes: each renders beside the control that failed, so the message
+  // appears where the user is looking.
+  const [allowlistError, setAllowlistError] = useState<string | null>(null);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
 
   useEffect(() => {
     if (view) setHosts(view.allowed_hosts.join(", "));
@@ -67,11 +72,12 @@ export function AgentDetailPage() {
   const saveAllowlist = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
+    setAllowlistError(null);
     try {
       await apiSend(`/agents/${encodeAgentId(agentId)}/allowlist`, "POST", { allowed_hosts: hosts });
       reload();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Save failed.");
+      setAllowlistError(err instanceof ApiError ? err.detail : "Save failed.");
     } finally {
       setBusy(false);
     }
@@ -79,6 +85,7 @@ export function AgentDetailPage() {
 
   const discover = async () => {
     setBusy(true);
+    setDiscoverError(null);
     try {
       const result = await apiSend<{ job_id: string }>(
         `/agents/${encodeAgentId(agentId)}/discover`,
@@ -87,7 +94,7 @@ export function AgentDetailPage() {
       );
       navigate(`/jobs/${result.job_id}`);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "Profiling failed.");
+      setDiscoverError(err instanceof ApiError ? err.detail : "Profiling failed.");
     } finally {
       setBusy(false);
     }
@@ -115,6 +122,7 @@ export function AgentDetailPage() {
             </button>
           ) : null}
         </div>
+        {discoverError ? <ErrorNote message={discoverError} /> : null}
         {!view.registered ? (
           <p className="quiet" data-testid="profile-unregistered">
             This agent has run history but no registered target, so there is no endpoint to probe.
@@ -234,6 +242,7 @@ export function AgentDetailPage() {
             <button type="submit" disabled={busy} data-testid="allowlist-submit">
               Save allowlist
             </button>
+            {allowlistError ? <ErrorNote message={allowlistError} /> : null}
           </form>
         </section>
       ) : null}

@@ -51,7 +51,6 @@
 
   --radius-sm: 8px;
   --radius-card: 12px;
-  --radius-panel: 12px;
   --radius-pill: 9999px;
   /* Linear carries depth with the surface ladder + hairlines, not shadow. */
   --shadow: none;
@@ -697,6 +696,22 @@ tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--surface-2); }
 td { overflow-wrap: anywhere; }
 
+/* Long generated probes are one line with an ellipsis; the full text stays in
+   the cell for copy and for the accessible name. Neutralised on mobile, where
+   td becomes a two-column grid card. */
+td.truncate {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 pre {
   max-height: 26rem;
   overflow-x: auto;
@@ -775,6 +790,16 @@ pre {
   border-color: var(--warn-border);
 }
 
+/* Fallback tone. StatusBadge renders open-ended server strings -- profile
+   domains, interfaces, selection sources -- which have no status colour. They
+   are real values, not bugs, so they get a neutral pill rather than an
+   invisible one. */
+.badge-neutral {
+  background: var(--neutral-bg);
+  color: var(--neutral-text);
+  border-color: var(--hairline);
+}
+
 .status-passed,
 .pass { color: var(--pass-text); }
 
@@ -842,6 +867,33 @@ pre {
   margin-top: 0.6rem;
   color: var(--ink-subtle);
   font-size: 0.78rem;
+}
+
+/* Turn-by-turn timeline. Ported from the HTML report's own .timeline
+   (reports/html.py) with the report's literal colours swapped for tokens, so
+   the dashboard and an exported report read the same. The SPA marks the
+   diverging turn with .fail where the report uses .diverges. */
+.timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.timeline > li {
+  padding: 0.4rem 0.6rem;
+  border-left: 3px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+
+.timeline > li.fail {
+  border-left-color: var(--fail-border);
+  background: var(--fail-bg);
+}
+
+.timeline ul {
+  margin: 0.25rem 0 0 1rem;
+  padding: 0;
+  font-size: 0.85em;
 }
 
 .history-strip {
@@ -990,10 +1042,6 @@ pre {
   border-color: var(--accent);
   color: var(--accent);
 }
-
-/* Only the selected pack's tests are offered: the form submits one pack, so
-   showing the others invites a selection the server must reject. */
-.test-picker-group[hidden] { display: none; }
 
 .bar-list {
   display: grid;
@@ -1427,15 +1475,14 @@ pre {
 
   .nav-toggle-button:hover { color: var(--text); background: var(--surface); }
 
-  /* Collapsed by default; the checkbox is the only state, so no JS runs. */
+  /* Collapsed by default; .open is applied by the React toggle (see the
+     .sidebar nav.open rule at the end of this file). */
   .sidebar nav {
     display: none;
     grid-column: 1 / -1;
     flex-direction: column;
     min-width: 0;
   }
-
-  .nav-toggle:checked ~ nav { display: flex; }
 
   .sidebar nav a { flex: 0 0 auto; }
 
@@ -1484,6 +1531,13 @@ pre {
   }
 
   td:last-child { border-bottom: 0; }
+
+  /* The card layout wraps; a nowrap ellipsis would push the value out of view. */
+  td.truncate {
+    max-width: none;
+    overflow: visible;
+    white-space: normal;
+  }
 
   td::before {
     content: attr(data-label);

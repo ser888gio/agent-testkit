@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ApiError, apiSend } from "../api";
 import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader } from "../ui";
+import { EmptyState, ErrorNote, PageHeader } from "../ui";
 
 interface Candidate {
   id: string;
@@ -18,15 +18,17 @@ interface GeneratedView {
 
 export function GeneratedPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const { view, error, reload } = useView<GeneratedView>("/generated");
 
   const act = async (path: string, test_id: string) => {
     setBusyId(test_id);
+    setActionError(null);
     try {
       await apiSend(path, "POST", { test_id });
       reload();
     } catch (err) {
-      window.alert(err instanceof ApiError ? err.detail : "Action failed.");
+      setActionError(err instanceof ApiError ? err.detail : "Action failed.");
     } finally {
       setBusyId(null);
     }
@@ -55,6 +57,7 @@ export function GeneratedPage() {
         />
       ) : (
         <section className="panel">
+          {actionError ? <ErrorNote message={actionError} /> : null}
           <table>
             <thead>
               <tr>
@@ -75,7 +78,7 @@ export function GeneratedPage() {
                         catching a defect
                       </span>
                     ) : null}
-                    <div className="muted">
+                    <div className="quiet">
                       promotes to <code>{c.promoted_id}</code>
                     </div>
                   </td>
@@ -85,7 +88,7 @@ export function GeneratedPage() {
                   <td className="row-actions">
                     <button type="button" disabled={busyId === c.id} onClick={() => act("/generated/promote", c.id)} data-testid="promote">
                       Promote
-                    </button>{" "}
+                    </button>
                     <button
                       type="button"
                       className="button-secondary"
