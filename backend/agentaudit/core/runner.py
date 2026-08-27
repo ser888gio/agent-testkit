@@ -173,6 +173,14 @@ def run_one(
     evidence = evidence or EvidencePolicy()
     started = _now()
     try:
+        if test.setup and sandbox is None:
+            # A test that needs seeded sandbox state has nothing to seed and no
+            # sandbox for its assertions to inspect: neither the agent nor the
+            # target config did anything wrong. Reporting this as SKIPPED (not
+            # FAILED) keeps a sandbox-dependent test from fabricating a finding
+            # against a target that simply has no sandbox configured.
+            return _skipped_result(test, started, "requires sandbox, none configured")
+
         if sandbox is not None:
             sandbox.reset()
             sandbox.apply_setup(test.setup)
@@ -271,6 +279,23 @@ def _run_python_test(
         )
     except Exception as exc:  # noqa: BLE001 - runner must never raise
         return _error_result(test, started, str(exc), redactor)
+
+
+def _skipped_result(test: TestCase, started: datetime, reason: str) -> TestResult:
+    return TestResult(
+        test_id=test.id,
+        category=test.category,
+        risk=test.risk,
+        status=Status.skipped,
+        latency_ms=None,
+        assertion_results=[],
+        request=None,
+        response=None,
+        sandbox_diff=None,
+        error=reason,
+        started_at=started,
+        finished_at=_now(),
+    )
 
 
 def _error_result(
