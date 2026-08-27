@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useView, Loading } from "../useView";
 import { EmptyState, PageHeader, StatCard, StatusBadge } from "../ui";
+import { DataTable } from "../table";
 
 interface TrendPoint {
   started_at: string;
@@ -226,45 +227,37 @@ export function AnalyticsPage() {
                 </p>
               </div>
             </div>
-            {!view.flaky.length ? (
-              <p className="quiet">No test has failed more than once yet.</p>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th scope="col">Test</th>
-                      <th scope="col">Category</th>
-                      <th scope="col">Failure rate</th>
-                      <th scope="col">Seen</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {view.flaky.map((row) => (
-                      <tr key={row.test_id}>
-                        <td data-label="Test" className="mono">
-                          {row.test_id}
-                        </td>
-                        <td data-label="Category">{row.category}</td>
-                        {/* Not ScoreBar: here a high number is bad, so the ramp is inverted. */}
-                        <td data-label="Failure rate">
-                          <span className="bar-track bar-track-inline">
-                            <span
-                              className="bar-fill bar-fill-bad"
-                              style={{ width: `${Math.round(row.rate * 100)}%` }}
-                            />
-                          </span>{" "}
-                          {Math.round(row.rate * 100)}%
-                        </td>
-                        <td data-label="Seen">
-                          {row.failed} of {row.runs} runs
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <DataTable
+              caption="Tests that fail most often, with failure rate and sample size"
+              empty="No test has failed more than once yet."
+              rows={view.flaky}
+              rowKey={(row) => row.test_id}
+              columns={[
+                { key: "test", header: "Test", className: "mono", cell: (row) => row.test_id },
+                { key: "category", header: "Category", cell: (row) => row.category },
+                {
+                  key: "rate",
+                  header: "Failure rate",
+                  // Not ScoreBar: here a high number is bad, so the ramp is inverted.
+                  cell: (row) => (
+                    <>
+                      <span className="bar-track bar-track-inline">
+                        <span
+                          className="bar-fill bar-fill-bad"
+                          style={{ width: `${Math.round(row.rate * 100)}%` }}
+                        />
+                      </span>{" "}
+                      {Math.round(row.rate * 100)}%
+                    </>
+                  ),
+                },
+                {
+                  key: "seen",
+                  header: "Seen",
+                  cell: (row) => `${row.failed} of ${row.runs} runs`,
+                },
+              ]}
+            />
           </section>
         </>
       )}

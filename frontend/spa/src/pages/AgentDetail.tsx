@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, apiSend } from "../api";
 import { Loading, useView } from "../useView";
+import { DataTable } from "../table";
 import {
   EmptyState,
   ErrorNote,
@@ -268,46 +269,46 @@ export function AgentDetailPage() {
         {!view.runs.length ? (
           <EmptyState title="No runs yet for this agent" body="Run a pack against this target to populate history." />
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Run</th>
-                  <th scope="col">Started</th>
-                  <th scope="col">Gate</th>
-                  <th scope="col">Score</th>
-                  <th scope="col">Evidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.runs.map((rv) => (
-                  <tr key={rv.id}>
-                    <td data-label="Run">
-                      <Link className="mono" to={`/runs/${rv.id}`}>
-                        {rv.short_id}
-                      </Link>
-                    </td>
-                    <td data-label="Started" className="mono">
-                      {rv.started}
-                    </td>
-                    <td data-label="Gate">
-                      <StatusBadge status={rv.status} />
-                    </td>
-                    <td data-label="Score">
-                      <ScoreBar value={rv.score_percent} label="Run score" /> {rv.score_percent}%
-                    </td>
-                    <td data-label="Evidence">
-                      {rv.failed} failed,{" "}
-                      <span className={rv.critical_failures ? "critical-count" : undefined}>
-                        {rv.critical_failures}
-                      </span>{" "}
-                      critical
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Every recorded run for this agent"
+            rows={view.runs}
+            rowKey={(rv) => rv.id}
+            columns={[
+              {
+                key: "run",
+                header: "Run",
+                cell: (rv) => (
+                  <Link className="mono" to={`/runs/${rv.id}`}>
+                    {rv.short_id}
+                  </Link>
+                ),
+              },
+              { key: "started", header: "Started", className: "mono", cell: (rv) => rv.started },
+              { key: "gate", header: "Gate", cell: (rv) => <StatusBadge status={rv.status} /> },
+              {
+                key: "score",
+                header: "Score",
+                cell: (rv) => (
+                  <>
+                    <ScoreBar value={rv.score_percent} label="Run score" /> {rv.score_percent}%
+                  </>
+                ),
+              },
+              {
+                key: "evidence",
+                header: "Evidence",
+                cell: (rv) => (
+                  <>
+                    {rv.failed} failed,{" "}
+                    <span className={rv.critical_failures ? "critical-count" : undefined}>
+                      {rv.critical_failures}
+                    </span>{" "}
+                    critical
+                  </>
+                ),
+              },
+            ]}
+          />
         )}
       </section>
 

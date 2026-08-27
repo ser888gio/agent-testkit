@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
+import { DataTable } from "../table";
 import {
   EmptyState,
   formatMs,
@@ -273,40 +274,27 @@ export function RunDetailPage() {
             Reset
           </Link>
         </form>
-        {!view.results.length ? (
-          <p className="quiet">No results match the current filters.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Test</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Risk</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Latency</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.results.map((r) => (
-                  <tr key={r.test_id}>
-                    <td data-label="Test">
-                      <Link to={`/runs/${runId}/tests/${encodeURIComponent(r.test_id)}`}>{r.test_id}</Link>
-                    </td>
-                    <td data-label="Category">{r.category}</td>
-                    <td data-label="Risk">
-                      <RiskBadge risk={r.risk} />
-                    </td>
-                    <td data-label="Status">
-                      <StatusBadge status={r.status} />
-                    </td>
-                    <td data-label="Latency">{formatMs(r.latency_ms)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          caption="Every test in this run, with risk, outcome and latency"
+          empty="No results match the current filters."
+          rows={view.results}
+          rowKey={(r) => r.test_id}
+          columns={[
+            {
+              key: "test",
+              header: "Test",
+              cell: (r) => (
+                <Link to={`/runs/${runId}/tests/${encodeURIComponent(r.test_id)}`}>
+                  {r.test_id}
+                </Link>
+              ),
+            },
+            { key: "category", header: "Category", cell: (r) => r.category },
+            { key: "risk", header: "Risk", cell: (r) => <RiskBadge risk={r.risk} /> },
+            { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+            { key: "latency", header: "Latency", cell: (r) => formatMs(r.latency_ms) },
+          ]}
+        />
       </section>
     </>
   );

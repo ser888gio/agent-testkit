@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
 import { EmptyState, PageHeader, StatCard, StatusBadge } from "../ui";
+import { DataTable } from "../table";
 
 interface TestDelta {
   test_id: string;
@@ -145,54 +146,45 @@ export function ComparePage() {
         <div className="panel-header">
           <h2>Score delta</h2>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Metric</th>
-                <th scope="col">Delta</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(diff.score_delta).map(([key, value]) => (
-                <tr key={key}>
-                  <td>{key}</td>
-                  <td>{`${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Score metrics and how they changed between the two runs"
+          rows={Object.entries(diff.score_delta)}
+          rowKey={([key]) => key}
+          columns={[
+            { key: "metric", header: "Metric", cell: ([key]) => key },
+            {
+              key: "delta",
+              header: "Delta",
+              cell: ([, value]) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`,
+            },
+          ]}
+        />
       </section>
 
       <section className="panel">
         <div className="panel-header">
           <h2>Latency deltas</h2>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Test</th>
-                <th scope="col">Before status</th>
-                <th scope="col">After status</th>
-                <th scope="col">Before (ms)</th>
-                <th scope="col">After (ms)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {diff.latency_deltas.map((d) => (
-                <tr key={d.test_id}>
-                  <td>{d.test_id}</td>
-                  <td>{d.before ? <StatusBadge status={d.before} /> : "-"}</td>
-                  <td>{d.after ? <StatusBadge status={d.after} /> : "-"}</td>
-                  <td>{d.latency_before_ms}</td>
-                  <td>{d.latency_after_ms}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Per-test status and latency, before and after"
+          rows={diff.latency_deltas}
+          rowKey={(d) => d.test_id}
+          columns={[
+            { key: "test", header: "Test", cell: (d) => d.test_id },
+            {
+              key: "before",
+              header: "Before status",
+              cell: (d) => (d.before ? <StatusBadge status={d.before} /> : "-"),
+            },
+            {
+              key: "after",
+              header: "After status",
+              cell: (d) => (d.after ? <StatusBadge status={d.after} /> : "-"),
+            },
+            { key: "before-ms", header: "Before (ms)", cell: (d) => d.latency_before_ms },
+            { key: "after-ms", header: "After (ms)", cell: (d) => d.latency_after_ms },
+          ]}
+        />
       </section>
     </>
   );

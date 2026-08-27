@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useView, Loading } from "../useView";
 import { EmptyState, LinkButton, PageHeader, ScoreBar, StatusBadge } from "../ui";
+import { DataTable } from "../table";
 
 interface AgentRow {
   agent: { id: string; target_type: string; created_at: string };
@@ -43,54 +44,46 @@ export function AgentsPage() {
           actionHref="/agents/register"
         />
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Agent</th>
-                <th scope="col">Type</th>
-                <th scope="col">Runs</th>
-                <th scope="col">Latest status</th>
-                <th scope="col">Latest score</th>
-                <th scope="col">First seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.agent_rows.map((row) => {
-                const score = row.latest
-                  ? Math.floor(row.latest.score.overall_score * 100)
-                  : null;
+        <DataTable
+          caption="Agents under test, with run counts and latest outcome"
+          rows={view.agent_rows}
+          rowKey={(row) => row.agent.id}
+          columns={[
+            {
+              key: "agent",
+              header: "Agent",
+              cell: (row) => (
+                <Link to={`/agents/${encodeAgentId(row.agent.id)}`}>{row.agent.id}</Link>
+              ),
+            },
+            { key: "type", header: "Type", cell: (row) => row.agent.target_type },
+            { key: "runs", header: "Runs", cell: (row) => row.run_count },
+            {
+              key: "status",
+              header: "Latest status",
+              cell: (row) => (row.latest ? <StatusBadge status={row.latest.status} /> : "-"),
+            },
+            {
+              key: "score",
+              header: "Latest score",
+              cell: (row) => {
+                if (!row.latest) return "-";
+                const score = Math.floor(row.latest.score.overall_score * 100);
                 return (
-                  <tr key={row.agent.id}>
-                    <td data-label="Agent">
-                      <Link to={`/agents/${encodeAgentId(row.agent.id)}`}>{row.agent.id}</Link>
-                    </td>
-                    <td data-label="Type">{row.agent.target_type}</td>
-                    <td data-label="Runs">{row.run_count}</td>
-                    {row.latest && score !== null ? (
-                      <>
-                        <td data-label="Latest status">
-                          <StatusBadge status={row.latest.status} />
-                        </td>
-                        <td data-label="Latest score">
-                          <ScoreBar value={score} label="Latest score" /> {score}%
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td data-label="Latest status">-</td>
-                        <td data-label="Latest score">-</td>
-                      </>
-                    )}
-                    <td className="mono" data-label="First seen">
-                      {row.agent.created_at.slice(0, 10)}
-                    </td>
-                  </tr>
+                  <>
+                    <ScoreBar value={score} label="Latest score" /> {score}%
+                  </>
                 );
-              })}
-            </tbody>
-          </table>
-        </div>
+              },
+            },
+            {
+              key: "seen",
+              header: "First seen",
+              className: "mono",
+              cell: (row) => row.agent.created_at.slice(0, 10),
+            },
+          ]}
+        />
       )}
     </>
   );

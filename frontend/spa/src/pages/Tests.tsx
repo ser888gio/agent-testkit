@@ -2,6 +2,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useRef } from "react";
 import { useView, Loading } from "../useView";
 import { EmptyState, LinkButton, PageHeader, StatusBadge } from "../ui";
+import { DataTable } from "../table";
 
 interface TestRow {
   test_id: string;
@@ -51,46 +52,40 @@ export function TestsPage() {
       ) : (
         <section className="panel">
           <TestsFilterBar filters={filters} view={view} />
-          {!view.tests.length ? (
-            <p className="quiet">No tests match the current filters.</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Test</th>
-                    <th scope="col">Pack</th>
-                    <th scope="col">Category</th>
-                    <th scope="col">Risk</th>
-                    <th scope="col">Runs</th>
-                    <th scope="col">Latest status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.tests.map((t) => (
-                    <tr key={`${t.pack_id ?? "-"}:${t.test_id}`} data-testid="test-row">
-                      <td data-label="Test">
-                        {t.latest_run_id ? (
-                          <Link to={`/runs/${t.latest_run_id}/tests/${encodeURIComponent(t.test_id)}`}>
-                            {t.test_id}
-                          </Link>
-                        ) : (
-                          t.test_id
-                        )}
-                      </td>
-                      <td data-label="Pack">{t.pack_id || "Run history"}</td>
-                      <td data-label="Category">{t.category}</td>
-                      <td data-label="Risk">{t.risk ? <StatusBadge status={t.risk} /> : "-"}</td>
-                      <td data-label="Runs">{t.run_count}</td>
-                      <td data-label="Latest status">
-                        {t.latest_status ? <StatusBadge status={t.latest_status} /> : "-"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            caption="Test library, with pack, risk and latest outcome"
+            empty="No tests match the current filters."
+            rows={view.tests}
+            rowKey={(t) => `${t.pack_id ?? "-"}:${t.test_id}`}
+            rowTestId="test-row"
+            columns={[
+              {
+                key: "test",
+                header: "Test",
+                cell: (t) =>
+                  t.latest_run_id ? (
+                    <Link to={`/runs/${t.latest_run_id}/tests/${encodeURIComponent(t.test_id)}`}>
+                      {t.test_id}
+                    </Link>
+                  ) : (
+                    t.test_id
+                  ),
+              },
+              { key: "pack", header: "Pack", cell: (t) => t.pack_id || "Run history" },
+              { key: "category", header: "Category", cell: (t) => t.category },
+              {
+                key: "risk",
+                header: "Risk",
+                cell: (t) => (t.risk ? <StatusBadge status={t.risk} /> : "-"),
+              },
+              { key: "runs", header: "Runs", cell: (t) => t.run_count },
+              {
+                key: "latest",
+                header: "Latest status",
+                cell: (t) => (t.latest_status ? <StatusBadge status={t.latest_status} /> : "-"),
+              },
+            ]}
+          />
         </section>
       )}
     </>
