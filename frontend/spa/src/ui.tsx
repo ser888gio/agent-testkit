@@ -87,8 +87,10 @@ export function EmptyState({
   actionLabel?: string;
   actionHref?: string;
 }) {
+  // No aria-live: this mounts with its content already present, so the region
+  // would not announce. See Loading in useView.tsx.
   return (
-    <section className="empty-state" aria-live="polite">
+    <section className="empty-state">
       <h2>{title}</h2>
       <p>{body}</p>
       {actionLabel && actionHref ? (
