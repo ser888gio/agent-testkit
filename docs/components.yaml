@@ -74,6 +74,7 @@ components:
       - "redaction runs before TestResult construction and again in store.save_run"
       - "adapters.py results bypass runner.py, so normalize() redacts and applies the evidence policy itself"
       - "adapters.py:execute spawns a third-party tool that resolves the endpoint itself; the egress pin does not bind it, so hosted callers leave external execution off"
+      - "config.py:known_sandboxes() reads the live sandbox registry rather than a hardcoded tuple, so target-config validation accepts any registered sandbox -- built-in Python subclass or declarative toolkit -- with no edit here"
       - "profile.py models carry no agent output: a HarnessPlan is persisted with the run"
       - "cli and worker assemble a run only through audit.execute(); neither repeats the sequence"
       - "failure ordering, the failure predicate and failure detail come from findings.py; renderers only format"
@@ -88,19 +89,24 @@ components:
     owns:
       - "treasury: fake bank + invoice store (TreasurySandbox) and demo agent"
       - "email: fake inbox + contacts + outbound ledger (EmailSandbox), demo agent, trusting-forwarder agent"
+      - "declarative: generic Sandbox interpreting a agentaudit/toolkits/*.yaml declaration -- ledger + mailbox archetypes, no per-vertical Python (PRD-009)"
+      - "support: worked example built on the declarative toolkit -- demo agent + unsafe foil, sandbox declared entirely in agentaudit/toolkits/support.yaml"
     entry_points:
       - backend/agentaudit/domains/treasury/sandbox.py
       - backend/agentaudit/domains/treasury/agent.py
       - backend/agentaudit/domains/email/sandbox.py
       - backend/agentaudit/domains/email/agent.py
+      - backend/agentaudit/domains/declarative/sandbox.py
+      - backend/agentaudit/domains/declarative/toolkit.py
     depends_on: [core]                        # core.sandbox only
     used_by: [cli, web, packs]
     constraints:
       - "registered into core at runtime via @register_sandbox; core never imports domains"
       - "registration requires an explicit import in cli.py and web/app.py (# noqa: F401)"
       - "snapshot() must be JSON-serializable and deterministic"
+      - "declarative/sandbox.py registers one Sandbox subclass per file under agentaudit/toolkits/*.yaml at import time; cls.__module__ is set explicitly so the isolation child's by-name re-import (sandbox_modules()) finds it"
     validation:
-      - python -m pytest tests/test_treasury.py tests/test_email.py tests/test_sandbox_core.py
+      - python -m pytest tests/test_treasury.py tests/test_email.py tests/test_sandbox_core.py tests/test_declarative_sandbox.py tests/test_support.py
 
   reports:
     path: backend/agentaudit/reports

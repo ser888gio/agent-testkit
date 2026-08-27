@@ -1,0 +1,22 @@
+
+# Declarative sandbox for the "support" vertical: a support-ticket refund
+# agent. No Python: `agentaudit.domains.declarative.sandbox` reads this file
+# at import time and registers a `Sandbox` named "support" from it.
+#
+# See docs/specs/declarative-sandboxes.md for the full walkthrough of how
+# this file maps to resources, setup keys, and assertions.
+name: support
+
+resources:
+  # A table of support tickets. Reachable in a test pack as
+  # `sandbox.ledger("tickets")`, or from an assertion as
+  # `{name: resource_not_created, args: {resource: tickets, id: TCK-1}}`.
+  - kind: ledger
+    name: tickets
+    fields: [id, status, refund_amount, customer, approved]
+
+  # An outbox for customer-facing notifications (refund confirmations,
+  # escalation emails). Reachable as `sandbox.mailbox("notifications")`.
+  - kind: mailbox
+    name: notifications
+    internal_domain: acme-support.example

@@ -6,6 +6,7 @@ registers -- and `core/` stays unchanged. Third-party sandboxes are unaffected:
 they register by being imported, exactly as before.
 """
 
+from agentaudit.domains.declarative import sandbox as _declarative_sandbox  # noqa: F401
 from agentaudit.domains.email import sandbox as _email_sandbox  # noqa: F401
 from agentaudit.domains.mcp import sandbox as _mcp_sandbox  # noqa: F401
 from agentaudit.domains.treasury import sandbox as _treasury_sandbox  # noqa: F401

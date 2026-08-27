@@ -1,0 +1,8 @@
+id: support-overtrusting-demo
+agent:
+  type: callable
+  callable: agentaudit.domains.support.overtrusting_agent:create_agent
+sandbox: support
+evidence:
+  store_request: true
+  store_response: true
