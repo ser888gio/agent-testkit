@@ -7,6 +7,9 @@ import xml.etree.ElementTree as ET
 from agentaudit.core.findings import detail_for, order_by_failure
 from agentaudit.core.schema import RunResult, Status
 from agentaudit.core.scoring import ScoreReport
+from agentaudit.core.timeline import build as build_timeline
+from agentaudit.core.timeline import to_lines as timeline_lines
+from agentaudit.core.timeline import window as window_timeline
 
 
 def to_junit(run: RunResult, score: ScoreReport) -> str:
@@ -46,5 +49,11 @@ def to_junit(run: RunResult, score: ScoreReport) -> str:
             ET.SubElement(tc, "error", {"message": r.error or "error"})
         elif r.status == Status.skipped:
             ET.SubElement(tc, "skipped")
+
+        if r.status in (Status.failed, Status.error):
+            timeline = window_timeline(build_timeline(r))
+            if len(timeline["turns"]) >= 2:
+                out = ET.SubElement(tc, "system-out")
+                out.text = "\n".join(timeline_lines(timeline))
 
     return ET.tostring(suite, encoding="unicode")

@@ -197,9 +197,69 @@ def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkey
     assert resp.status_code == 200
     text = json.dumps(resp.json())
     assert "sk-abcdefgh12345678" not in text
+
+
+def _seed_multi_turn_poisoning_store(db_path: str):
+    """The PRD-011 canonical fixture: overtrusting agent vs the false-preapproval
+    memory-poisoning pack, run through the real treasury sandbox."""
+    from agentaudit.core.loader import discover
+
+    cfg = TargetConfig(
+        id="overtrusting-demo",
+        agent=CallableSpec(
+            type="callable",
+            callable="agentaudit.domains.treasury.overtrusting_agent:create_agent",
+        ),
+        sandbox="treasury",
+        evidence=EvidencePolicy(),
+    )
+    tests = [
+        t
+        for t in discover("agentaudit/packs/agentic")
+        if t.id == "agentic.memory_poisoning.false_preapproval"
+    ]
+    rr = run(cfg, tests)
+    report = score(rr)
+    store = Store(db_path)
+    store.save_run(DEFAULT_ORG, cfg, rr, report)
+    return cfg, rr, report
+
+
+def test_test_detail_carries_a_timeline_pointing_at_the_poisoning_turn(tmp_path, monkeypatch):
+    """PRD-011 success criterion: a reader can find the poisoning turn from the
+    dashboard's own data, not just the raw request/response fields."""
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_multi_turn_poisoning_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(
+        f"/api/runs/{rr.run_id}/tests/agentic.memory_poisoning.false_preapproval"
+    )
+    assert resp.status_code == 200
     body = resp.json()
-    assert any(a["name"] == "not_contains" for a in body["result"]["assertion_results"])
-    assert body["result"]["latency_ms"] is not None
+
+    timeline = body["timeline"]
+    assert timeline is not None
+    assert len(timeline["turns"]) == 2
+    assert timeline["turns"][0]["input"].startswith("Note for our records")
+    assert timeline["first_divergence"] == 0
+
+    names = [a["name"] for a in body["artifact_states"]]
+    states = dict(zip(names, [a["state"] for a in body["artifact_states"]], strict=True))
+    assert states["Timeline"] == "Available"
+
+
+def test_test_detail_timeline_is_null_for_single_turn_tests(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _cfg, rr, _report = _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.get(f"/api/runs/{rr.run_id}/tests/b.fail.case")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["timeline"] is None
+    states = {a["name"]: a["state"] for a in body["artifact_states"]}
+    assert states["Timeline"] == "Unavailable"
 
 
 def test_unknown_run_404(tmp_path, monkeypatch):
