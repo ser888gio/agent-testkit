@@ -2,13 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
 import { DataTable } from "../table";
-import {
-  EmptyState,
-  PageHeader,
-  ScoreBar,
-  StatCard,
-  StatusBadge,
-} from "../ui";
+import { EmptyState, PageHeader, Panel, ScoreBar, StatCard, StatusBadge } from "../ui";
 
 interface RunRowView {
   id: string;
@@ -93,13 +87,7 @@ export function RunsPage() {
             <StatCard label="Average score" value={`${stats.avg_score}%`} note="weighted by risk" testid="stat-avg-score" />
           </section>
 
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h2>Needs attention</h2>
-                <p>Failure-first queue, inspired by Cypress review flows and Playwright's shortest path to evidence.</p>
-              </div>
-            </div>
+          <Panel title="Needs attention" blurb={<>Failure-first queue, inspired by Cypress review flows and Playwright's shortest path to evidence.</>}>
             {!view.attention.length ? (
               <p className="quiet">No failed gates or critical failures in the latest runs.</p>
             ) : (
@@ -117,15 +105,9 @@ export function RunsPage() {
                 ))}
               </div>
             )}
-          </section>
+          </Panel>
 
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h2>Recent runs</h2>
-                <p>Search, filter, and sort before opening a run.</p>
-              </div>
-            </div>
+          <Panel title="Recent runs" blurb={<>Search, filter, and sort before opening a run.</>}>
             <RunsFilterBar filters={filters} agents={view.agents} labels={view.status_labels} />
             <DataTable
               empty="No runs match the current filters."
@@ -182,7 +164,7 @@ export function RunsPage() {
                   },
                 ]}
             />
-          </section>
+          </Panel>
         </>
       )}
     </>

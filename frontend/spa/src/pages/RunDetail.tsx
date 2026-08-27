@@ -2,14 +2,7 @@ import { useRef } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
 import { DataTable } from "../table";
-import {
-  EmptyState,
-  formatMs,
-  PageHeader,
-  StatCard,
-  StatusBadge,
-  RiskBadge,
-} from "../ui";
+import { EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../ui";
 
 interface TestResultJson {
   test_id: string;
@@ -126,13 +119,7 @@ export function RunDetailPage() {
       </section>
 
       {plan ? (
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Why these tests</h2>
-              <p>The profile discovered for this target, and the selection it justified.</p>
-            </div>
-          </div>
+        <Panel title="Why these tests" blurb={<>The profile discovered for this target, and the selection it justified.</>}>
           {plan.profile ? (
             <div className="matrix-row">
               <span className="cat">profile</span>
@@ -180,16 +167,10 @@ export function RunDetailPage() {
               </ul>
             </>
           ) : null}
-        </section>
+        </Panel>
       ) : null}
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Evidence map</h2>
-            <p>Category by test status, with direct links into each result.</p>
-          </div>
-        </div>
+      <Panel title="Evidence map" blurb={<>Category by test status, with direct links into each result.</>}>
         {Object.entries(view.matrix).map(([cat, tests]) => (
           <div key={cat} className="matrix-row">
             <span className="cat">{cat}</span>
@@ -200,15 +181,9 @@ export function RunDetailPage() {
             ))}
           </div>
         ))}
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Failures for review</h2>
-            <p>Prioritized queue before the full result list.</p>
-          </div>
-        </div>
+      <Panel title="Failures for review" blurb={<>Prioritized queue before the full result list.</>}>
         {!failures.length ? (
           <p className="quiet">No failed or errored tests in the current result set.</p>
         ) : (
@@ -223,15 +198,9 @@ export function RunDetailPage() {
             ))}
           </div>
         )}
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Results (failed first)</h2>
-            <p>Filter locally recorded results while preserving links to each evidence page.</p>
-          </div>
-        </div>
+      <Panel title="Results (failed first)" blurb={<>Filter locally recorded results while preserving links to each evidence page.</>}>
         <form
           className="filter-bar"
           onSubmit={(event) => {
@@ -295,7 +264,7 @@ export function RunDetailPage() {
             { key: "latency", header: "Latency", cell: (r) => formatMs(r.latency_ms) },
           ]}
         />
-      </section>
+      </Panel>
     </>
   );
 }

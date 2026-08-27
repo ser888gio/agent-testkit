@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader, StatCard, StatusBadge } from "../ui";
+import { EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../ui";
 import { DataTable } from "../table";
 
 interface TestDelta {
@@ -107,45 +107,30 @@ export function ComparePage() {
       </section>
 
       <section className="detail-grid">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Newly failing ({diff.newly_failing.length})</h2>
-          </div>
+        <Panel title={<>Newly failing ({diff.newly_failing.length})</>}>
           <ul>
             <DeltaList items={diff.newly_failing} tone="status-failed" />
           </ul>
-        </article>
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Newly passing ({diff.newly_passing.length})</h2>
-          </div>
+        </Panel>
+        <Panel title={<>Newly passing ({diff.newly_passing.length})</>}>
           <ul>
             <DeltaList items={diff.newly_passing} tone="status-passed" />
           </ul>
-        </article>
+        </Panel>
       </section>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Still failing ({diff.still_failing.length})</h2>
-        </div>
+      <Panel title={<>Still failing ({diff.still_failing.length})</>}>
         <ul>
           <DeltaList items={diff.still_failing} tone="status-failed" />
         </ul>
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Added / Removed</h2>
-        </div>
+      <Panel title="Added / Removed">
         <p>Added: {diff.added.join(", ") || "none"}</p>
         <p>Removed: {diff.removed.join(", ") || "none"}</p>
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Score delta</h2>
-        </div>
+      <Panel title="Score delta">
         <DataTable
           caption="Score metrics and how they changed between the two runs"
           rows={Object.entries(diff.score_delta)}
@@ -159,12 +144,9 @@ export function ComparePage() {
             },
           ]}
         />
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Latency deltas</h2>
-        </div>
+      <Panel title="Latency deltas">
         <DataTable
           caption="Per-test status and latency, before and after"
           rows={diff.latency_deltas}
@@ -185,7 +167,7 @@ export function ComparePage() {
             { key: "after-ms", header: "After (ms)", cell: (d) => d.latency_after_ms },
           ]}
         />
-      </section>
+      </Panel>
     </>
   );
 }

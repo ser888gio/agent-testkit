@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
-import { EmptyState, ErrorNote, PageHeader, Spinner } from "../ui";
+import { EmptyState, ErrorNote, PageHeader, Panel, Spinner } from "../ui";
 
 interface JobView {
   id: string;
@@ -108,10 +108,7 @@ export function JobPage() {
         }
       />
 
-      <section className="panel" aria-labelledby="job-status-title">
-        <div className="panel-header">
-          <h2 id="job-status-title">Current Status</h2>
-        </div>
+      <Panel titleId="job-status-title" title="Current Status">
         <p id="run-status" aria-live="polite">
           {job.running ? <Spinner /> : null} {job.message || job.state}
         </p>
@@ -157,7 +154,7 @@ export function JobPage() {
             </Link>
           </p>
         ) : null}
-      </section>
+      </Panel>
     </>
   );
 }

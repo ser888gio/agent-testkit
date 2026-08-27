@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader, StatCard, StatusBadge } from "../ui";
+import { EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../ui";
 import { DataTable } from "../table";
 
 interface TrendPoint {
@@ -120,13 +120,7 @@ export function AnalyticsPage() {
             />
           </section>
 
-          <section className="panel" aria-labelledby="trend-title" data-testid="chart-trend">
-            <div className="panel-header">
-              <div>
-                <h2 id="trend-title">Score trend</h2>
-                <p>Weighted score of the last {trend.length} run(s), oldest to newest.</p>
-              </div>
-            </div>
+          <Panel testid="chart-trend" titleId="trend-title" title="Score trend" blurb={<>Weighted score of the last {trend.length} run(s), oldest to newest.</>}>
             <figure className="chart">
               {/* Fixed 0-100 axis: a 90 must not read as a disaster next to a 95. */}
               <svg
@@ -148,16 +142,10 @@ export function AnalyticsPage() {
                 <span>{trend[trend.length - 1].started_at.slice(0, 10)}</span>
               </figcaption>
             </figure>
-          </section>
+          </Panel>
 
           <section className="detail-grid">
-            <article className="panel" aria-labelledby="category-title" data-testid="chart-categories">
-              <div className="panel-header">
-                <div>
-                  <h2 id="category-title">Failure rate by category</h2>
-                  <p>Share of results that failed or errored. Bars scale to the worst category.</p>
-                </div>
-              </div>
+            <Panel testid="chart-categories" titleId="category-title" title="Failure rate by category" blurb={<>Share of results that failed or errored. Bars scale to the worst category.</>}>
               {!view.categories.length ? (
                 <p className="quiet">No categorised results yet.</p>
               ) : (
@@ -185,15 +173,9 @@ export function AnalyticsPage() {
                   ))}
                 </ul>
               )}
-            </article>
+            </Panel>
 
-            <article className="panel" aria-labelledby="risk-title" data-testid="chart-risk">
-              <div className="panel-header">
-                <div>
-                  <h2 id="risk-title">Coverage by risk</h2>
-                  <p>How much of the evidence sits at each risk level.</p>
-                </div>
-              </div>
+            <Panel testid="chart-risk" titleId="risk-title" title="Coverage by risk" blurb={<>How much of the evidence sits at each risk level.</>}>
               {!view.risks.length ? (
                 <p className="quiet">No results yet.</p>
               ) : (
@@ -217,19 +199,11 @@ export function AnalyticsPage() {
                   ))}
                 </ul>
               )}
-            </article>
+            </Panel>
           </section>
 
-          <section className="panel" aria-labelledby="flaky-title" data-testid="table-flaky">
-            <div className="panel-header">
-              <div>
-                <h2 id="flaky-title">Most frequently failing tests</h2>
-                <p>
-                  Tests seen in more than one run, ranked by how often they fail. A test seen once
-                  is untested, not flaky.
-                </p>
-              </div>
-            </div>
+          <Panel testid="table-flaky" titleId="flaky-title" title="Most frequently failing tests" blurb={<>Tests seen in more than one run, ranked by how often they fail. A test seen once
+                  is untested, not flaky.</>}>
             <DataTable
               caption="Tests that fail most often, with failure rate and sample size"
               empty="No test has failed more than once yet."
@@ -261,7 +235,7 @@ export function AnalyticsPage() {
                 },
               ]}
             />
-          </section>
+          </Panel>
         </>
       )}
     </>

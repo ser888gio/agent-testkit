@@ -2,7 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ChevronDown, Download } from "lucide-react";
 import { useView, Loading } from "../useView";
-import { EmptyState, formatMs, PageHeader, ScoreBar, StatCard, StatusBadge } from "../ui";
+import { EmptyState, formatMs, PageHeader, Panel, ScoreBar, StatCard, StatusBadge } from "../ui";
 
 interface AssertionJson {
   name: string;
@@ -201,13 +201,7 @@ export function RunHarnessPage() {
       </section>
 
       <section className="detail-grid">
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Harness Environment</h2>
-              <p>Execution identity, timing, and coverage context.</p>
-            </div>
-          </div>
+        <Panel title="Harness Environment" blurb={<>Execution identity, timing, and coverage context.</>}>
           <dl className="harness-meta">
             <div>
               <dt>Agent</dt>
@@ -238,15 +232,9 @@ export function RunHarnessPage() {
               <dd>{view.context.assertions.join(", ")}</dd>
             </div>
           </dl>
-        </article>
+        </Panel>
 
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Skills</h2>
-              <p>Capabilities exercised by this run.</p>
-            </div>
-          </div>
+        <Panel title="Skills" blurb={<>Capabilities exercised by this run.</>}>
           <div className="skill-list">
             {view.skills.map((skill) => (
               <article key={skill.category} className="skill-card">
@@ -261,16 +249,10 @@ export function RunHarnessPage() {
               </article>
             ))}
           </div>
-        </article>
+        </Panel>
       </section>
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Memory &amp; Context</h2>
-            <p>Memory/context probes and captured state changes. Agent-internal memory contents are not persisted.</p>
-          </div>
-        </div>
+      <Panel title="Memory &amp; Context" blurb={<>Memory/context probes and captured state changes. Agent-internal memory contents are not persisted.</>}>
         <dl className="harness-meta harness-meta-summary">
           <div>
             <dt>Checks</dt>
@@ -299,15 +281,9 @@ export function RunHarnessPage() {
         ) : (
           <p className="quiet memory-empty">No memory/context checks were included in this run.</p>
         )}
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Workflow / History</h2>
-            <p>Chronological record of every test step and assertion outcome.</p>
-          </div>
-        </div>
+      <Panel title="Workflow / History" blurb={<>Chronological record of every test step and assertion outcome.</>}>
         <ol className="finding-stream">
           {view.findings.map((finding) => (
             <li key={finding.test_id} className="finding-item">
@@ -336,7 +312,7 @@ export function RunHarnessPage() {
             </li>
           ))}
         </ol>
-      </section>
+      </Panel>
     </>
   );
 }

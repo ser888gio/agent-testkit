@@ -154,6 +154,42 @@ export function PageHeader({
   );
 }
 
+// The .panel + .panel-header markup appeared 39 times across 13 pages, always
+// the same shape. Promoted out of Settings.tsx, where the only extraction lived.
+export function Panel({
+  title,
+  blurb,
+  actions,
+  children,
+  testid,
+  titleId,
+}: {
+  title: React.ReactNode;
+  blurb?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+  testid?: string;
+  /** Wires <h2 id> to the section's aria-labelledby. */
+  titleId?: string;
+}) {
+  return (
+    <section
+      className="panel"
+      data-testid={testid}
+      aria-labelledby={titleId}
+    >
+      <div className="panel-header">
+        <div>
+          <h2 id={titleId}>{title}</h2>
+          {blurb ? <p>{blurb}</p> : null}
+        </div>
+        {actions}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export function Spinner() {
   return <span className="spinner" aria-hidden="true" />;
 }
