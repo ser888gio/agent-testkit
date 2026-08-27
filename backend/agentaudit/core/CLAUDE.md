@@ -45,6 +45,12 @@ the rest of the system consumes.
 - `evolve.py:evolve` — generate → validate → prune → run → admit. Off unless
   `AGENTAUDIT_ATTACKER_ENDPOINT`/`_MODEL` are set, so `run` stays offline. Holds no `Store`;
   the CLI persists what it returns. See [`docs/specs/evolve.md`](../../../docs/specs/evolve.md).
+- `campaign.py:run_campaign` — branching, Crescendo/TAP-style attack campaigns. Not a new
+  attack engine: `evolve()` restricted to ladder-style cells (`crescendo`, `sequential`,
+  `linear`, `bad_likert_judge`) with `refine=True`, so admitted turns are attacker-model-
+  written where a model is configured. Same off-by-default gate as `evolve`, same review
+  queue (`EvolveResult`/`Store.save_pack_test`), same judge-as-stop-condition invariant —
+  a campaign adds no second scorer.
 - `adapters.py:ADAPTERS` — promptfoo/garak: what to run (`catalog`), running it
   (`execute`, spawning the tool), and its report normalized into `TestResult`s
   (`normalize`). `execute` is runner-side — it reaches a live agent, via a spawned

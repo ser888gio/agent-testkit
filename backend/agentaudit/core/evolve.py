@@ -159,11 +159,19 @@ def _prompt_for(cell: tuple[Category, str], archive: Archive) -> str:
     return "\n".join(lines)
 
 
-def _build_test(raw: dict, cell: tuple[Category, str]) -> TestCase:
+def _build_test(raw: dict, cell: tuple[Category, str], *, refine: bool = False) -> TestCase:
     """Turn a model reply into a validated `TestCase`, or raise.
 
     Validation is `load_tests_from_rows` -- the same gate the loader and the
     dashboard's authoring form use. Nothing here re-implements it.
+
+    `refine` only affects a strategy-style cell: it asks the ladder to have
+    each turn rewritten by an attacker model instead of following the script
+    (`attacker.py:build_refining_strategy`), which is what turns a generated
+    ladder test into a branching one. It is still a no-op without
+    AGENTAUDIT_ATTACKER_ENDPOINT/_MODEL configured -- same fallback as
+    `refined_pressure.yaml`, so a campaign degrades to the scripted ladder
+    offline exactly like any other adaptive test.
     """
     probe = str(raw.get("input") or "").strip()
     if not probe:
@@ -196,7 +204,7 @@ def _build_test(raw: dict, cell: tuple[Category, str]) -> TestCase:
     if style in STRATEGIES:
         # A ladder needs the goal, not a rendered prompt, and `input` becomes it.
         row["input"] = probe
-        row["adaptive"] = {"strategy": style}
+        row["adaptive"] = {"strategy": style, "refine": refine}
     try:
         return load_tests_from_rows([row])[0]
     except LoaderError as exc:
@@ -213,17 +221,35 @@ def _landed(result: RunResult, test_id: str) -> bool:
     return any(r.test_id == test_id and r.status is Status.failed for r in result.results)
 
 
-def next_cell(archive: Archive, categories: Sequence[Category]) -> tuple[Category, str] | None:
+def next_cell(
+    archive: Archive,
+    categories: Sequence[Category],
+    styles: Sequence[str] | None = None,
+) -> tuple[Category, str] | None:
     """The cell worth probing next: empty ones first.
 
     Rainbow Teaming samples underexplored cells preferentially; this takes the
     deterministic version of that, because a coverage report has to be
     reproducible. Empty cells in taxonomy order, then the weakest covered cell.
+
+    `styles` narrows the grid a campaign draws from -- `campaign.py` passes
+    `adaptive.STRATEGIES` so a branching campaign only ever proposes ladder
+    cells, never a single-turn `plain`/transform one. `None` keeps the full
+    grid, which is what plain `evolve()` has always used.
     """
-    empty = archive.empty_cells(categories=list(categories))
+    wanted_styles = set(styles) if styles is not None else None
+    empty = [
+        cell
+        for cell in archive.empty_cells(categories=list(categories))
+        if wanted_styles is None or cell[1] in wanted_styles
+    ]
     if empty:
         return empty[0]
-    covered = [cell for cell in archive.covered_cells() if cell[0] in set(categories)]
+    covered = [
+        cell
+        for cell in archive.covered_cells()
+        if cell[0] in set(categories) and (wanted_styles is None or cell[1] in wanted_styles)
+    ]
     if not covered:
         return None
     return min(covered, key=lambda cell: (archive.elites[cell].landed, cell[0].value, cell[1]))
@@ -237,12 +263,19 @@ def evolve(
     categories: Sequence[Category] | None = None,
     budget: EvolveBudget | None = None,
     now: Callable[[], float] = time.monotonic,
+    styles: Sequence[str] | None = None,
+    refine: bool = False,
 ) -> EvolveResult:
     """Run one campaign: generate, validate, prune, run, admit.
 
     `run_fn` is the ordinary audit path. Passing it in keeps this module free of
     the target config, the redactor and the egress decision -- all of which the
     caller already resolved.
+
+    `styles` and `refine` exist for `campaign.py`: restricting `styles` to
+    `adaptive.STRATEGIES` and setting `refine=True` turns this same loop into a
+    branching, attacker-model-refined campaign instead of the default
+    single-turn/transform sweep. Both default to the original behaviour.
     """
     budget = budget or EvolveBudget()
     archive = archive if archive is not None else Archive()
@@ -258,14 +291,14 @@ def evolve(
             result.stopped_because = stop
             break
 
-        cell = next_cell(archive, categories)
-        if cell is None:  # pragma: no cover - categories is never empty in practice
+        cell = next_cell(archive, categories, styles=styles)
+        if cell is None:
             result.stopped_because = "no cell left to probe"
             break
 
         result.candidates_generated += 1
         try:
-            test = _next_candidate(generator, system, cell, archive)
+            test = _next_candidate(generator, system, cell, archive, refine=refine)
         except _CampaignOver as exc:
             result.rejected.append(("<unavailable>", str(exc)))
             result.stopped_because = str(exc)
@@ -314,6 +347,8 @@ def _next_candidate(
     system: str,
     cell: tuple[Category, str],
     archive: Archive,
+    *,
+    refine: bool = False,
 ) -> TestCase:
     """One validated candidate, or raise.
 
@@ -326,7 +361,7 @@ def _next_candidate(
     except Exception as exc:  # noqa: BLE001 - a generator is a network call
         raise _CampaignOver(f"generator failed: {exc}") from exc
     try:
-        return _build_test(extract_json(reply), cell)
+        return _build_test(extract_json(reply), cell, refine=refine)
     except json.JSONDecodeError as exc:
         raise GeneratorError(f"reply was not JSON: {exc}") from exc
 
