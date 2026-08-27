@@ -47,6 +47,8 @@ from agentaudit.core.redaction import builtin_pattern_names
 from agentaudit.core.regressions import compare
 from agentaudit.core.schema import Category, Risk, TestCase
 from agentaudit.core.store import DISCOVERY_PACK_ID
+from agentaudit.core.timeline import build as build_timeline
+from agentaudit.core.timeline import window as window_timeline
 from agentaudit.reports.charts import bar_rows, donut_segments, sparkline_points
 from agentaudit.reports.html import to_html
 from agentaudit.reports.json import to_json
@@ -278,6 +280,7 @@ def test_detail(
     history = get_store().test_history(
         principal.org_id, test_id, agent_id=rr.agent_name, limit=20
     )
+    timeline = window_timeline(build_timeline(result))
     artifact_states = [
         {
             "name": "Trace",
@@ -294,6 +297,11 @@ def test_detail(
             "state": "Available" if result.sandbox_diff else "Empty",
             "detail": "Captured state changes around the test execution.",
         },
+        {
+            "name": "Timeline",
+            "state": "Available" if len(timeline["turns"]) >= 2 else "Unavailable",
+            "detail": "Turn-by-turn requests and sandbox events for this test.",
+        },
     ]
     return _serialize(
         {
@@ -303,6 +311,7 @@ def test_detail(
             "previous_result": ordered[idx - 1] if idx > 0 else None,
             "next_result": ordered[idx + 1] if idx + 1 < len(ordered) else None,
             "history": history,
+            "timeline": timeline if len(timeline["turns"]) >= 2 else None,
             "artifact_states": artifact_states,
         }
     )

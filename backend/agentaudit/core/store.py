@@ -280,6 +280,8 @@ def _sanitized_result_payload(result: TestResult, agent: TargetConfig) -> dict:
     payload["error"] = redactor.redact_text(payload["error"]) if payload["error"] else None
     for assertion in payload["assertion_results"]:
         assertion["detail"] = redactor.redact_text(assertion["detail"])
+    for event in payload.get("events", []):
+        event["data"] = redactor.redact(event["data"])
     return payload
 
 

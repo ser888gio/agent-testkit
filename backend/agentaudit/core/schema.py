@@ -113,6 +113,19 @@ class AssertionResult(BaseModel):
     detail: str = ""
 
 
+class SandboxEvent(BaseModel):
+    """One redacted sandbox side effect, for step-level timeline rendering.
+
+    Mirrors `core.sandbox.Event` (kind/data/ts) but is the persisted, already-
+    redacted counterpart -- the runner-side `Event` never leaves the isolated
+    worker on its own.
+    """
+
+    kind: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    ts: datetime
+
+
 class TestResult(BaseModel):
     test_id: str
     category: Category
@@ -123,6 +136,13 @@ class TestResult(BaseModel):
     request: Any = None
     response: Any = None
     sandbox_diff: dict[str, Any] | None = None
+    # Redacted sandbox event stream captured during this test, in call order.
+    # Additive/optional: empty for every result until a sandbox is present and
+    # a domain records events (as the treasury/email sandboxes already do).
+    # Powers step-level timeline rendering (PRD-011); not a new capture path --
+    # `AssertionContext.calls` already carried this during evaluation, it just
+    # never survived into the persisted result before now.
+    events: list[SandboxEvent] = Field(default_factory=list)
     error: str | None = None
     # One entry per pass^k attempt; empty when the test ran once.
     attempts: list[Status] = Field(default_factory=list)

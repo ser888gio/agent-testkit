@@ -21,6 +21,27 @@ interface ResultJson {
   assertion_results: AssertionJson[];
 }
 
+interface TimelineEvent {
+  kind: string;
+  data: Record<string, unknown>;
+  ts: string;
+}
+
+interface TimelineTurn {
+  index: number;
+  input: string;
+  events: TimelineEvent[];
+}
+
+interface Timeline {
+  turns: TimelineTurn[];
+  final_response: unknown;
+  first_divergence: number | null;
+  windowed: boolean;
+  omitted_before: number;
+  omitted_after: number;
+}
+
 interface TestDetailView {
   run: { run_id: string; agent_name: string };
   result: ResultJson;
@@ -29,6 +50,7 @@ interface TestDetailView {
   next_result: { test_id: string } | null;
   history: { run_id: string; status: string; started_at: string }[];
   artifact_states: { name: string; state: string; detail: string }[];
+  timeline: Timeline | null;
 }
 
 export function TestDetailPage() {
@@ -190,6 +212,45 @@ export function TestDetailPage() {
         </div>
         <pre>{result.sandbox_diff || "No sandbox changes were recorded."}</pre>
       </section>
+
+      {view.timeline ? (
+        <section className="panel" data-testid="test-timeline">
+          <div className="panel-header">
+            <div>
+              <h2>Timeline</h2>
+              <p>Turn-by-turn requests and sandbox events. The first turn where this test's failure appears is highlighted.</p>
+            </div>
+          </div>
+          <ol className="timeline">
+            {view.timeline.omitted_before ? (
+              <li className="quiet">... {view.timeline.omitted_before} earlier turn(s) omitted ...</li>
+            ) : null}
+            {view.timeline.turns.map((turn) => (
+              <li
+                key={turn.index}
+                className={turn.index === view.timeline!.first_divergence ? "fail" : undefined}
+              >
+                <strong>Turn {turn.index}:</strong> {turn.input}
+                {turn.index === view.timeline!.first_divergence ? (
+                  <span className="fail"> &larr; first divergence</span>
+                ) : null}
+                {turn.events.length ? (
+                  <ul className="quiet">
+                    {turn.events.map((event, i) => (
+                      <li key={i}>
+                        [{event.kind}] {JSON.stringify(event.data)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ))}
+            {view.timeline.omitted_after ? (
+              <li className="quiet">... {view.timeline.omitted_after} later turn(s) omitted ...</li>
+            ) : null}
+          </ol>
+        </section>
+      ) : null}
 
       <section className="panel" aria-labelledby="history-title" data-testid="test-history">
         <div className="panel-header">

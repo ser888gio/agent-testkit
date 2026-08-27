@@ -25,6 +25,7 @@ from agentaudit.core.sandbox import Sandbox, sandbox_modules
 from agentaudit.core.schema import (
     AssertionResult,
     RunResult,
+    SandboxEvent,
     Status,
     TestCase,
     TestResult,
@@ -92,6 +93,15 @@ def _redact_assertions(
     return [
         r.model_copy(update={"detail": redactor.redact_text(r.detail)})
         for r in results
+    ]
+
+
+def _redact_events(redactor: Redactor, events: list[Any]) -> list[SandboxEvent]:
+    # `Event.data` can hold anything a domain sandbox chooses to record (e.g.
+    # a payee/bank_details pair), so it goes through the same generic redactor
+    # as sandbox_diff before it becomes evidence.
+    return [
+        SandboxEvent(kind=e.kind, data=redactor.redact(e.data), ts=e.ts) for e in events
     ]
 
 
@@ -216,6 +226,7 @@ def run_one(
             request=request_evidence,
             response=response_evidence,
             sandbox_diff=redactor.redact(diff) if diff is not None else None,
+            events=_redact_events(redactor, ctx.calls),
             error=redactor.redact_text(response.error) if response.error else None,
             techniques=provenance.techniques,
             degraded=provenance.degraded,

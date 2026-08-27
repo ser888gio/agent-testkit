@@ -10,6 +10,7 @@ from agentaudit.core.schema import (
     Category,
     Risk,
     RunResult,
+    SandboxEvent,
     Status,
     TestResult,
 )
@@ -350,3 +351,86 @@ def test_render_ignores_plan_for_result_formats():
     """The six renderers that predate the argument must not see it."""
     rr = _run()
     assert render(rr, score(rr), "json") == render(rr, score(rr), "json", plan=None)
+
+
+# --- PRD-011: step-level timelines ------------------------------------------
+
+
+def _multi_turn_failure() -> TestResult:
+    now = _now()
+    return TestResult(
+        test_id="f.memory.poisoned",
+        category=Category.memory_context,
+        risk=Risk.critical,
+        status=Status.failed,
+        request=["plant poison", "cash it in"],
+        response={"text": "paid"},
+        assertion_results=[
+            AssertionResult(name="no_payment_created", passed=False, detail="found 1 payment")
+        ],
+        events=[
+            SandboxEvent(kind="agent.turn", data={"text": "plant poison"}, ts=now),
+            SandboxEvent(kind="agent.turn", data={"text": "cash it in"}, ts=now),
+            SandboxEvent(kind="payment.created", data={"invoice_id": "INV-1"}, ts=now),
+        ],
+        started_at=now,
+        finished_at=now,
+    )
+
+
+@pytest.fixture
+def multi_turn_run_and_score():
+    rr = _run()
+    rr.results.append(_multi_turn_failure())
+    return rr, score(rr)
+
+
+def test_json_report_carries_an_optional_timeline_block(multi_turn_run_and_score):
+    rr, report = multi_turn_run_and_score
+    payload = json.loads(to_json(rr, report))
+    results = {r["test_id"]: r for r in payload["run"]["results"]}
+    # Single-turn results carry no `timeline` key at all -- additive, not a
+    # new required field existing consumers must handle.
+    assert "timeline" not in results["a.pass.case"]
+    timeline = results["f.memory.poisoned"]["timeline"]
+    assert timeline["first_divergence"] == 1
+    assert [t["input"] for t in timeline["turns"]] == ["plant poison", "cash it in"]
+
+
+def test_markdown_report_renders_timeline_for_failing_multi_turn_test(
+    multi_turn_run_and_score,
+):
+    rr, report = multi_turn_run_and_score
+    md = to_markdown(rr, report)
+    assert "Turn 0: plant poison" in md
+    assert "Turn 1: cash it in <-- first divergence" in md
+
+
+def test_html_report_renders_timeline_for_failing_multi_turn_test(multi_turn_run_and_score):
+    rr, report = multi_turn_run_and_score
+    html = to_html(rr, report)
+    assert "Turn 0: plant poison" in html
+    assert "diverges" in html
+    assert "payment.created" in html
+
+
+def test_junit_report_attaches_timeline_as_system_out(multi_turn_run_and_score):
+    rr, report = multi_turn_run_and_score
+    xml_text = to_junit(rr, report)
+    root = ET.fromstring(xml_text)
+    tc = next(tc for tc in root.findall("testcase") if tc.attrib["name"] == "f.memory.poisoned")
+    system_out = tc.find("system-out")
+    assert system_out is not None
+    assert "Turn 0: plant poison" in system_out.text
+    assert "first divergence" in system_out.text
+
+
+def test_single_turn_results_render_no_timeline_section(run_and_score):
+    """Parity guard: a single-turn failure gets no timeline noise anywhere."""
+    rr, report = run_and_score
+    assert "Timeline" not in to_markdown(rr, report)
+    assert "<h4>Timeline</h4>" not in to_html(rr, report)
+    xml_text = to_junit(rr, report)
+    root = ET.fromstring(xml_text)
+    for tc in root.findall("testcase"):
+        assert tc.find("system-out") is None
