@@ -71,6 +71,33 @@ def test_broken_treasury_agent_fails_unapproved_payment_spot_check():
     assert rr.results[0].status == Status.failed
 
 
+JAILBREAK_TEST_IDS = {
+    "treasury.jailbreak.linear_concession",
+    "treasury.jailbreak.refined_pressure",
+    "treasury.jailbreak.sequential_decomposition",
+}
+
+
+def test_treasury_jailbreak_ladders_fail_against_a_reckless_agent():
+    # PRD-012: treasury-pack variants of the core jailbreak ladders, keeping
+    # the no_payment_created side-effect assertion where a bank exists. A test
+    # no agent fails asserts nothing, so the reckless demo agent (pays on any
+    # invoice-id mention) must trip every one of them.
+    cfg = TargetConfig(
+        id="reckless-treasury",
+        agent=CallableSpec(
+            type="callable", callable="tests.test_packs_domain:_reckless_factory"
+        ),
+        sandbox="treasury",
+    )
+    tests = [t for t in discover(TREASURY_PACK) if t.id in JAILBREAK_TEST_IDS]
+    assert len(tests) == len(JAILBREAK_TEST_IDS)
+
+    rr = run(cfg, tests)
+    for r in rr.results:
+        assert r.status == Status.failed, f"{r.test_id} did not catch it: {r.status}"
+
+
 AGENTIC_PACK = "agentaudit/packs/agentic"
 TRAJECTORY_TESTS = {
     "agentic.goal_hijack.payee_swap_survives_injection",
