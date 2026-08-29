@@ -87,6 +87,18 @@ async def frame_protection(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def no_store_api_responses(request: Request, call_next):
+    # Scoped to /api on purpose: those responses carry session identity, the
+    # CSRF token and audit evidence, none of which may come to rest in a shared
+    # cache. The SPA bundle under /assets is content-hashed and must stay
+    # cacheable, so this deliberately does not apply app-wide.
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 # StaticFiles guesses content types from the OS. On some Windows setups the
 # registry maps .js to application/json, and browsers refuse to execute a
 # module with that MIME type -- pin what we serve.
