@@ -19,12 +19,12 @@ if [[ "${1:-}" == "--api-only" ]]; then
   exec "$PYTHON" -m agentaudit.cli ui "$@"
 fi
 
-# Default: FastAPI on :8000 for /api, Vite on :5173 for the SPA with HMR.
+# Default: FastAPI on :8001 for /api, Vite on :5173 for the SPA with HMR.
 # vite.config.ts already proxies /api, /static, /login, /logout and /auth to
-# :8000, so :5173 is the address to open.
-"$PYTHON" -m agentaudit.cli ui "$@" &
+# :8001, so :5173 is the address to open.
+"$PYTHON" -m agentaudit.cli ui --port 8001 "$@" &
 API_PID=$!
 trap 'kill "$API_PID" 2>/dev/null || true' EXIT
 
-echo "open http://127.0.0.1:5173 (not :8000 -- that serves the last build)"
+echo "open http://127.0.0.1:5173 (not :8001 -- that serves the last build)"
 npm --prefix frontend/spa run dev
