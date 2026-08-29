@@ -16,8 +16,8 @@ yourself before reporting.
 
 1. **Correctness and regressions.** Does it do what it claims? Check every consumer of a
    changed signature, schema field, or contract — including YAML packs in `agentaudit/packs/`
-   and Jinja templates in `frontend/agentaudit/web/templates/`, which reference names as
-   strings and are invisible to Python tooling.
+and React components in `frontend/spa/src/`, which reference names as
+    strings and are invisible to Python tooling.
 2. **Repository invariants.** Runner never raises. Redaction runs in `runner.py` *and*
    `store.py` (both passes deliberate). No raw request/response logging. Compliance fails
    closed. `EvidencePolicy` honoured independently of redaction.

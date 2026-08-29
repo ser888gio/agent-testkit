@@ -168,7 +168,7 @@ def spa_shell(full_path: str, principal: Principal = Depends(current_principal))
 
     Takes a Principal like every application route -- reads included, since
     reads are the leak -- so an unauthenticated browser navigation is answered
-    by the 401 handler's redirect to /login below, exactly as the Jinja pages
+    by the 401 handler's redirect to /login below, exactly as the React pages
     were. Data itself flows through /api routes, which enforce the same rule.
     """
     return _spa_index()

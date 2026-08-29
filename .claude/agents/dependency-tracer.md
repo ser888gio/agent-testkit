@@ -46,8 +46,8 @@ Changes to these reach nearly everything — check every consumer:
    for the identifier too.
 4. Tests: `tests/test_<module>.py` maps one-to-one with modules; also grep `tests/` for the
    symbol, since contract changes surface in unrelated-looking test files.
-5. Templates: for schema/status changes, grep `frontend/agentaudit/web/templates/` — Jinja
-   references are invisible to Python tooling.
+5. React components: for schema/status changes, grep `frontend/spa/src/` — React
+    references are invisible to Python tooling.
 
 ## Output
 

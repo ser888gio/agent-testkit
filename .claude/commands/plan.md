@@ -23,7 +23,7 @@ this repo already covers part of the work, use it and say so.
    need editing, with the reason they don't
 4. **Interface implications** — does this touch `core/schema.py`, `core/config.py`, the
    assertion `REGISTRY`, or the `Sandbox` ABC? Those are high-blast-radius contracts; list
-   every consumer, including YAML packs and Jinja templates that reference names as strings
+   every consumer, including YAML packs and React components that reference names as strings
 5. **Data / migration implications** — `agentaudit.db` is a gitignored developer artifact with
    no migration system; if `store.py`'s schema changes, the plan is "delete the local db",
    not a migration
