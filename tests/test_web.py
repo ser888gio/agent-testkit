@@ -7,6 +7,7 @@ this repository (the SPA sources).
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -715,6 +716,33 @@ def _oidc_env(monkeypatch):
     monkeypatch.setenv("AGENTAUDIT_OIDC_REDIRECT_URI", "https://agentaudit.test/auth/callback")
 
 
+_PLACEHOLDER_VALUES = {
+    "run_id": "some-run",
+    "test_id": "some-test",
+    "job_id": "some-job",
+    "fmt": "md",
+    "artifact_id": "some-artifact",
+    "agent_id": "some-agent",
+    "full_path": "some-shell-path",
+}
+
+
+def _fill(path: str) -> str:
+    def sub(match: re.Match[str]) -> str:
+        name = match.group(1)
+        value = _PLACEHOLDER_VALUES.get(name)
+        assert value is not None, (
+            f"route parameter {{{name}}} has no substitution entry in "
+            "_PLACEHOLDER_VALUES; add one so the auth walk actually exercises "
+            f"this route ({path})"
+        )
+        return value
+
+    filled = re.sub(r"\{(\w+)(?::path)?\}", sub, path)
+    assert "{" not in filled, f"unsubstituted placeholder remains in {filled}"
+    return filled
+
+
 def _concrete_paths() -> list[tuple[str, str]]:
     """Every app route, with path params filled in. Static mounts excluded."""
     from agentaudit.web.app import app
@@ -730,17 +758,8 @@ def _concrete_paths() -> list[tuple[str, str]]:
             or path in {"/login", "/auth/callback", "/logout"}
         ):
             continue
-        for method in methods & {"GET", "POST"}:
-            filled = (
-                path.replace("{run_id}", "some-run")
-                .replace("{test_id}", "some-test")
-                .replace("{job_id}", "some-job")
-                .replace("{fmt}", "md")
-                .replace("{artifact_id}", "some-artifact")
-                .replace("{agent_id:path}", "some-agent")
-                .replace("{full_path:path}", "some-shell-path")
-            )
-            out.append((method, filled))
+        for method in sorted(methods - {"HEAD", "OPTIONS"}):
+            out.append((method, _fill(path)))
     return out
 
 
