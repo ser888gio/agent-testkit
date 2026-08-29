@@ -116,7 +116,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     org_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     pack_id TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed', 'cancelled')),
+    state TEXT NOT NULL CHECK (
+        state IN ('queued', 'running', 'done', 'failed', 'cancelled', 'expired')
+    ),
     run_id TEXT,
     created_by TEXT,
     error TEXT,
@@ -133,6 +135,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     tests_done INTEGER NOT NULL DEFAULT 0,
     progress_json TEXT,
     cancel_requested INTEGER NOT NULL DEFAULT 0,
+    timeout_seconds INTEGER,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -239,14 +242,17 @@ class JobRow:
     tests_done: int = 0
     progress_json: str | None = None
     cancel_requested: int = 0
+    timeout_seconds: int | None = None
 
 
-JOB_STATES = ("queued", "running", "done", "failed", "cancelled")
-_TERMINAL_JOB_STATES = ("done", "failed", "cancelled")
+JOB_STATES = ("queued", "running", "done", "failed", "cancelled", "expired")
+_TERMINAL_JOB_STATES = ("done", "failed", "cancelled", "expired")
 
 # worker.py releases a job cancelled after its last test as 'failed' with this
 # error text, matching how any other job failure is reported.
 CANCELLED_ERROR = "cancelled by user"
+
+TIMEOUT_ERROR = "exceeded its time limit"
 
 Matrix = dict[str, dict[str, str]]
 
@@ -416,6 +422,7 @@ class JobQueue:
         created_by: str | None = None,
         priority: int = 0,
         test_ids: Sequence[str] | None = None,
+        timeout_seconds: int | None = None,
     ) -> str:
         """Queue a run.
 
@@ -424,16 +431,23 @@ class JobQueue:
         selection is rejected rather than silently running everything: a run of
         nothing is a mistake, and scoring it as a pass would be evidence of
         coverage that never happened.
+
+        `timeout_seconds` caps how long the job may run before the worker stops
+        it; None means no limit. Zero or negative is rejected rather than
+        treated as "no limit".
         """
         if test_ids is not None and not test_ids:
             raise ValueError("test_ids must name at least one test, or be None for the whole pack")
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive, or None for no limit")
         job_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
         with self._store._connection() as conn, conn:
             self._store._ensure_org(conn, org_id, now)
             conn.execute(
                 "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
-                "priority, created_at, test_ids_json) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)",
+                "priority, created_at, test_ids_json, timeout_seconds) "
+                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
                 (
                     job_id,
                     org_id,
@@ -443,6 +457,7 @@ class JobQueue:
                     priority,
                     now,
                     json.dumps(list(test_ids)) if test_ids is not None else None,
+                    timeout_seconds,
                 ),
             )
         return job_id
