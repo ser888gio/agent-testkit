@@ -672,6 +672,25 @@ def job_status(job_id: str, principal: Principal = Depends(current_principal)) -
     return _job_payload(_load_job_or_404(principal.org_id, job_id))
 
 
+@router.post("/jobs/{job_id}/rerun")
+def rerun_job(job_id: str, principal: Principal = Depends(require_admin)) -> dict:
+    """Queue the same target/pack/selection again as a new job.
+
+    Re-enqueues off the stored job row, so nothing is re-resolved from a
+    client-supplied path and the original job stays as it is.
+    """
+    job = _load_job_or_404(principal.org_id, job_id)
+    test_ids = json.loads(job.test_ids_json) if job.test_ids_json else None
+    new_id = get_store().jobs.enqueue(
+        principal.org_id,
+        job.target_id,
+        job.pack_id,
+        created_by=principal.subject,
+        test_ids=test_ids,
+    )
+    return {"job_id": new_id}
+
+
 @router.post("/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, principal: Principal = Depends(require_admin)) -> dict:
     """Request cancellation. Cooperative for a running job; finished jobs stay."""
