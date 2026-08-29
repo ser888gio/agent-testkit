@@ -78,12 +78,36 @@ class JobCancelled(Exception):
         self.error = error
 
 
-def _heartbeat(store: Store, job_id: str, owner: str, stop: threading.Event, lease: int) -> None:
+class LeaseLost(Exception):
+    """Raised when the heartbeat finds another worker has taken the job.
+
+    Distinct from `JobCancelled` on purpose: the job is not cancelled, has not
+    timed out, and is not ours to write to any more. Whoever reclaimed it is
+    running it now, so this worker persists no run and releases no state --
+    same discipline as the infrastructure-fault path in `work_once`.
+    """
+
+    def __init__(self, job_id: str):
+        super().__init__(job_id)
+        self.job_id = job_id
+
+
+def _heartbeat(
+    store: Store,
+    job_id: str,
+    owner: str,
+    stop: threading.Event,
+    lease: int,
+    *,
+    lost: threading.Event | None = None,
+) -> None:
     # Extend well inside the lease so one slow beat does not lose the job.
     interval = max(lease / 4, 1.0)
     while not stop.wait(interval):
         if not store.jobs.heartbeat(job_id, owner, lease_seconds=lease):
             log.warning("job %s: lease lost, another worker owns it now", job_id)
+            if lost is not None:
+                lost.set()
             return
 
 
@@ -214,7 +238,9 @@ def _apply_selection(job: JobRow, tests: list) -> list:
     return selected
 
 
-def execute_job(store: Store, job: JobRow) -> str | None:
+def execute_job(
+    store: Store, job: JobRow, *, lost_lease: threading.Event | None = None
+) -> str | None:
     """Resolve, run, score, and persist one claimed job. Returns the run id.
 
     Returns None for a discovery job, which updates a profile instead of
@@ -262,6 +288,8 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         nonlocal stopped
         if deadline is not None and time.monotonic() >= deadline:
             stopped = True
+        elif lost_lease is not None and lost_lease.is_set():
+            stopped = True
         elif store.jobs.is_cancelled(job.id):
             stopped = True
         return stopped
@@ -280,6 +308,10 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         on_result=note,
         should_stop=should_stop,
     )
+    if lost_lease is not None and lost_lease.is_set():
+        # Another worker owns this job now. Persist nothing: its run would be a
+        # duplicate evidence row for a job we no longer hold.
+        raise LeaseLost(job.id)
     if stopped:
         # A stop after some tests finished still saves what ran as a (shorter)
         # run -- partial evidence is evidence. Before the first test there is
@@ -316,12 +348,21 @@ def work_once(
         return None
 
     stop = threading.Event()
+    lost_lease = threading.Event()
     beat = threading.Thread(
-        target=_heartbeat, args=(store, job.id, owner, stop, lease_seconds), daemon=True
+        target=_heartbeat,
+        args=(store, job.id, owner, stop, lease_seconds),
+        kwargs={"lost": lost_lease},
+        daemon=True,
     )
     beat.start()
     try:
-        run_id = execute_job(store, job)
+        run_id = execute_job(store, job, lost_lease=lost_lease)
+    except LeaseLost:
+        # Deliberately not released and nothing saved: the reclaiming worker
+        # owns this job now, and `release` is owner-guarded anyway. Writing here
+        # would race the new owner's state.
+        log.warning("job %s: stopped after losing the lease; leaving it to its new owner", job.id)
     except JobCancelled as exc:
         # 'expired' is its own terminal state, so a timeout keeps it whether or
         # not partial evidence exists. A cancel that produced evidence stays
