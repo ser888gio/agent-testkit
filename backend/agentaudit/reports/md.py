@@ -45,6 +45,9 @@ def _timeline_block(result) -> list[str]:
     lines = ["", "  Timeline (turn where the failure first appears is marked):", "", "  ```"]
     lines.extend(f"  {line}" for line in timeline_lines(timeline))
     lines.append("  ```")
+    return lines
+
+
 def _trial_lines(results) -> list[str]:
     """Per-test n / pass-rate / threshold, plus the extra agent-call cost,
     for every result that ran under `repeat:`/`trial:` (i.e. has `attempts`).
