@@ -819,6 +819,19 @@ def test_responses_carry_frame_protection_headers(tmp_path, monkeypatch):
         assert resp.headers["content-security-policy"] == "frame-ancestors 'self'"
 
 
+def test_api_responses_are_not_cacheable(tmp_path, monkeypatch):
+    """Session identity, the CSRF token and evidence must not come to rest in
+    a shared cache on a hosted deployment."""
+    client = _client(str(tmp_path / "cache.db"), monkeypatch)
+
+    resp = client.get("/api/session")
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "no-store"
+
+    shell = client.get("/")
+    assert shell.headers.get("cache-control") != "no-store"
+
+
 def test_viewer_cannot_create_test(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     Store(db)
