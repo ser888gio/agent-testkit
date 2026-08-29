@@ -59,9 +59,9 @@ app.include_router(api_router)
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Web tests | `uv run --extra dev pytest tests/test_web.py` | all pass |
-| Security suite | `uv run --extra dev pytest tests/test_security_p0.py` | all pass |
-| Lint | `uv run ruff check frontend/agentaudit/web/app.py tests/test_web.py` | exit 0 |
+| Web tests | `python -m pytest tests/test_web.py` | all pass |
+| Security suite | `python -m pytest tests/test_security_p0.py` | all pass |
+| Lint | `python -m ruff check frontend/agentaudit/web/app.py tests/test_web.py` | exit 0 |
 
 ## Scope
 
@@ -85,24 +85,31 @@ app.include_router(api_router)
 ### Step 1: Add a response-header middleware
 
 In `frontend/agentaudit/web/app.py`, directly after the `FastAPI(...)` /
-`include_router` block shown above, add a Starlette BaseHTTPMiddleware:
+`include_router` block shown above, add a response-header middleware via the
+`@app.middleware("http")` decorator:
 
 ```python
-from starlette.middleware.base import BaseHTTPMiddleware
-
-
 @app.middleware("http")
-async def frame_protection(request, call_next):
+async def frame_protection(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
     return response
 ```
 
+**Add no imports.** The `@app.middleware("http")` decorator needs nothing
+imported — do NOT add `from starlette.middleware.base import
+BaseHTTPMiddleware`. It would be unused and ruff `F401` will fail the lint
+gate. `Request` is already imported in `app.py`
+(`from fastapi import Depends, FastAPI, HTTPException, Request, Response`).
+
+Place this middleware **before** the `StaticFiles` mounts, matching where the
+app's other cross-cutting concerns sit.
+
 (Import style must match the file's existing import ordering — ruff I will tell you.)
 
-**Verify**: `uv run ruff check frontend/agentaudit/web/app.py` → exit 0;
-then `uv run python -c "import agentaudit.web.app"` → exits 0.
+**Verify**: `python -m ruff check frontend/agentaudit/web/app.py` → exit 0;
+then `python -c "import agentaudit.web.app"` → exits 0.
 
 ### Step 2: Assert headers on representative responses
 
@@ -111,14 +118,14 @@ response and a JSON API response carry both headers (use the client fixture /
 auth pattern used by neighboring tests). Also assert the login page (public)
 carries them — cheap consistency.
 
-**Verify**: `uv run --extra dev pytest tests/test_web.py -k frame` → passes
+**Verify**: `python -m pytest tests/test_web.py -k frame` → passes
 
 ### Step 3: Full-suite sanity
 
 The route-table auth walk (`test_every_route_requires_a_token`) must remain
 green; middleware adds no routes so it should be untouched.
 
-**Verify**: `uv run --extra dev pytest tests/test_web.py tests/test_security_p0.py` → all pass
+**Verify**: `python -m pytest tests/test_web.py tests/test_security_p0.py` → all pass
 
 ## Test plan
 
@@ -129,8 +136,8 @@ green; middleware adds no routes so it should be untouched.
 ## Done criteria
 
 - [ ] Both headers present on shell/API/login responses (new test proves it)
-- [ ] `uv run --extra dev pytest tests/test_web.py tests/test_security_p0.py` exits 0
-- [ ] `uv run ruff check frontend/agentaudit/web/app.py tests/test_web.py` exits 0
+- [ ] `python -m pytest tests/test_web.py tests/test_security_p0.py` exits 0
+- [ ] `python -m ruff check frontend/agentaudit/web/app.py tests/test_web.py` exits 0
 - [ ] No files outside the in-scope list modified (`git status`)
 - [ ] `plans/README.md` status row updated
 

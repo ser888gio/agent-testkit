@@ -21,8 +21,7 @@ when the product is being demoed, pitched, or installed by a new user:
    and pack structure from source.
 3. **Docs actively contradict each other.** `AGENTS.md:5`, root `CLAUDE.md`,
    and `docs/project-map.md` still describe "the FastAPI/React dashboard" —
-   the dashboard was rewritten in React (commit `fd13da3`) and `jinja2` isn't
-   even a dependency anymore. `CONTRIBUTING.md` claims "`uv run` is currently
+   the dashboard was rewritten in React (commit `fd13da3`). `CONTRIBUTING.md` claims "`uv run` is currently
    broken on Windows", "repo-wide lint is red", and "~190s suite", while
    `tools/validate.sh` states the opposite ("repo lints clean", ~4s suite)
    and is authoritative today.
@@ -38,8 +37,7 @@ when the product is being demoed, pitched, or installed by a new user:
   ignores `frontend/agentaudit/web/spa_dist/`.
 - `frontend/spa/package.json` has no test runner; nothing in CI compiles or
   verifies the SPA except the docs job (which builds the *website*, not the SPA).
-- Grep confirms zero `templates/` under `frontend/agentaudit/web/` and no
-  jinja2 in `pyproject.toml`.
+- Grep confirms zero `templates/` under `frontend/agentaudit/web/`.
 
 ## Goals
 

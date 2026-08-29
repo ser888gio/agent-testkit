@@ -77,9 +77,9 @@ same style. Type annotations, four-space indent, ruff E/F/I/B/UP.
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Worker tests | `uv run --extra dev pytest tests/test_worker.py` | all pass |
-| Full suite   | `uv run --extra dev pytest` | all pass (~4s) |
-| Lint         | `uv run ruff check backend/agentaudit/worker.py tests/test_worker.py` | exit 0 |
+| Worker tests | `python -m pytest tests/test_worker.py` | all pass |
+| Full suite   | `python -m pytest` | all pass (~4s) |
+| Lint         | `python -m ruff check backend/agentaudit/worker.py tests/test_worker.py` | exit 0 |
 
 ## Scope
 
@@ -129,7 +129,7 @@ it before returning:
 
 Keep the default `None` so existing callers/signature stay compatible.
 
-**Verify**: `uv run ruff check backend/agentaudit/worker.py` → exit 0
+**Verify**: `python -m ruff check backend/agentaudit/worker.py` → exit 0
 
 ### Step 2: Make execution observe lease loss
 
@@ -152,7 +152,7 @@ lease-lost abort like any cooperative stop: partial evidence is released as
 docstring why lease loss maps onto the same cooperative-stop channel (one
 sentence, matching the module's rationale style).
 
-**Verify**: `uv run --extra dev pytest tests/test_worker.py` → all pass
+**Verify**: `python -m pytest tests/test_worker.py` → all pass
 
 ### Step 3: Add the regression test
 
@@ -168,19 +168,19 @@ first call, let the worker start a multi-test run, and assert:
 Name it to describe behavior, e.g.
 `test_lease_loss_stops_execution_and_releases_failed`.
 
-**Verify**: `uv run --extra dev pytest tests/test_worker.py -k lease` → new test passes
+**Verify**: `python -m pytest tests/test_worker.py -k lease` → new test passes
 
 ## Test plan
 
 - New test per Step 3 in `tests/test_worker.py`, modeled structurally on the
   existing mid-run cancellation test in the same file.
-- Verification: full suite `uv run --extra dev pytest` → all pass.
+- Verification: full suite `python -m pytest` → all pass.
 
 ## Done criteria
 
-- [ ] `uv run --extra dev pytest tests/test_worker.py` exits 0 including the new lease-loss test
-- [ ] Full suite `uv run --extra dev pytest` exits 0
-- [ ] `uv run ruff check backend/agentaudit/worker.py tests/test_worker.py` exits 0
+- [ ] `python -m pytest tests/test_worker.py` exits 0 including the new lease-loss test
+- [ ] Full suite `python -m pytest` exits 0
+- [ ] `python -m ruff check backend/agentaudit/worker.py tests/test_worker.py` exits 0
 - [ ] No files outside the in-scope list modified (`git status`)
 - [ ] `plans/README.md` status row updated
 
