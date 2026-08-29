@@ -31,7 +31,12 @@ Thumbs.db
 
 # aislop runtime artifacts
 **/.aislop/session.jsonl
+
+# Git worktrees checked out inside the repo (see `git worktree list`).
+# The directories are live branch checkouts, not build output -- ignored so
+# `git status` stays meaningful, never deleted automatically.
 .claude/worktrees/
+agent-testkit-wt/
 
 # Diagram plugin ephemeral state
 .diagram/
@@ -44,8 +49,7 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 
-# React SPA (built artifacts are produced by 
-pm run build in frontend/spa)
+# React SPA (built artifacts are produced by `npm run build` in frontend/spa)
 node_modules/
 frontend/spa/.vite/
 frontend/agentaudit/web/spa_dist/
