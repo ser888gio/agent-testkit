@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
-import { useView, Loading } from "../useView";
-import { EmptyState, LinkButton, PageHeader, ScoreBar, StatusBadge } from "../ui";
-import { DataTable } from "../table";
+import { useView, Loading } from "../components/useView";
+import { EmptyState, LinkButton, PageHeader, ScoreBar, StatusBadge } from "../components/ui";
+import { DataTable } from "../components/table";
 
 interface AgentRow {
   agent: { id: string; target_type: string; created_at: string };

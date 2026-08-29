@@ -1,7 +1,8 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../ui";
-import { DataTable } from "../table";
+import { useView, Loading } from "../components/useView";
+import { EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../components/ui";
+import { DataTable } from "../components/table";
+import { DeltaList } from "../components/DeltaList";
 
 interface TestDelta {
   test_id: string;
@@ -20,19 +21,6 @@ interface RunDiff {
   latency_deltas: TestDelta[];
   score_delta: Record<string, number>;
   critical_regressions: string[];
-}
-
-function DeltaList({ items, tone }: { items: string[]; tone?: "pass" | "fail" | "status-failed" | "status-passed" }) {
-  if (!items.length) return <li className="quiet">none</li>;
-  return (
-    <>
-      {items.map((t) => (
-        <li key={t} className={tone}>
-          {t}
-        </li>
-      ))}
-    </>
-  );
 }
 
 export function ComparePage() {
