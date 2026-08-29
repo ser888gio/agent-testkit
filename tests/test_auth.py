@@ -226,3 +226,17 @@ def test_code_pkce_callback_creates_server_side_session(oidc, monkeypatch):
     assert session_principal.auth_method == "session"
     assert session_principal.csrf_token
     assert next_url == "/"
+
+
+def test_safe_next_url_rejects_backslash_open_redirect():
+    """/\\evil.com looks local (no scheme/netloc, starts with '/') but browsers
+    canonicalize '\\' to '/' in the authority position, turning it into //evil.com."""
+    assert auth._safe_next_url("/\\evil.com") == "/"
+
+
+def test_safe_next_url_rejects_leading_backslash():
+    assert auth._safe_next_url("\\\\evil.com") == "/"
+
+
+def test_safe_next_url_accepts_safe_local_path_with_query():
+    assert auth._safe_next_url("/safe/path?x=1") == "/safe/path?x=1"
