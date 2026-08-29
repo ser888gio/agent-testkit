@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
@@ -132,7 +132,7 @@ jobs:
   required:
     name: Required
     if: ${{ always() }}
-    needs: [tests, lint, package, docs]
+    needs: [tests, lint, complexity, package, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -141,10 +141,12 @@ jobs:
         env:
           TESTS_RESULT: ${{ needs.tests.result }}
           LINT_RESULT: ${{ needs.lint.result }}
+          COMPLEXITY_RESULT: ${{ needs.complexity.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
         run: |
           test "$TESTS_RESULT" = "success"
           test "$LINT_RESULT" = "success"
+          test "$COMPLEXITY_RESULT" = "success"
           test "$PACKAGE_RESULT" = "success"
           test "$DOCS_RESULT" = "success"
