@@ -27,10 +27,10 @@ the evidence is supposed to support.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 
-from agentaudit.core.agent import AgentResponse, AttackerUnavailable, HTTPAttacker
+from agentaudit.core import llm
+from agentaudit.core.agent import AgentResponse, AttackerUnavailable
 from agentaudit.core.attacker import AttackerModel
 from agentaudit.core.jsonx import extract_json
 from agentaudit.core.redaction import RedactionConfig, Redactor
@@ -137,23 +137,14 @@ class ModelJudge:
 def build_judge(log: JudgeLog | None = None) -> ModelJudge | None:
     """The configured judge, or None to keep using the substring check.
 
-    Credentials come from the process environment, never from target config,
-    for the same reason as the attacker model: a partner-supplied target file
-    that could name its own credential env var would be an exfiltration
-    primitive.
+    Configuration comes from `core/llm.py`, never from target config, for the
+    same reason as the attacker model: a partner-supplied target file that could
+    name its own credential env var would be an exfiltration primitive.
+
+    Temperature defaults to 0.0 because judging is scoring, not attacking: the
+    same reply must get the same verdict or a re-run reports different findings.
     """
-    endpoint = os.environ.get("AGENTAUDIT_JUDGE_ENDPOINT")
-    model = os.environ.get("AGENTAUDIT_JUDGE_MODEL")
-    if not endpoint or not model:
+    client = llm.build_client(llm.load_llm_config().judge, default_temperature=0.0)
+    if client is None:
         return None
-    return ModelJudge(
-        HTTPAttacker(
-            endpoint=endpoint,
-            model=model,
-            api_key=os.environ.get("AGENTAUDIT_JUDGE_API_KEY"),
-            # Judging is scoring, not attacking: the same reply must get the
-            # same verdict or a re-run reports different findings.
-            temperature=0.0,
-        ),
-        log=log,
-    )
+    return ModelJudge(client, log=log)

@@ -1,0 +1,35 @@
+# Attacker and judge model configuration.
+#
+# Copy to agentaudit/llm.yaml (gitignored) or point
+# AGENTAUDIT_LLM_CONFIG at it. Both roles are optional -- an absent role leaves
+# that capability off, and runs stay offline and deterministic.
+#
+# NEVER put a key in this file. `api_key_ref` names an environment variable;
+# the loader refuses a file containing a credential literal. Supply the key the
+# way the deployment supplies every other secret: an env var, a Docker secret,
+# or a k8s Secret projected into the worker's environment.
+
+# Writes the next attack turn from the agent's actual reply, instead of sending
+# a fixed ladder rung. Also used by the test generator in `core/evolve.py`.
+attacker:
+  model: gpt-4o-mini
+  # Any OpenAI-compatible chat-completions endpoint. Omit for OpenAI's default.
+  endpoint: https://api.openai.com/v1/chat/completions
+  api_key_ref: env://OPENAI_API_KEY
+  # Attackers want variance -- identical retries against the same refusal are
+  # wasted turns. Defaults to 0.9.
+  # temperature: 0.9
+  # timeout_s: 30.0
+
+# Decides whether an attack already landed, replacing the substring check.
+judge:
+  model: gpt-4o-mini
+  api_key_ref: env://OPENAI_API_KEY
+  # Left at 0.0 by default: the same reply must get the same verdict, or a
+  # re-run reports different findings.
+
+# A local model needs no key at all:
+#
+# attacker:
+#   model: llama3.1
+#   endpoint: http://localhost:11434/v1/chat/completions

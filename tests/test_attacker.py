@@ -3,11 +3,10 @@ import json
 import pytest
 
 from agentaudit.core.adaptive import CRESCENDO_LADDER
-from agentaudit.core.agent import AgentResponse
+from agentaudit.core.agent import AgentResponse, HTTPAttacker
 from agentaudit.core.attacker import (
     TECHNIQUES,
     AttackerError,
-    HTTPAttacker,
     RefinementLog,
     RefiningStrategy,
     build_attacker,
