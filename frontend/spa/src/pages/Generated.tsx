@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { ApiError, apiSend } from "../api";
-import { useView, Loading } from "../useView";
-import { EmptyState, ErrorNote, PageHeader } from "../ui";
-import { DataTable } from "../table";
+import { useView, Loading } from "../components/useView";
+import { EmptyState, ErrorNote, PageHeader } from "../components/ui";
+import { DataTable } from "../components/table";
 
 interface Candidate {
   id: string;

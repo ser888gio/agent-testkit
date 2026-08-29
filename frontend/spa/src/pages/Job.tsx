@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
-import { EmptyState, ErrorNote, PageHeader, Panel, Spinner } from "../ui";
+import { EmptyState, ErrorNote, PageHeader, Panel, Spinner } from "../components/ui";
 
 interface JobView {
   id: string;

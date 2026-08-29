@@ -1,7 +1,7 @@
 import { Route, Routes } from "react-router-dom";
-import { Layout } from "./layout";
+import { Layout } from "./components/layout";
 import { useSession } from "./session";
-import { Loading } from "./useView";
+import { Loading } from "./components/useView";
 import { AnalyticsPage } from "./pages/Analytics";
 import { RunsPage } from "./pages/Runs";
 import { RunDetailPage } from "./pages/RunDetail";
@@ -17,7 +17,7 @@ import { GeneratedPage } from "./pages/Generated";
 import { JobPage } from "./pages/Job";
 import { ComparePage } from "./pages/Compare";
 import { SettingsPage } from "./pages/Settings";
-import { EmptyState, PageHeader } from "./ui";
+import { EmptyState, PageHeader } from "./components/ui";
 
 function NotFound() {
   return (

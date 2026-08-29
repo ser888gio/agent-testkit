@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader, Panel } from "../ui";
+import { useView, Loading } from "../components/useView";
+import { EmptyState, PageHeader, Panel } from "../components/ui";
+import { Meta } from "../components/Meta";
 
 interface SettingsView {
   settings: {
@@ -19,19 +20,6 @@ interface SettingsView {
     roles: string[];
     auth_method: string;
   };
-}
-
-function Meta({ entries }: { entries: [string, React.ReactNode][] }) {
-  return (
-    <dl className="harness-meta">
-      {entries.map(([key, value]) => (
-        <div key={key}>
-          <dt>{key}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
 }
 
 export function SettingsPage() {

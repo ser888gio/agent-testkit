@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
-import { EmptyState, ErrorNote, PageHeader } from "../ui";
+import { EmptyState, ErrorNote, PageHeader } from "../components/ui";
 
 interface FormOptions {
   categories: string[];
