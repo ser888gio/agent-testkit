@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -409,23 +408,15 @@ def _techniques_of(run: RunResult, test_id: str) -> list[str]:
 def build_generator() -> AttackGenerator | None:
     """The configured generator, or None to leave evolution off.
 
-    Reuses the attacker model's endpoint and credentials: a second set of
-    variables for the same OpenAI-compatible POST would be configuration for
-    its own sake. Credentials come from the process environment, never from
-    target config -- a target file is partner-supplied, and one that could name
-    its own credential variable would be an exfiltration primitive.
+    Reuses the attacker model's endpoint and credentials: a second role for the
+    same OpenAI-compatible POST would be configuration for its own sake.
+    Credentials come from `core/llm.py`, never from target config -- a target
+    file is partner-supplied, and one that could name its own credential
+    variable would be an exfiltration primitive.
     """
-    from agentaudit.core.agent import HTTPAttacker
+    from agentaudit.core import llm
 
-    endpoint = os.environ.get("AGENTAUDIT_ATTACKER_ENDPOINT")
-    model = os.environ.get("AGENTAUDIT_ATTACKER_MODEL")
-    if not endpoint or not model:
-        return None
-    return HTTPAttacker(
-        endpoint=endpoint,
-        model=model,
-        api_key=os.environ.get("AGENTAUDIT_ATTACKER_API_KEY"),
-    )
+    return llm.build_client(llm.load_llm_config().attacker, default_temperature=0.9)
 
 
 # Provisional tests expire; promoted ones do not. Five is enough for a

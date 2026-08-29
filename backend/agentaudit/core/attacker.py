@@ -26,12 +26,12 @@ stub, and swapping providers touches only `HTTPAttacker`.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from agentaudit.core import llm
 from agentaudit.core.adaptive import STRATEGIES, AttackStrategy, Judge
-from agentaudit.core.agent import AgentResponse, AttackerUnavailable, HTTPAttacker
+from agentaudit.core.agent import AgentResponse, AttackerUnavailable
 from agentaudit.core.jsonx import extract_json
 from agentaudit.core.redaction import RedactionConfig, Redactor
 from agentaudit.core.schema import AdaptiveSpec
@@ -265,21 +265,14 @@ class RefiningStrategy:
 def build_attacker(spec: AdaptiveSpec) -> AttackerModel | None:
     """The configured attacker model, or None to stay on the scripted ladder.
 
-    The key comes from the process environment, never from target config: a
-    target file is partner-supplied, and an endpoint that could name its own
-    credential env var would be an exfiltration primitive.
+    Configuration comes from `core/llm.py` -- the LLM config file, or the legacy
+    environment variables. Never from target config: a target file is
+    partner-supplied, and an endpoint that could name its own credential env var
+    would be an exfiltration primitive.
     """
     if not spec.refine:
         return None
-    endpoint = os.environ.get("AGENTAUDIT_ATTACKER_ENDPOINT")
-    model = os.environ.get("AGENTAUDIT_ATTACKER_MODEL")
-    if not endpoint or not model:
-        return None
-    return HTTPAttacker(
-        endpoint=endpoint,
-        model=model,
-        api_key=os.environ.get("AGENTAUDIT_ATTACKER_API_KEY"),
-    )
+    return llm.build_client(llm.load_llm_config().attacker, default_temperature=0.9)
 
 
 def build_refining_strategy(

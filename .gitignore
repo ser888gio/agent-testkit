@@ -53,3 +53,8 @@ next-env.d.ts
 node_modules/
 frontend/spa/.vite/
 frontend/agentaudit/web/spa_dist/
+
+# Local LLM config: holds endpoints/model names, never keys, but still
+# deployment-specific. The committed template is llm.example.yaml.
+agentaudit/llm.yaml
+.agentaudit/

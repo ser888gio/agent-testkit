@@ -30,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from agentaudit.core import runview
+from agentaudit.core import llm, runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.attacks import split_variant
 from agentaudit.core.config import ConfigError, known_sandboxes, load_target_dict
@@ -886,6 +886,7 @@ def settings_info(principal: Principal = Depends(current_principal)) -> dict:
             "auth_state": auth_state,
             "redaction_patterns": builtin_pattern_names(),
             "egress_allow_local": os.environ.get("AGENTAUDIT_EGRESS_ALLOW_LOCAL") == "1",
+            "llm": llm.describe(),
         },
         "principal": {
             "org_id": principal.org_id,
