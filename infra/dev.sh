@@ -19,12 +19,24 @@ if [[ "${1:-}" == "--api-only" ]]; then
   exec "$PYTHON" -m agentaudit.cli ui "$@"
 fi
 
-# Default: FastAPI on :8000 for /api, Vite on :5173 for the SPA with HMR.
-# vite.config.ts already proxies /api, /static, /login, /logout and /auth to
-# :8000, so :5173 is the address to open.
+# FastAPI for /api, Vite on :5173 for the SPA with HMR. `--port N` moves both.
+API_PORT=8000
+for ((i = 1; i <= $#; i++)); do
+  if [[ "${!i}" == "--port" ]]; then
+    next=$((i + 1))
+    API_PORT="${!next:-8000}"
+  fi
+done
+
 "$PYTHON" -m agentaudit.cli ui "$@" &
 API_PID=$!
 trap 'kill "$API_PID" 2>/dev/null || true' EXIT
 
-echo "open http://127.0.0.1:5173 (not :8000 -- that serves the last build)"
-npm --prefix frontend/spa run dev
+sleep 2
+if ! kill -0 "$API_PID" 2>/dev/null; then
+  echo "ERROR: API on :$API_PORT exited -- port in use? Try: bash infra/dev.sh --port 8001" >&2
+  exit 1
+fi
+
+echo "open http://127.0.0.1:5173 (not :$API_PORT -- that serves the last build)"
+AGENTAUDIT_API_URL="http://127.0.0.1:$API_PORT" npm --prefix frontend/spa run dev
