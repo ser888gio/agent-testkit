@@ -38,5 +38,6 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
   exit 1
 fi
 
-echo "open http://127.0.0.1:5173 (not :$API_PORT -- that serves the last build)"
+# localhost, not 127.0.0.1: Vite binds ::1, so the IPv4 form is refused.
+echo "open http://localhost:5173 (not :$API_PORT -- that serves the last build)"
 AGENTAUDIT_API_URL="http://127.0.0.1:$API_PORT" npm --prefix frontend/spa run dev
