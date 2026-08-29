@@ -252,6 +252,8 @@ async def require_admin(
 def _safe_next_url(value: str | None) -> str:
     if not value:
         return "/"
+    if "\\" in value:
+        return "/"
     parsed = parse.urlsplit(value)
     is_local_path = not parsed.scheme and not parsed.netloc and value.startswith("/")
     return value if is_local_path and not value.startswith("//") else "/"
