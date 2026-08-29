@@ -20,7 +20,7 @@ when the product is being demoed, pitched, or installed by a new user:
    removed (`README.md:228-229`); new users must reverse-engineer target YAML
    and pack structure from source.
 3. **Docs actively contradict each other.** `AGENTS.md:5`, root `CLAUDE.md`,
-   and `docs/project-map.md` still describe "the FastAPI/Jinja dashboard" —
+   and `docs/project-map.md` still describe "the FastAPI/React dashboard" —
    the dashboard was rewritten in React (commit `fd13da3`) and `jinja2` isn't
    even a dependency anymore. `CONTRIBUTING.md` claims "`uv run` is currently
    broken on Windows", "repo-wide lint is red", and "~190s suite", while
