@@ -679,6 +679,7 @@ button:hover,
   overflow-x: auto;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-card);
+  margin-top: 1rem;
 }
 
 table {
