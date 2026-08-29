@@ -15,7 +15,7 @@ from agentaudit.core.store import Store
 runner = CliRunner()
 
 # Bump when a new revision lands in infra/alembic/versions/.
-HEAD = "0014"
+HEAD = "0015"
 APPLICATION_TABLES = (
     "orgs",
     "agents",

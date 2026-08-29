@@ -1949,6 +1949,27 @@ def test_rerun_job_queues_the_same_target_pack_and_selection(tmp_path, monkeypat
     assert store.jobs.get(DEFAULT_ORG, first).state == "cancelled"
 
 
+def test_rerun_job_carries_the_original_time_limit(tmp_path, monkeypatch):
+    """Re-running an expired job must not run unbounded."""
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    store = Store(str(tmp_path / "web.db"))
+    first = client.post(
+        "/api/runs/enqueue", json={**_TREASURY, "timeout_seconds": 900}
+    ).json()["job_id"]
+
+    second = client.post(f"/api/jobs/{first}/rerun").json()["job_id"]
+
+    assert store.jobs.get(DEFAULT_ORG, second).timeout_seconds == 900
+
+
+def test_enqueue_rejects_a_non_positive_time_limit(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+
+    for bad in (0, -5, 24 * 60 * 60 + 1):
+        resp = client.post("/api/runs/enqueue", json={**_TREASURY, "timeout_seconds": bad})
+        assert resp.status_code == 422, bad
+
+
 def test_rerun_job_of_another_org_is_404(tmp_path, monkeypatch):
     client = _client(str(tmp_path / "web.db"), monkeypatch)
     job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]

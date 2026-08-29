@@ -17,6 +17,7 @@ import os
 import signal
 import socket
 import threading
+import time
 import uuid
 
 from agentaudit.core.audit import execute as execute_audit
@@ -27,7 +28,13 @@ from agentaudit.core.loader import LoaderError, load_tests_from_rows
 from agentaudit.core.redaction import Redactor
 from agentaudit.core.runner import run as run_tests
 from agentaudit.core.schema import RunResult
-from agentaudit.core.store import CANCELLED_ERROR, DISCOVERY_PACK_ID, JobRow, Store
+from agentaudit.core.store import (
+    CANCELLED_ERROR,
+    DISCOVERY_PACK_ID,
+    TIMEOUT_ERROR,
+    JobRow,
+    Store,
+)
 
 log = logging.getLogger("agentaudit.worker")
 
@@ -52,17 +59,23 @@ class PermanentJobError(Exception):
 class JobCancelled(Exception):
     """Raised by `execute_job` once the audit's `should_stop` has fired.
 
-    Cancellation is cooperative: `should_stop` is only polled between tests, so
+    Stopping is cooperative: `should_stop` is only polled between tests, so
     this is the earliest point the worker can react. Tests already dispatched
     to the agent still finish; nothing after them starts. When at least one
     test had finished, its partial run is saved first and `run_id` carries it,
     so the job can link the evidence that exists.
+
+    `error` distinguishes the two things that fire the same stop: a user asking
+    for a cancel, and the job outrunning its own `timeout_seconds` budget. Both
+    end the job the same way, but a timeout is not a cancel and the evidence
+    must not claim it was one.
     """
 
-    def __init__(self, job_id: str, run_id: str | None = None):
+    def __init__(self, job_id: str, run_id: str | None = None, *, error: str = CANCELLED_ERROR):
         super().__init__(job_id)
         self.job_id = job_id
         self.run_id = run_id
+        self.error = error
 
 
 def _heartbeat(store: Store, job_id: str, owner: str, stop: threading.Event, lease: int) -> None:
@@ -238,7 +251,11 @@ def execute_job(store: Store, job: JobRow) -> str | None:
     def note(_index: int, result) -> None:
         store.jobs.record_progress(job.id, result.test_id, result.status.value)
 
+    deadline = time.monotonic() + job.timeout_seconds if job.timeout_seconds else None
+
     def should_stop() -> bool:
+        if deadline is not None and time.monotonic() >= deadline:
+            return True
         return store.jobs.is_cancelled(job.id)
 
     # The egress decision above binds every request the audit makes, discovery
@@ -256,15 +273,17 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         should_stop=should_stop,
     )
     if should_stop():
-        # A cancellation after some tests finished still saves what ran as a
-        # (shorter) run -- partial evidence is evidence. Before the first test
-        # there is nothing to keep, so the job ends without a run.
+        # A stop after some tests finished still saves what ran as a (shorter)
+        # run -- partial evidence is evidence. Before the first test there is
+        # nothing to keep, so the job ends without a run. Cancel wins the label
+        # when both fired.
+        error = CANCELLED_ERROR if store.jobs.is_cancelled(job.id) else TIMEOUT_ERROR
         result, report = audit.result, audit.report
         run_id: str | None = None
         if result.results:
             store.save_run(job.org_id, target, result, report, job.created_by, plan=audit.plan)
             run_id = result.run_id
-        raise JobCancelled(job.id, run_id)
+        raise JobCancelled(job.id, run_id, error=error)
     result, report = audit.result, audit.report
     if audit.unexecuted:
         log.info(
@@ -296,13 +315,14 @@ def work_once(
     try:
         run_id = execute_job(store, job)
     except JobCancelled as exc:
-        log.info("job %s: cancelled", job.id)
-        if exc.run_id:
-            # Partial evidence exists; report the cancel like any other failure
-            # so the linked run is never mistaken for a complete gate decision.
-            store.jobs.release(
-                job.id, owner, state="failed", run_id=exc.run_id, error=CANCELLED_ERROR
-            )
+        # 'expired' is its own terminal state, so a timeout keeps it whether or
+        # not partial evidence exists. A cancel that produced evidence stays
+        # 'failed', its error text marking the linked run partial.
+        log.info("job %s: %s", job.id, exc.error)
+        if exc.error == TIMEOUT_ERROR:
+            store.jobs.release(job.id, owner, state="expired", run_id=exc.run_id, error=exc.error)
+        elif exc.run_id:
+            store.jobs.release(job.id, owner, state="failed", run_id=exc.run_id, error=exc.error)
         else:
             store.jobs.release(job.id, owner, state="cancelled")
     except PermanentJobError as exc:
