@@ -679,6 +679,7 @@ button:hover,
   overflow-x: auto;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-card);
+  margin-top: 1rem;
 }
 
 table {
@@ -1699,7 +1700,7 @@ svg.export-icon {
 }
 
 /* React SPA shell: the mobile menu is state-driven (a button + .open class)
-   rather than the checkbox hack the Jinja markup used. Same visual behavior. */
+   rather than the checkbox hack the legacy markup used. Same visual behavior. */
 @media (max-width: 700px) {
   .sidebar nav.open {
     display: flex;

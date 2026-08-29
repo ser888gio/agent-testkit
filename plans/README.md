@@ -13,11 +13,11 @@ your row when done.
 |------|-------|----------|--------|------------|--------|--------|
 | 006 | Return the test suite to green (3 defects) | P1 | S | — | `fix/006-green-the-suite` | DONE (reviewed; suite verified green 954 passed / 0 failed — commits `17cb903`, `a84c681`, `c8ffe1a` in worktree `agent-acdd6ff891f6327b3`, unmerged) |
 | 007 | Make CI actually run on `develop` | P1 | S | 006 | `chore/007-ci-actually-runs` | TODO |
-| 001 | Reject backslash-form open redirect in login `next` | P1 | S | — | `advisor/001-next-url-backslash` | TODO |
+| 001 | Reject backslash-form open redirect in login `next` | P1 | S | — | `advisor/001-next-url-backslash` | DONE (reviewed — commit `949bbff` in worktree `agent-aee8e1e9084ee414d`, unmerged) |
 | 002 | Build the SPA before `uv build` so wheels ship a dashboard | P1 | S | — | `advisor/002-wheel-ships-spa` | TODO |
 | 003 | Stop the worker when its job lease is lost | P1 | S | — | `advisor/003-worker-stops-on-lease-loss` | TODO |
 | 008 | Stop labelling fully-completed jobs `expired` | P2 | S | — | `fix/008-job-deadline-race` | DONE (reviewed — commit `559fb06` in worktree `agent-a7436b89a9065da31`, unmerged) |
-| 004 | Add frame-protection headers to the dashboard | P2 | S | — | `advisor/004-frame-headers` | TODO |
+| 004 | Add frame-protection headers to the dashboard | P2 | S | — | `advisor/004-frame-headers` | DONE (reviewed — commit `e3fe118` in worktree `agent-a1e1ec5c809e398d9`, unmerged) |
 | 010 | Mark authenticated API responses uncacheable | P2 | S | 004 | `fix/010-api-cache-control` | TODO |
 | 005 | Fail loudly on unrecognized path params in the route-table auth walk | P2 | S | — | `advisor/005-route-walk-hardening` | TODO |
 | 009 | Stop nested git worktrees polluting the working tree | P3 | S | — | `chore/009-ignore-nested-worktrees` | DONE (reviewed, unmerged — commit `b154525` in worktree `agent-a0d83bef547640cc1`) |
@@ -113,14 +113,44 @@ Added 2026-08-29:
 - **`cryptography` PYSEC-2026-3552**: self-resolved; `uv.lock:504` now pins
   50.0.0. The *visibility* gap it exposed is carried in plan 007 instead.
 
-## Known defects in plans 001–005
+## Defects in plans 001–005 — FIXED 2026-08-29
 
-Found while reconciling on 2026-08-29, not yet corrected in those files:
+- The `uv run --extra dev pytest` console-script form **fails on Windows**
+  (`uv trampoline failed to canonicalize script path`). Replaced with
+  `python -m pytest` / `python -m ruff` throughout 001–005. Two `uv run`
+  invocations in plan 002 were deliberately left: one inside a `yaml` CI block
+  (it runs on the Linux runner, where the console script is fine) and one
+  `uv run --with pyyaml` fallback, which is not the trampoline form.
+- Plan 004 step 1 showed an unused `from starlette.middleware.base import
+  BaseHTTPMiddleware` import next to an `@app.middleware("http")` decorator
+  that does not need it — ruff `F401` would have failed the lint gate the plan
+  itself requires. Replaced with an explicit "add no imports" instruction.
 
-- Their "Commands you will need" tables use the `uv run --extra dev pytest`
-  console-script form, which **fails on Windows** (`uv trampoline failed to
-  canonicalize script path`) — `CLAUDE.md` documents this. Executors on Windows
-  should substitute `python -m pytest`.
-- Plan 004 step 1 shows an unused `from starlette.middleware.base import
-  BaseHTTPMiddleware` import alongside an `@app.middleware("http")` decorator
-  that does not need it. Ruff `F401` will flag it; drop the import.
+## Plan 003 must be refreshed before execution — DO NOT DISPATCH AS-IS
+
+Plan 003's "Current state" excerpt reads:
+
+```python
+    def should_stop() -> bool:
+        return store.jobs.is_cancelled(job.id)
+```
+
+That is stale twice over. The `timeout_seconds` feature (commit `ce5c452`)
+already added a deadline branch to that function on `develop`, and plan 008
+rewrites the same function again into a sticky-flag form. Plan 003 also shares
+both of its in-scope files (`worker.py`, `tests/test_worker.py`) with 008.
+
+Refresh 003's excerpts against `develop` **after 008 is merged**, then dispatch.
+Its own drift check would correctly STOP an executor in the meantime.
+
+## File-collision map (why plans are sequenced, not all run at once)
+
+- `tests/test_web.py` — touched by 004, 005 and 006. 006 is approved and
+  unmerged; 004 is running. Hold 005 until 004 lands, or expect a three-way
+  merge in one file.
+- `.github/workflows/ci.yml` — touched by 002 (the `package` job) and 007
+  (the `on:` triggers and the `required` gate). Different regions, same file.
+  Land 007 first, then 002.
+- `backend/agentaudit/worker.py` — touched by 003 and 008. See above.
+- `frontend/agentaudit/web/app.py` — touched by 004 and 010. 010 already
+  records this dependency.
