@@ -252,11 +252,19 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         store.jobs.record_progress(job.id, result.test_id, result.status.value)
 
     deadline = time.monotonic() + job.timeout_seconds if job.timeout_seconds else None
+    # Sticky, because the post-audit check below must reflect the answer the
+    # runner acted on -- not a fresh clock reading. Re-asking would label a job
+    # that ran every test `expired` whenever the deadline lands in the gap
+    # between the last test and this check.
+    stopped = False
 
     def should_stop() -> bool:
+        nonlocal stopped
         if deadline is not None and time.monotonic() >= deadline:
-            return True
-        return store.jobs.is_cancelled(job.id)
+            stopped = True
+        elif store.jobs.is_cancelled(job.id):
+            stopped = True
+        return stopped
 
     # The egress decision above binds every request the audit makes, discovery
     # probes included. `external` stays off for exactly that reason: a spawned
@@ -272,7 +280,7 @@ def execute_job(store: Store, job: JobRow) -> str | None:
         on_result=note,
         should_stop=should_stop,
     )
-    if should_stop():
+    if stopped:
         # A stop after some tests finished still saves what ran as a (shorter)
         # run -- partial evidence is evidence. Before the first test there is
         # nothing to keep, so the job ends without a run. Cancel wins the label

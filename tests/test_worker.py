@@ -605,6 +605,43 @@ def test_a_job_inside_its_time_limit_finishes_normally(tmp_path):
     assert job.error is None
 
 
+def test_a_job_that_ran_every_test_is_done_even_if_the_budget_lapses_after(
+    tmp_path, monkeypatch
+):
+    """The deadline landing between the final test and the post-audit check is
+    not a timeout: every test ran, so the evidence is complete and the job is
+    `done`, not `expired`."""
+    store = Store(str(tmp_path / "late-lapse.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    tests = [{**_TEST, "id": f"w.pass.case.{n}"} for n in range(2)]
+    store.save_pack("org-a", "pack-1", "Pack One", tests)
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1", timeout_seconds=60)
+
+    # Exhaust the budget only once the LAST test has been recorded, so the
+    # runner's between-tests poll never sees it and the loop runs to completion.
+    original_record_progress = JobQueue.record_progress
+    clock = time.monotonic()
+    seen = []
+
+    def _record_then_lapse_after_last(self, job_id_, test_id, status):
+        original_record_progress(self, job_id_, test_id, status)
+        seen.append(test_id)
+        if len(seen) == len(tests):
+            monkeypatch.setattr(time, "monotonic", lambda: clock + 3600)
+
+    monkeypatch.setattr(JobQueue, "record_progress", _record_then_lapse_after_last)
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    assert job.error is None
+    assert job.run_id is not None
+
+    run, _ = store.get_run("org-a", job.run_id)
+    assert [r.test_id for r in run.results] == ["w.pass.case.0", "w.pass.case.1"]
+
+
 def test_a_cancel_beats_a_timeout_when_both_fired(tmp_path, monkeypatch):
     """A user who asked for a stop got one. Reporting their cancel as a timeout
     would blame the agent for being slow when it was not."""
