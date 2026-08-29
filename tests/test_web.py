@@ -782,6 +782,24 @@ def test_browser_request_starts_code_pkce_login(tmp_path, monkeypatch):
     assert "agentaudit_login_state=" in login.headers["set-cookie"]
 
 
+# --- frame protection headers -------------------------------------------
+
+
+def test_responses_carry_frame_protection_headers(tmp_path, monkeypatch):
+    """Clickjacking guard: every response, authenticated or not, must deny framing."""
+    db = str(tmp_path / "web.db")
+    Store(db)
+    client = _client(db, monkeypatch)
+
+    for resp in (
+        client.get("/"),  # SPA shell HTML
+        client.get("/api/runs"),  # JSON API
+        client.get("/login", follow_redirects=False),  # public route
+    ):
+        assert resp.headers["x-frame-options"] == "DENY"
+        assert resp.headers["content-security-policy"] == "frame-ancestors 'self'"
+
+
 def test_viewer_cannot_create_test(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     Store(db)

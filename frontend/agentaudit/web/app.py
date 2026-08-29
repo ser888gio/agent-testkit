@@ -78,6 +78,15 @@ app = FastAPI(
 )
 app.include_router(api_router)
 
+
+@app.middleware("http")
+async def frame_protection(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+    return response
+
+
 # StaticFiles guesses content types from the OS. On some Windows setups the
 # registry maps .js to application/json, and browsers refuse to execute a
 # module with that MIME type -- pin what we serve.
