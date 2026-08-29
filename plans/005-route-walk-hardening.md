@@ -71,8 +71,8 @@ actionable. The consuming test (~line 723) treats "not unprotected" as pass.
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Web tests | `uv run --extra dev pytest tests/test_web.py` | all pass |
-| Lint      | `uv run ruff check tests/test_web.py` | exit 0 |
+| Web tests | `python -m pytest tests/test_web.py` | all pass |
+| Lint      | `python -m ruff check tests/test_web.py` | exit 0 |
 
 ## Scope
 
@@ -130,7 +130,7 @@ Call `_fill(path)` where the replace-chain was. The assertion message tells
 the future contributor exactly what to do — the walk now fails loudly instead
 of silently skipping.
 
-**Verify**: `uv run --extra dev pytest tests/test_web.py -k every_route` → still passes (all current routes covered)
+**Verify**: `python -m pytest tests/test_web.py -k every_route` → still passes (all current routes covered)
 
 ### Step 2: Prove the guard works (self-test)
 
@@ -148,20 +148,20 @@ Change `methods & {"GET", "POST"}` to iterate ALL route methods (e.g.
 be walked. Confirm the current route table contains no such methods yet
 (the walk result count should be unchanged today).
 
-**Verify**: `uv run --extra dev pytest tests/test_web.py -k every_route` → passes with same number of walked routes as before (compare output counts)
+**Verify**: `python -m pytest tests/test_web.py -k every_route` → passes with same number of walked routes as before (compare output counts)
 
 ## Test plan
 
 - No new test files; the existing walk becomes strict. Step 2's manual probe
   is the proof the hardening bites (do not commit the probe).
-- Verification: `uv run --extra dev pytest tests/test_web.py` → all pass.
+- Verification: `python -m pytest tests/test_web.py` → all pass.
 
 ## Done criteria
 
 - [ ] Walk fails loudly when a route introduces an unknown param (Step 2 probe demonstrated)
-- [ ] `uv run --extra dev pytest tests/test_web.py` exits 0 after revert
+- [ ] `python -m pytest tests/test_web.py` exits 0 after revert
 - [ ] All route methods walked, not just GET/POST
-- [ ] `uv run ruff check tests/test_web.py` exits 0
+- [ ] `python -m ruff check tests/test_web.py` exits 0
 - [ ] Only `tests/test_web.py` modified (`git status`); probe edits reverted
 - [ ] `plans/README.md` status row updated
 

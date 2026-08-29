@@ -330,7 +330,7 @@ For whoever owns this next:
   at author time. That is prior audit finding #15 (no typechecker configured),
   and this bug is the concrete argument for it. Worth revisiting.
 - **Defect B is a docs/naming problem underneath.** Someone read `{{ input }}`
-  as malformed Jinja and "fixed" it. Consider a one-line comment in
+  as malformed template syntax and "fixed" it. Consider a one-line comment in
   `treasury-http.yaml` next to the placeholder pointing at
   `core/agent.py:_INPUT_PLACEHOLDER`, so the next reader does not repeat it.
   Deferred out of this plan deliberately — it is a judgment call about comment

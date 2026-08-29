@@ -45,8 +45,8 @@ Start by reading the diff: `git diff` for unstaged, `git diff --staged`, or
   weights and `core/compliance.py` control mapping.
 - **Edits to generated paths** — `dist/`, `agentaudit.egg-info/`, `agentaudit.db`,
   `docs/diagrams/*.svg`, `uv.lock` (hand-edited rather than `uv lock`).
-- **Jinja templates** referencing a renamed schema field — invisible to Python tooling, only
-  caught by `tests/test_web.py` or a manual page load.
+- **React components** referencing a renamed schema field — invisible to Python tooling, only
+   caught by `tests/test_web.py` or a manual page load.
 - **Widened web bind address or relaxed path validation** in `web/app.py` — the re-run
   endpoint executes Python from the packs directory, so this is an RCE surface.
 

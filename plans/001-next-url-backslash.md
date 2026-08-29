@@ -61,9 +61,9 @@ validator style above.
 
 | Purpose   | Command                                              | Expected on success |
 |-----------|------------------------------------------------------|---------------------|
-| Tests     | `uv run --extra dev pytest tests/test_auth.py`       | all pass            |
-| Security suite | `uv run --extra dev pytest tests/test_security_p0.py` | all pass (release blocker must stay green) |
-| Lint      | `uv run ruff check frontend/agentaudit/web/auth.py tests/test_auth.py` | exit 0 |
+| Tests     | `python -m pytest tests/test_auth.py`       | all pass            |
+| Security suite | `python -m pytest tests/test_security_p0.py` | all pass (release blocker must stay green) |
+| Lint      | `python -m ruff check frontend/agentaudit/web/auth.py tests/test_auth.py` | exit 0 |
 
 ## Scope
 
@@ -103,7 +103,7 @@ def _safe_next_url(value: str | None) -> str:
 (Rejecting early is clearer than normalizing; there is no legitimate
 backslash-bearing local path.)
 
-**Verify**: `uv run python -c "from agentaudit.web.auth import _safe_next_url as f; assert f('/\\evil.com') == '/' and f('/runs') == '/runs' and f('https://evil.com') == '/' and print('ok')"` → prints `ok`
+**Verify**: `python -c "from agentaudit.web.auth import _safe_next_url as f; assert f('/\\evil.com') == '/' and f('/runs') == '/runs' and f('https://evil.com') == '/' and print('ok')"` → prints `ok`
 
 ### Step 2: Add regression tests
 
@@ -115,22 +115,22 @@ In `tests/test_auth.py`, next to the existing absolute-URL-rejection case
 
 Follow the existing test's client/request pattern exactly.
 
-**Verify**: `uv run --extra dev pytest tests/test_auth.py -k next` → all pass including the new cases
+**Verify**: `python -m pytest tests/test_auth.py -k next` → all pass including the new cases
 
 ## Test plan
 
 - New tests listed in Step 2, in `tests/test_auth.py`, modeled on the
   existing `next`-url rejection test.
-- Verification: `uv run --extra dev pytest tests/test_auth.py` → all pass;
-  then `uv run --extra dev pytest tests/test_web.py tests/test_security_p0.py`
+- Verification: `python -m pytest tests/test_auth.py` → all pass;
+  then `python -m pytest tests/test_web.py tests/test_security_p0.py`
   → all pass (auth changes must not disturb the route-walk or security suite).
 
 ## Done criteria
 
-- [ ] `uv run python -c "..."` assertion from Step 1 exits 0
-- [ ] `uv run --extra dev pytest tests/test_auth.py` exits 0 with ≥3 new tests
-- [ ] Full security suite green: `uv run --extra dev pytest tests/test_security_p0.py`
-- [ ] `uv run ruff check frontend/agentaudit/web/auth.py tests/test_auth.py` exits 0
+- [ ] `python -c "..."` assertion from Step 1 exits 0
+- [ ] `python -m pytest tests/test_auth.py` exits 0 with ≥3 new tests
+- [ ] Full security suite green: `python -m pytest tests/test_security_p0.py`
+- [ ] `python -m ruff check frontend/agentaudit/web/auth.py tests/test_auth.py` exits 0
 - [ ] No files outside the in-scope list modified (`git status`)
 - [ ] `plans/README.md` status row updated
 
