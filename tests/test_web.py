@@ -1150,7 +1150,7 @@ def test_post_runs_enqueues_without_executing(tmp_path, monkeypatch):
     assert store.list_runs(DEFAULT_ORG) == []
     # The first-party target and pack were imported as rows for the worker.
     assert store.get_target(DEFAULT_ORG, job.target_id)["id"] == "treasury-demo"
-    assert len(store.get_pack_tests(DEFAULT_ORG, job.pack_id)) == 6
+    assert len(store.get_pack_tests(DEFAULT_ORG, job.pack_id)) == 9
 
 
 def test_tests_api_lists_shipped_tests_that_never_ran(tmp_path, monkeypatch):
@@ -1440,7 +1440,7 @@ def test_post_runs_enqueues_against_a_registered_target(tmp_path, monkeypatch):
     assert job.state == "queued"
     assert job.target_id == "support-bot"
     # The registered row is reused as-is; only the pack was imported.
-    assert len(store.get_pack_tests(DEFAULT_ORG, job.pack_id)) == 6
+    assert len(store.get_pack_tests(DEFAULT_ORG, job.pack_id)) == 9
 
 
 def test_post_runs_rejects_an_unknown_target(tmp_path, monkeypatch):
