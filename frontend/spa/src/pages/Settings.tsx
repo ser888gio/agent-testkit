@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader, Panel } from "../ui";
+import { useView, Loading } from "../components/useView";
+import { EmptyState, PageHeader, Panel } from "../components/ui";
+import { Meta } from "../components/Meta";
 
 interface LLMRole {
   configured: boolean;
@@ -33,33 +34,6 @@ interface SettingsView {
     roles: string[];
     auth_method: string;
   };
-}
-
-function Meta({ entries }: { entries: [string, React.ReactNode][] }) {
-  return (
-    <dl className="harness-meta">
-      {entries.map(([key, value]) => (
-        <div key={key}>
-          <dt>{key}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function llmRole(role: LLMRole): React.ReactNode {
-  if (!role.configured) return <span className="quiet">Not configured — scripted fallback in use.</span>;
-  const key = role.api_key_env
-    ? `${role.api_key_env}${role.api_key_present ? " (resolved)" : " (NOT set on this server)"}`
-    : "none (unauthenticated endpoint)";
-  return (
-    <>
-      <span className="mono">{role.model}</span> at <span className="mono">{role.endpoint}</span>
-      <br />
-      <span className="quiet">Key: <span className="mono">{key}</span></span>
-    </>
-  );
 }
 
 export function SettingsPage() {

@@ -1,8 +1,8 @@
 import { useRef } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useView, Loading } from "../useView";
-import { DataTable } from "../table";
-import { EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../ui";
+import { useView, Loading } from "../components/useView";
+import { DataTable } from "../components/table";
+import { EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../components/ui";
 
 interface TestResultJson {
   test_id: string;

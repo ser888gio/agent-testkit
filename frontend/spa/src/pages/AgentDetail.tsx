@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, apiSend } from "../api";
-import { Loading, useView } from "../useView";
-import { DataTable } from "../table";
+import { Loading, useView } from "../components/useView";
+import { DataTable } from "../components/table";
 import {
   EmptyState,
   ErrorNote,
@@ -11,7 +11,7 @@ import {
   shortDate,
   StatCard,
   StatusBadge,
-} from "../ui";
+} from "../components/ui";
 import { encodeAgentId } from "./Agents";
 
 interface RunRowView {

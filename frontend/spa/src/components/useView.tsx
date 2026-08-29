@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, apiGet } from "./api";
+import { ApiError, apiGet } from "../api";
 
-// One fetch per page: the JSON API returns the whole view model the Jinja
-// template used to receive, so pages render from a single response object.
+// One fetch per page: the JSON API returns the whole view model the React
+// pages use, so pages render from a single response object.
 export function useView<T>(path: string, params?: Record<string, string>) {
   const [view, setView] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -13,7 +13,12 @@
       "Bash(bash tools/validate.sh*)",
       "Bash(git diff*)",
       "Bash(git status*)",
-      "Bash(git log*)"
+      "Bash(git log*)",
+      "Bash(npm run *)",
+      "Bash(python -m pytest tests/test_web.py -q)",
+      "Bash(python -m pytest tests/test_web.py -q -k \"test_post_runs_enqueues_without_executing or test_post_runs_enqueues_against_a_registered_target\")",
+      "Bash(npx tsc *)",
+      "Bash(echo \"=== TSC EXIT: $? ===\")"
     ]
   },
   "hooks": {

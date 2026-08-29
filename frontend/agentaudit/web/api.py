@@ -1,7 +1,7 @@
 """JSON API for the React dashboard.
 
 The SPA under ``frontend/spa`` renders every page; this module is its only data
-source. Each endpoint returns the same derivation the Jinja pages used to
+source. Each endpoint returns the same derivation the React pages use
 render — ``core.runview`` still owns it — serialized to JSON instead of templated.
 
 Constraints carried over from the page routes, unchanged:
