@@ -68,6 +68,7 @@ export function GeneratedPage() {
               {
                 key: "test",
                 header: "Test",
+                sort: (c) => c.promoted_id || c.id,
                 cell: (c) => (
                   <>
                     <code>{c.id}</code>{" "}
@@ -86,9 +87,9 @@ export function GeneratedPage() {
                   </>
                 ),
               },
-              { key: "category", header: "Category", cell: (c) => c.category },
-              { key: "risk", header: "Risk", cell: (c) => c.risk },
-              { key: "probe", header: "Probe", className: "truncate", cell: (c) => c.input },
+              { key: "category", header: "Category", sort: (c) => c.category, cell: (c) => c.category },
+              { key: "risk", header: "Risk", sort: (c) => c.risk, cell: (c) => c.risk },
+              { key: "probe", header: "Probe", className: "truncate", sort: (c) => c.input, cell: (c) => c.input },
               {
                 key: "actions",
                 header: "Actions",

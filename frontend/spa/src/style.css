@@ -1704,3 +1704,19 @@ svg.export-icon {
     grid-column: 1 / -1;
   }
 }
+
+/* Sortable headers are buttons so keyboard and screen readers get the affordance;
+   they inherit the th's mono uppercase styling and only add the arrow. */
+.th-sort {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.th-sort:hover { color: var(--ink); }
+.th-sort:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

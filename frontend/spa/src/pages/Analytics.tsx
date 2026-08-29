@@ -210,11 +210,12 @@ export function AnalyticsPage() {
               rows={view.flaky}
               rowKey={(row) => row.test_id}
               columns={[
-                { key: "test", header: "Test", className: "mono", cell: (row) => row.test_id },
-                { key: "category", header: "Category", cell: (row) => row.category },
+                { key: "test", header: "Test", className: "mono", sort: (row) => row.test_id, cell: (row) => row.test_id },
+                { key: "category", header: "Category", sort: (row) => row.category, cell: (row) => row.category },
                 {
                   key: "rate",
                   header: "Failure rate",
+                  sort: (row) => row.failed / row.runs,
                   // Not ScoreBar: here a high number is bad, so the ramp is inverted.
                   cell: (row) => (
                     <>
@@ -231,6 +232,7 @@ export function AnalyticsPage() {
                 {
                   key: "seen",
                   header: "Seen",
+                  sort: (row) => row.runs,
                   cell: (row) => `${row.failed} of ${row.runs} runs`,
                 },
               ]}

@@ -136,10 +136,11 @@ export function ComparePage() {
           rows={Object.entries(diff.score_delta)}
           rowKey={([key]) => key}
           columns={[
-            { key: "metric", header: "Metric", cell: ([key]) => key },
+            { key: "metric", header: "Metric", sort: ([key]) => key, cell: ([key]) => key },
             {
               key: "delta",
               header: "Delta",
+              sort: ([, value]) => value,
               cell: ([, value]) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`,
             },
           ]}
@@ -152,19 +153,21 @@ export function ComparePage() {
           rows={diff.latency_deltas}
           rowKey={(d) => d.test_id}
           columns={[
-            { key: "test", header: "Test", cell: (d) => d.test_id },
+            { key: "test", header: "Test", sort: (d) => d.test_id, cell: (d) => d.test_id },
             {
               key: "before",
               header: "Before status",
+              sort: (d) => d.before ?? "",
               cell: (d) => (d.before ? <StatusBadge status={d.before} /> : "-"),
             },
             {
               key: "after",
               header: "After status",
+              sort: (d) => d.after ?? "",
               cell: (d) => (d.after ? <StatusBadge status={d.after} /> : "-"),
             },
-            { key: "before-ms", header: "Before (ms)", cell: (d) => d.latency_before_ms },
-            { key: "after-ms", header: "After (ms)", cell: (d) => d.latency_after_ms },
+            { key: "before-ms", header: "Before (ms)", sort: (d) => d.latency_before_ms ?? -1, cell: (d) => d.latency_before_ms },
+            { key: "after-ms", header: "After (ms)", sort: (d) => d.latency_after_ms ?? -1, cell: (d) => d.latency_after_ms },
           ]}
         />
       </Panel>

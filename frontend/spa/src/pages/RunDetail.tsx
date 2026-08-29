@@ -252,16 +252,17 @@ export function RunDetailPage() {
             {
               key: "test",
               header: "Test",
+              sort: (r) => r.test_id,
               cell: (r) => (
                 <Link to={`/runs/${runId}/tests/${encodeURIComponent(r.test_id)}`}>
                   {r.test_id}
                 </Link>
               ),
             },
-            { key: "category", header: "Category", cell: (r) => r.category },
-            { key: "risk", header: "Risk", cell: (r) => <RiskBadge risk={r.risk} /> },
-            { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-            { key: "latency", header: "Latency", cell: (r) => formatMs(r.latency_ms) },
+            { key: "category", header: "Category", sort: (r) => r.category, cell: (r) => r.category },
+            { key: "risk", header: "Risk", sort: (r) => r.risk, cell: (r) => <RiskBadge risk={r.risk} /> },
+            { key: "status", header: "Status", sort: (r) => r.status, cell: (r) => <StatusBadge status={r.status} /> },
+            { key: "latency", header: "Latency", sort: (r) => r.latency_ms ?? -1, cell: (r) => formatMs(r.latency_ms) },
           ]}
         />
       </Panel>

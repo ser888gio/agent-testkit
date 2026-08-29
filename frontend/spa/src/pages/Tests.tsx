@@ -62,6 +62,7 @@ export function TestsPage() {
               {
                 key: "test",
                 header: "Test",
+                sort: (t) => t.test_id,
                 cell: (t) =>
                   t.latest_run_id ? (
                     <Link to={`/runs/${t.latest_run_id}/tests/${encodeURIComponent(t.test_id)}`}>
@@ -71,17 +72,19 @@ export function TestsPage() {
                     t.test_id
                   ),
               },
-              { key: "pack", header: "Pack", cell: (t) => t.pack_id || "Run history" },
-              { key: "category", header: "Category", cell: (t) => t.category },
+              { key: "pack", header: "Pack", sort: (t) => t.pack_id ?? "Run history", cell: (t) => t.pack_id || "Run history" },
+              { key: "category", header: "Category", sort: (t) => t.category ?? "", cell: (t) => t.category },
               {
                 key: "risk",
                 header: "Risk",
+                sort: (t) => t.risk ?? "",
                 cell: (t) => (t.risk ? <StatusBadge status={t.risk} /> : "-"),
               },
-              { key: "runs", header: "Runs", cell: (t) => t.run_count },
+              { key: "runs", header: "Runs", sort: (t) => t.run_count, cell: (t) => t.run_count },
               {
                 key: "latest",
                 header: "Latest status",
+                sort: (t) => t.latest_status ?? "",
                 cell: (t) => (t.latest_status ? <StatusBadge status={t.latest_status} /> : "-"),
               },
             ]}
