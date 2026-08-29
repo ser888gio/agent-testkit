@@ -1691,7 +1691,7 @@ svg.export-icon {
   line-height: 1.5;
 }
 
-.site-footer p { margin: 0 0 0.4rem; max-width: 60ch; }
+.site-footer p { margin: 0 0 0.4rem; max-width: 150ch; }
 
 .site-footer-brand {
   color: var(--ink);
