@@ -52,20 +52,23 @@ export function AgentsPage() {
             {
               key: "agent",
               header: "Agent",
+              sort: (row) => row.agent.id,
               cell: (row) => (
                 <Link to={`/agents/${encodeAgentId(row.agent.id)}`}>{row.agent.id}</Link>
               ),
             },
-            { key: "type", header: "Type", cell: (row) => row.agent.target_type },
-            { key: "runs", header: "Runs", cell: (row) => row.run_count },
+            { key: "type", header: "Type", sort: (row) => row.agent.target_type, cell: (row) => row.agent.target_type },
+            { key: "runs", header: "Runs", sort: (row) => row.run_count, cell: (row) => row.run_count },
             {
               key: "status",
               header: "Latest status",
+              sort: (row) => row.latest?.status ?? "",
               cell: (row) => (row.latest ? <StatusBadge status={row.latest.status} /> : "-"),
             },
             {
               key: "score",
               header: "Latest score",
+              sort: (row) => row.latest?.score.overall_score ?? -1,
               cell: (row) => {
                 if (!row.latest) return "-";
                 const score = Math.floor(row.latest.score.overall_score * 100);
@@ -79,6 +82,7 @@ export function AgentsPage() {
             {
               key: "seen",
               header: "First seen",
+              sort: (row) => row.agent.created_at,
               className: "mono",
               cell: (row) => row.agent.created_at.slice(0, 10),
             },

@@ -49,7 +49,7 @@ wheel.
 | SPA install/build (local) | `npm ci && npm run build` in `frontend/spa` | exit 0; `spa_dist/index.html` exists |
 | Package (local)          | `uv build` | exit 0; wheel in `dist/` |
 | Wheel inspection         | see Step 2 verify command | prints a non-empty namelist entry |
-| Lint (YAML n/a)          | `uv run ruff check backend` | exit 0 |
+| Lint (YAML n/a)          | `python -m ruff check backend` | exit 0 |
 
 ## Scope
 
@@ -102,7 +102,7 @@ existing `setup-node` step — this repo pins all actions by SHA.
 Run the inspection one-liner:
 
 ```
-uv run python -c "import zipfile, glob; w = sorted(glob.glob('dist/*.whl'))[-1]; names = [n for n in zipfile.ZipFile(w).namelist() if 'spa_dist/index.html' in n]; print(w); print(names); assert names, 'wheel missing spa_dist/index.html'"
+python -c "import zipfile, glob; w = sorted(glob.glob('dist/*.whl'))[-1]; names = [n for n in zipfile.ZipFile(w).namelist() if 'spa_dist/index.html' in n]; print(w); print(names); assert names, 'wheel missing spa_dist/index.html'"
 ```
 
 **Verify**: prints the wheel path and a non-empty list. If empty, the
@@ -113,7 +113,7 @@ package-data glob or build output path is wrong — STOP (see conditions).
 Validate the edited YAML parses:
 
 ```
-uv run python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('ok')"
+python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('ok')"
 ```
 
 (If pyyaml isn't importable in the env, use `uv run --with pyyaml python -c ...`.)

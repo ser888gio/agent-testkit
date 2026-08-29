@@ -55,6 +55,7 @@ export function JobPage() {
   const [job, setJob] = useState<JobView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [rerunError, setRerunError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const followedRun = useRef<string | null>(null);
 
@@ -89,6 +90,24 @@ export function JobPage() {
     }
   };
 
+  const rerun = async () => {
+    setBusy(true);
+    setRerunError(null);
+    try {
+      const result = await apiSend<{ job_id: string }>(
+        `/jobs/${encodeURIComponent(jobId)}/rerun`,
+        "POST",
+        {},
+      );
+      setJob(null);
+      navigate(`/jobs/${result.job_id}`);
+    } catch (err) {
+      setRerunError(err instanceof ApiError ? err.detail : "Re-run failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const percent =
     job.tests_total > 0 ? Math.round((job.tests_done / job.tests_total) * 100) : 0;
 
@@ -117,8 +136,13 @@ export function JobPage() {
           <button type="button" onClick={cancel} disabled={busy} data-testid="job-cancel-submit">
             Abort run
           </button>
-        ) : null}
+        ) : (
+          <button type="button" onClick={rerun} disabled={busy} data-testid="job-rerun-submit">
+            {job.discovery ? "Re-profile" : "Re-run"}
+          </button>
+        )}
         {cancelError ? <ErrorNote message={cancelError} /> : null}
+        {rerunError ? <ErrorNote message={rerunError} /> : null}
 
         {/* Live progress off the job row. A run is written once, when it
             finishes, so nothing here reads a half-written run. */}

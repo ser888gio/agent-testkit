@@ -9,7 +9,7 @@
 // so it cannot drift -- and forces the .table-wrap scroll container and the
 // caption that all nine tables were missing.
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 export interface Column<T> {
   /** Stable key for React and for the cell's data-label. */
@@ -21,6 +21,8 @@ export interface Column<T> {
   className?: string;
   /** Overrides the mobile label when the header is not the right wording. */
   label?: string;
+  /** Makes the column sortable; returns the value to order rows by. */
+  sort?: (row: T) => string | number;
 }
 
 export function DataTable<T>({
@@ -39,7 +41,20 @@ export function DataTable<T>({
   rowTestId?: string;
   empty?: ReactNode;
 }) {
+  const [order, setOrder] = useState<{ key: string; desc: boolean } | null>(null);
+
   if (!rows.length) return <p className="quiet">{empty}</p>;
+
+  const active = order && columns.find((c) => c.key === order.key && c.sort);
+  const sorted = active
+    ? [...rows].sort((a, b) => {
+        const x = active.sort!(a);
+        const y = active.sort!(b);
+        // Numbers compare numerically, strings with locale collation.
+        const d = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y));
+        return order!.desc ? -d : d;
+      })
+    : rows;
 
   return (
     <div className="table-wrap">
@@ -48,14 +63,37 @@ export function DataTable<T>({
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.key} scope="col">
-                {column.header}
+              <th
+                key={column.key}
+                scope="col"
+                aria-sort={
+                  order?.key === column.key ? (order.desc ? "descending" : "ascending") : undefined
+                }
+              >
+                {column.sort ? (
+                  <button
+                    type="button"
+                    className="th-sort"
+                    onClick={() =>
+                      setOrder((o) =>
+                        o?.key === column.key ? { key: column.key, desc: !o.desc } : { key: column.key, desc: false },
+                      )
+                    }
+                  >
+                    {column.header}
+                    <span aria-hidden="true">
+                      {order?.key === column.key ? (order.desc ? " ↓" : " ↑") : " ↕"}
+                    </span>
+                  </button>
+                ) : (
+                  column.header
+                )}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
+          {sorted.map((row, index) => (
             <tr key={rowKey(row, index)} data-testid={rowTestId}>
               {columns.map((column) => (
                 <td

@@ -277,17 +277,19 @@ export function AgentDetailPage() {
               {
                 key: "run",
                 header: "Run",
+                sort: (rv) => rv.short_id,
                 cell: (rv) => (
                   <Link className="mono" to={`/runs/${rv.id}`}>
                     {rv.short_id}
                   </Link>
                 ),
               },
-              { key: "started", header: "Started", className: "mono", cell: (rv) => rv.started },
-              { key: "gate", header: "Gate", cell: (rv) => <StatusBadge status={rv.status} /> },
+              { key: "started", header: "Started", className: "mono", sort: (rv) => rv.started, cell: (rv) => rv.started },
+              { key: "gate", header: "Gate", sort: (rv) => rv.status, cell: (rv) => <StatusBadge status={rv.status} /> },
               {
                 key: "score",
                 header: "Score",
+                sort: (rv) => rv.score_percent,
                 cell: (rv) => (
                   <>
                     <ScoreBar value={rv.score_percent} label="Run score" /> {rv.score_percent}%
@@ -297,6 +299,7 @@ export function AgentDetailPage() {
               {
                 key: "evidence",
                 header: "Evidence",
+                sort: (rv) => rv.critical_failures,
                 cell: (rv) => (
                   <>
                     {rv.failed} failed,{" "}

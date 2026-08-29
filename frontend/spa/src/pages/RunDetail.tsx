@@ -135,16 +135,25 @@ export function RunDetailPage() {
               {note}
             </p>
           ))}
-          <div className="attention-list">
-            {plan.selected.map((choice) => (
-              <Link key={choice.test_id} className="attention-item" to={`/runs/${runId}/tests/${encodeURIComponent(choice.test_id)}`}>
-                <span>{choice.test_id}</span>
-                <StatusBadge status={choice.source} />
-                <span>{choice.score}</span>
-                <span className="quiet">{choice.reasons.join("; ")}</span>
-              </Link>
-            ))}
-          </div>
+          <DataTable
+            caption="Tests selected for this run, with score and rationale"
+            empty="No tests selected."
+            rows={plan.selected}
+            rowKey={(choice) => choice.test_id}
+            columns={[
+              {
+                key: "test",
+                header: "Test",
+                sort: (choice) => choice.test_id,
+                cell: (choice) => (
+                  <Link to={`/runs/${runId}/tests/${encodeURIComponent(choice.test_id)}`}>{choice.test_id}</Link>
+                ),
+              },
+              { key: "source", header: "Source", sort: (choice) => choice.source, cell: (choice) => <StatusBadge status={choice.source} /> },
+              { key: "score", header: "Score", sort: (choice) => choice.score, cell: (choice) => choice.score },
+              { key: "why", header: "Why", cell: (choice) => <span className="quiet">{choice.reasons.join("; ")}</span> },
+            ]}
+          />
           {(() => {
             const external = plan.selected.filter((s) => s.source !== "local");
             if (!external.length) return null;
@@ -252,16 +261,17 @@ export function RunDetailPage() {
             {
               key: "test",
               header: "Test",
+              sort: (r) => r.test_id,
               cell: (r) => (
                 <Link to={`/runs/${runId}/tests/${encodeURIComponent(r.test_id)}`}>
                   {r.test_id}
                 </Link>
               ),
             },
-            { key: "category", header: "Category", cell: (r) => r.category },
-            { key: "risk", header: "Risk", cell: (r) => <RiskBadge risk={r.risk} /> },
-            { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-            { key: "latency", header: "Latency", cell: (r) => formatMs(r.latency_ms) },
+            { key: "category", header: "Category", sort: (r) => r.category, cell: (r) => r.category },
+            { key: "risk", header: "Risk", sort: (r) => r.risk, cell: (r) => <RiskBadge risk={r.risk} /> },
+            { key: "status", header: "Status", sort: (r) => r.status, cell: (r) => <StatusBadge status={r.status} /> },
+            { key: "latency", header: "Latency", sort: (r) => r.latency_ms ?? -1, cell: (r) => formatMs(r.latency_ms) },
           ]}
         />
       </Panel>

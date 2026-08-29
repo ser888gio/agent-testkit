@@ -580,6 +580,8 @@ h3 {
   background: var(--surface-2);
 }
 
+.attention-item > * { min-width: 0; }
+.attention-item > span:first-child { overflow-wrap: anywhere; }
 .attention-item .badge { width: max-content; }
 
 .filter-bar {
@@ -677,6 +679,7 @@ button:hover,
   overflow-x: auto;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-card);
+  margin-top: 1rem;
 }
 
 table {
@@ -1689,7 +1692,7 @@ svg.export-icon {
   line-height: 1.5;
 }
 
-.site-footer p { margin: 0 0 0.4rem; max-width: 60ch; }
+.site-footer p { margin: 0 0 0.4rem; max-width: 150ch; }
 
 .site-footer-brand {
   color: var(--ink);
@@ -1697,10 +1700,26 @@ svg.export-icon {
 }
 
 /* React SPA shell: the mobile menu is state-driven (a button + .open class)
-   rather than the checkbox hack the Jinja markup used. Same visual behavior. */
+   rather than the checkbox hack the legacy markup used. Same visual behavior. */
 @media (max-width: 700px) {
   .sidebar nav.open {
     display: flex;
     grid-column: 1 / -1;
   }
 }
+
+/* Sortable headers are buttons so keyboard and screen readers get the affordance;
+   they inherit the th's mono uppercase styling and only add the arrow. */
+.th-sort {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.th-sort:hover { color: var(--ink); }
+.th-sort:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

@@ -3,12 +3,6 @@ import type { ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-declare const process: { env: Record<string, string | undefined> };
-
-const API_URL = process.env.AGENTAUDIT_API_URL ?? "http://127.0.0.1:8000";
-const PROXIED = ["/api", "/static", "/login", "/logout", "/auth"];
-
-// index.html is not in the module graph, so editing it needs a full reload.
 function reloadOnHtmlChange() {
   return {
     name: "reload-on-html-change",
@@ -20,8 +14,7 @@ function reloadOnHtmlChange() {
   };
 }
 
-// base "/assets/" matches app.py's StaticFiles mount, but only for a build --
-// in dev it would host the app at :5173/assets/.
+
 export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss(), reloadOnHtmlChange()],
   base: command === "build" ? "/assets/" : "/",
@@ -31,6 +24,12 @@ export default defineConfig(({ command }) => ({
     assetsDir: "",
   },
   server: {
-    proxy: Object.fromEntries(PROXIED.map((path) => [path, API_URL])),
+    proxy: {
+      "/api": "http://127.0.0.1:8001",
+      "/static": "http://127.0.0.1:8001",
+      "/login": "http://127.0.0.1:8001",
+      "/logout": "http://127.0.0.1:8001",
+      "/auth": "http://127.0.0.1:8001",
+    },
   },
 }));

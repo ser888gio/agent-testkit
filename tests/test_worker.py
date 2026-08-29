@@ -557,3 +557,112 @@ def test_job_progress_is_not_readable_by_another_org(tmp_path):
     assert store.jobs.get("org-a", job_id).tests_done == 1
     with pytest.raises(KeyError):
         store.jobs.get("org-b", job_id)
+
+
+def test_a_job_past_its_time_limit_expires_and_keeps_partial_evidence(tmp_path, monkeypatch):
+    """The budget is enforced between tests, so the test already dispatched
+    finishes and its result is kept -- an expired job links the evidence that
+    exists rather than throwing it away."""
+    store = Store(str(tmp_path / "timeout.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    tests = [{**_TEST, "id": f"w.pass.case.{n}"} for n in range(2)]
+    store.save_pack("org-a", "pack-1", "Pack One", tests)
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1", timeout_seconds=60)
+
+    # Jump the monotonic clock past the budget once the first test lands,
+    # rather than sleeping through a real minute.
+    original_record_progress = JobQueue.record_progress
+    clock = time.monotonic()
+
+    def _record_then_exhaust_budget(self, job_id_, test_id, status):
+        original_record_progress(self, job_id_, test_id, status)
+        monkeypatch.setattr(time, "monotonic", lambda: clock + 3600)
+
+    monkeypatch.setattr(JobQueue, "record_progress", _record_then_exhaust_budget)
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "expired"
+    assert job.error == "exceeded its time limit"
+    assert job.run_id is not None
+
+    run, _ = store.get_run("org-a", job.run_id)
+    assert [r.test_id for r in run.results] == ["w.pass.case.0"]
+
+
+def test_a_job_inside_its_time_limit_finishes_normally(tmp_path):
+    """A budget that is never exhausted must not change the outcome."""
+    store = Store(str(tmp_path / "in-budget.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST])
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1", timeout_seconds=3600)
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    assert job.error is None
+
+
+def test_a_cancel_beats_a_timeout_when_both_fired(tmp_path, monkeypatch):
+    """A user who asked for a stop got one. Reporting their cancel as a timeout
+    would blame the agent for being slow when it was not."""
+    store = Store(str(tmp_path / "both.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    tests = [{**_TEST, "id": f"w.pass.case.{n}"} for n in range(2)]
+    store.save_pack("org-a", "pack-1", "Pack One", tests)
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1", timeout_seconds=60)
+
+    original_record_progress = JobQueue.record_progress
+    clock = time.monotonic()
+
+    def _record_then_both(self, job_id_, test_id, status):
+        original_record_progress(self, job_id_, test_id, status)
+        self.request_cancel("org-a", job_id_)
+        monkeypatch.setattr(time, "monotonic", lambda: clock + 3600)
+
+    monkeypatch.setattr(JobQueue, "record_progress", _record_then_both)
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "failed"
+    assert job.error == "cancelled by user"
+
+
+def test_a_job_with_no_time_limit_is_unbounded(tmp_path, monkeypatch):
+    """None means no limit, so no clock jump can stop it -- that is what every
+    job meant before the budget existed."""
+    store = Store(str(tmp_path / "unbounded.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    tests = [{**_TEST, "id": f"w.pass.case.{n}"} for n in range(2)]
+    store.save_pack("org-a", "pack-1", "Pack One", tests)
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1")
+
+    original_record_progress = JobQueue.record_progress
+    clock = time.monotonic()
+
+    def _record_then_jump(self, job_id_, test_id, status):
+        original_record_progress(self, job_id_, test_id, status)
+        monkeypatch.setattr(time, "monotonic", lambda: clock + 86_400)
+
+    monkeypatch.setattr(JobQueue, "record_progress", _record_then_jump)
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    assert store.jobs.get("org-a", job_id).tests_done == 2
+
+
+def test_a_non_positive_time_limit_is_rejected(tmp_path):
+    """Zero is not "no limit": a caller asking for a budget of nothing means
+    something, and running forever is the wrong reading of it."""
+    store = Store(str(tmp_path / "bad-budget.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST])
+
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="timeout_seconds"):
+            store.jobs.enqueue("org-a", "worker-target", "pack-1", timeout_seconds=bad)

@@ -1929,3 +1929,58 @@ def test_session_endpoint_identifies_the_dev_principal(tmp_path, monkeypatch):
 
     assert body["org_id"] == DEFAULT_ORG
     assert body["admin"] is True
+
+
+def test_rerun_job_queues_the_same_target_pack_and_selection(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    store = Store(str(tmp_path / "web.db"))
+    first = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
+    original = store.jobs.get(DEFAULT_ORG, first)
+    client.post(f"/api/jobs/{first}/cancel")
+
+    second = client.post(f"/api/jobs/{first}/rerun").json()["job_id"]
+
+    copy = store.jobs.get(DEFAULT_ORG, second)
+    assert second != first
+    assert copy.state == "queued"
+    assert (copy.target_id, copy.pack_id) == (original.target_id, original.pack_id)
+    assert copy.test_ids_json == original.test_ids_json
+    # The original is left as it was found.
+    assert store.jobs.get(DEFAULT_ORG, first).state == "cancelled"
+
+
+def test_rerun_job_carries_the_original_time_limit(tmp_path, monkeypatch):
+    """Re-running an expired job must not run unbounded."""
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    store = Store(str(tmp_path / "web.db"))
+    first = client.post(
+        "/api/runs/enqueue", json={**_TREASURY, "timeout_seconds": 900}
+    ).json()["job_id"]
+
+    second = client.post(f"/api/jobs/{first}/rerun").json()["job_id"]
+
+    assert store.jobs.get(DEFAULT_ORG, second).timeout_seconds == 900
+
+
+def test_enqueue_rejects_a_non_positive_time_limit(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+
+    for bad in (0, -5, 24 * 60 * 60 + 1):
+        resp = client.post("/api/runs/enqueue", json={**_TREASURY, "timeout_seconds": bad})
+        assert resp.status_code == 422, bad
+
+
+def test_rerun_job_of_another_org_is_404(tmp_path, monkeypatch):
+    client = _client(str(tmp_path / "web.db"), monkeypatch)
+    job_id = client.post("/api/runs/enqueue", json=_TREASURY).json()["job_id"]
+
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
+
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("other-org", "sub-b", "b@other.test", frozenset({"admin"}))
+    )
+    try:
+        assert client.post(f"/api/jobs/{job_id}/rerun").status_code == 404
+    finally:
+        web_app.app.dependency_overrides.clear()

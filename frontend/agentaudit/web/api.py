@@ -1,7 +1,7 @@
 """JSON API for the React dashboard.
 
 The SPA under ``frontend/spa`` renders every page; this module is its only data
-source. Each endpoint returns the same derivation the Jinja pages used to
+source. Each endpoint returns the same derivation the React pages use
 render — ``core.runview`` still owns it — serialized to JSON instead of templated.
 
 Constraints carried over from the page routes, unchanged:
@@ -28,7 +28,7 @@ from urllib.parse import quote, urlsplit
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from agentaudit.core import runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
@@ -114,12 +114,16 @@ def _load_run_or_404(org_id: str, run_id: str):
         raise HTTPException(status_code=404, detail=f"run '{run_id}' not found") from exc
 
 
+# Sanity bound on a caller-supplied job budget, not a tuning knob.
+MAX_JOB_TIMEOUT_SECONDS = 24 * 60 * 60
+
 _JOB_MESSAGES = {
     "queued": "Queued...",
     "running": "Running...",
     "done": "Finished",
     "failed": "Failed",
     "cancelled": "Cancelled",
+    "expired": "Timed out",
 }
 
 
@@ -603,6 +607,7 @@ class EnqueueRunBody(BaseModel):
     target: str
     packs: str
     test_ids: list[str] = []
+    timeout_seconds: int | None = Field(default=None, gt=0, le=MAX_JOB_TIMEOUT_SECONDS)
 
 
 @router.post("/runs/enqueue")
@@ -649,6 +654,7 @@ def enqueue_run(body: EnqueueRunBody, principal: Principal = Depends(require_adm
         pack_id,
         created_by=principal.subject,
         test_ids=selection,
+        timeout_seconds=body.timeout_seconds,
     )
     return {"job_id": job_id}
 
@@ -670,6 +676,26 @@ def job_detail(job_id: str, principal: Principal = Depends(current_principal)) -
 @router.get("/jobs/{job_id}/status")
 def job_status(job_id: str, principal: Principal = Depends(current_principal)) -> dict:
     return _job_payload(_load_job_or_404(principal.org_id, job_id))
+
+
+@router.post("/jobs/{job_id}/rerun")
+def rerun_job(job_id: str, principal: Principal = Depends(require_admin)) -> dict:
+    """Queue the same target/pack/selection again as a new job.
+
+    Re-enqueues off the stored job row, so nothing is re-resolved from a
+    client-supplied path and the original job stays as it is.
+    """
+    job = _load_job_or_404(principal.org_id, job_id)
+    test_ids = json.loads(job.test_ids_json) if job.test_ids_json else None
+    new_id = get_store().jobs.enqueue(
+        principal.org_id,
+        job.target_id,
+        job.pack_id,
+        created_by=principal.subject,
+        test_ids=test_ids,
+        timeout_seconds=job.timeout_seconds,
+    )
+    return {"job_id": new_id}
 
 
 @router.post("/jobs/{job_id}/cancel")

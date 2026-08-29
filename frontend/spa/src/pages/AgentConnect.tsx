@@ -36,6 +36,7 @@ export function AgentConnectPage() {
   const [pack, setPack] = useState("");
   // Only the selected pack's tests are offered: the form submits one pack.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [timeoutMinutes, setTimeoutMinutes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -99,6 +100,7 @@ export function AgentConnectPage() {
         target: targetId,
         packs: pack,
         test_ids: [...selected],
+        timeout_seconds: timeoutMinutes ? Number(timeoutMinutes) * 60 : null,
       });
       navigate(`/jobs/${result.job_id}`);
     } catch (err) {
@@ -207,6 +209,25 @@ export function AgentConnectPage() {
                 </option>
               ))}
             </select>
+          </label>
+
+          <label>
+            Time limit <span className="quiet">(optional)</span>
+            <input
+              type="number"
+              name="timeout-minutes"
+              min={1}
+              max={1440}
+              step={1}
+              placeholder="no limit"
+              value={timeoutMinutes}
+              onChange={(event) => setTimeoutMinutes(event.target.value)}
+              data-testid="connect-timeout"
+            />
+            <small className="quiet">
+              Minutes the run may take before it is stopped. Tests already sent to the agent
+              still finish, and whatever ran is kept as partial evidence.
+            </small>
           </label>
 
           <details className="test-picker" data-testid="test-picker">

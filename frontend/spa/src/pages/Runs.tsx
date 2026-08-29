@@ -119,6 +119,7 @@ export function RunsPage() {
                   {
                     key: "run",
                     header: "Run",
+                    sort: (r) => r.short_id,
                     cell: (r) => (
                       <Link className="mono" to={`/runs/${r.id}`}>
                         {r.short_id}
@@ -128,16 +129,18 @@ export function RunsPage() {
                   {
                     key: "agent",
                     header: "Agent",
+                    sort: (r) => r.agent_id,
                     cell: (r) => (
                       <Link to={`/agents/${encodeURIComponent(r.agent_id)}`}>{r.agent_id}</Link>
                     ),
                   },
-                  { key: "started", header: "Started", className: "mono", cell: (r) => r.started },
-                  { key: "launched", header: "Launched by", cell: (r) => r.launched_by },
-                  { key: "gate", header: "Gate", cell: (r) => <StatusBadge status={r.status} /> },
+                  { key: "started", header: "Started", className: "mono", sort: (r) => r.started, cell: (r) => r.started },
+                  { key: "launched", header: "Launched by", sort: (r) => r.launched_by, cell: (r) => r.launched_by },
+                  { key: "gate", header: "Gate", sort: (r) => r.status, cell: (r) => <StatusBadge status={r.status} /> },
                   {
                     key: "score",
                     header: "Score",
+                    sort: (r) => r.score_percent,
                     cell: (r) => (
                       <>
                         <ScoreBar value={r.score_percent} label="Overall score" />{" "}
@@ -148,6 +151,7 @@ export function RunsPage() {
                   {
                     key: "evidence",
                     header: "Evidence",
+                    sort: (r) => r.critical_failures,
                     cell: (r) => (
                       <>
                         <span className={r.critical_failures ? "critical-count" : undefined}>

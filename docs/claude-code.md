@@ -52,7 +52,6 @@ The three discovery agents run on a faster model since their work is mechanical;
 Ask for them explicitly ("use dependency-tracer to find everything that reads
 `TestResult.sandbox_diff`"). They are most valuable before a change to `core/schema.py`,
 `core/config.py`, or the assertion registry, where the consumer list includes YAML packs
-and Jinja templates that no Python tool will find for you.
 
 ## Workflows
 

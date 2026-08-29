@@ -5,7 +5,7 @@
 
 ## Goal
 
-The same dashboard, rewritten from FastAPI + Jinja to a React single-page app.
+The same dashboard, rewritten as a React single-page app.
 FastAPI keeps auth, authorization, and derivation; it now serves JSON under
 `/api/*` plus the built SPA bundle. No server-side templating remains.
 
@@ -14,7 +14,7 @@ FastAPI keeps auth, authorization, and derivation; it now serves JSON under
 | layer | location | owns |
 |-------|----------|------|
 | Pages | `frontend/spa/src/pages/*.tsx` (React 18 + TS + Vite) | rendering, filters, polling |
-| JSON API | `frontend/agentaudit/web/api.py` | the same derivation the Jinja pages did, serialized |
+| JSON API | `frontend/agentaudit/web/api.py` | the same derivation the React pages do, serialized |
 | Shell | `frontend/agentaudit/web/app.py` | auth routes, static mounts, SPA catch-all |
 | Runtime | `frontend/agentaudit/web/runtime.py` | Store singleton, path safety |
 
