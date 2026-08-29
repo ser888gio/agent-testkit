@@ -580,6 +580,8 @@ h3 {
   background: var(--surface-2);
 }
 
+.attention-item > * { min-width: 0; }
+.attention-item > span:first-child { overflow-wrap: anywhere; }
 .attention-item .badge { width: max-content; }
 
 .filter-bar {
