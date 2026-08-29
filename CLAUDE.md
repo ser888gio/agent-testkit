@@ -95,7 +95,7 @@ Where things live:
 - **Business logic / test engine** — `backend/agentaudit/core/` (audit, runner, assertions, scoring, loader)
 - **Domain fakes (sandboxes)** — `backend/agentaudit/domains/` (treasury: bank+invoices; email: inbox+contacts+outbound ledger)
 - **Persistence** — `backend/agentaudit/core/store.py` (SQLite, `agentaudit.db`)
-- **HTTP surface** — `frontend/agentaudit/web/app.py` (FastAPI dashboard + Jinja2 templates)
+- **HTTP surface** — `frontend/agentaudit/web/app.py` (FastAPI dashboard + React FE)
 - **CLI** — `backend/agentaudit/cli.py` (Typer; the `agentaudit` console script)
 - **Test content (data, not code)** — `agentaudit/packs/**/*.yaml`
 - **Repo tests** — `tests/` (pytest, one file per module)
