@@ -4,6 +4,7 @@ import time
 import pytest
 
 import agentaudit.core.audit as audit_module
+import agentaudit.worker as worker
 from agentaudit.core.store import JobQueue, Store
 from agentaudit.worker import JobCancelled, PermanentJobError, execute_job, main, work_once
 
@@ -666,6 +667,58 @@ def test_a_cancel_beats_a_timeout_when_both_fired(tmp_path, monkeypatch):
     job = store.jobs.get("org-a", job_id)
     assert job.state == "failed"
     assert job.error == "cancelled by user"
+
+
+def test_lease_loss_stops_execution_and_persists_nothing(tmp_path, monkeypatch):
+    """Another worker's heartbeat won the lease. This worker must stop between
+    tests, save no run (that would be duplicate evidence for a job it no
+    longer owns), and leave the job's running state for its new owner to
+    finish -- not release it into any terminal state itself.
+
+    The real heartbeat thread's timing is not deterministic enough to drive
+    this from a test, so `threading.Thread` is intercepted at the point
+    `work_once` constructs the heartbeat thread to capture the `lost_lease`
+    event it was given -- a synchronous capture in the main thread, not a
+    race against a background thread's schedule. The `record_progress` hook
+    (also synchronous, in the main thread, between tests) then sets that
+    event directly, exactly like the timeout tests jump the clock.
+    """
+    store = Store(str(tmp_path / "lease-loss.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    tests = [{**_TEST, "id": f"w.pass.case.{n}"} for n in range(3)]
+    store.save_pack("org-a", "pack-1", "Pack One", tests)
+    job_id = store.jobs.enqueue("org-a", "worker-target", "pack-1")
+
+    captured: dict = {}
+    real_thread = threading.Thread
+
+    def _capturing_thread(*args, **kwargs):
+        captured["lost"] = kwargs.get("kwargs", {}).get("lost")
+        return real_thread(*args, **kwargs)
+
+    monkeypatch.setattr(worker.threading, "Thread", _capturing_thread)
+
+    original_record_progress = JobQueue.record_progress
+    seen = []
+
+    def _record_then_lose_lease(self, job_id_, test_id, status):
+        original_record_progress(self, job_id_, test_id, status)
+        seen.append(test_id)
+        if len(seen) == 1:
+            captured["lost"].set()
+
+    monkeypatch.setattr(JobQueue, "record_progress", _record_then_lose_lease)
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert len(seen) < len(tests)
+    assert job.run_id is None
+    # Not released by this worker: state stays 'running', still leased to it
+    # (the plan's design -- release is owner-guarded and the new owner is the
+    # one that should finish the transition).
+    assert job.state == "running"
+    assert store.list_runs("org-a") == []
 
 
 def test_a_job_with_no_time_limit_is_unbounded(tmp_path, monkeypatch):
