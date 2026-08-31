@@ -1453,6 +1453,29 @@ pre {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* SyncLoader: two dots bouncing in opposite phase (react-spinners SyncLoader). */
+.sync-loader {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.sync-loader span {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: sync-bounce 0.6s ease-in-out infinite alternate;
+}
+
+.sync-loader span:nth-child(2) { animation-delay: 0.3s; }
+
+@keyframes sync-bounce {
+  from { transform: translateY(0.25rem); opacity: 0.45; }
+  to { transform: translateY(-0.25rem); opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

@@ -229,6 +229,16 @@ export function Spinner() {
   return <span className="spinner" aria-hidden="true" />;
 }
 
+// Two dots bouncing out of phase, after react-spinners' SyncLoader.
+export function SyncLoader() {
+  return (
+    <span className="sync-loader" aria-hidden="true">
+      <span />
+      <span />
+    </span>
+  );
+}
+
 export function ErrorNote({ message }: { message: string }) {
   return (
     <p className="form-error" role="alert">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, apiGet } from "../api";
+import { SyncLoader } from "./ui";
 
 // One fetch per page: the JSON API returns the whole view model the React
 // pages use, so pages render from a single response object.
@@ -47,7 +48,7 @@ export function useView<T>(path: string, params?: Record<string, string>) {
 export function Loading({ label = "Loading..." }: { label?: string }) {
   return (
     <p className="quiet">
-      <span className="spinner" aria-hidden="true" /> {label}
+      <SyncLoader /> {label}
     </p>
   );
 }
