@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ApiError, apiSend } from "../api";
 import { useView, Loading } from "../components/useView";
-import { EmptyState, ErrorNote, PageHeader } from "../components/ui";
+import { Breadcrumb, EmptyState, ErrorNote, PageHeader } from "../components/ui";
 import { DataTable } from "../components/table";
 
 interface Candidate {
@@ -40,6 +40,7 @@ export function GeneratedPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Generated" }]} />
       <PageHeader
         eyebrow="Review queue"
         title="Generated tests"

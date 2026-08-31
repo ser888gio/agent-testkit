@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
-import { EmptyState, ErrorNote, PageHeader, Panel } from "../components/ui";
+import { Breadcrumb, EmptyState, ErrorNote, PageHeader, Panel } from "../components/ui";
 
 interface PackCase {
   id: string;
@@ -63,6 +63,7 @@ export function AgentConnectPage() {
   if (!error && !hasTargets && !options.pack_roots.length) {
     return (
       <>
+        <Breadcrumb items={[{ label: "Runs", href: "/runs" }, { label: "Connect" }]} />
         <PageHeader eyebrow="Agent setup" title="Connect an agent" />
         <EmptyState
           title="Connection inputs missing"
@@ -112,9 +113,7 @@ export function AgentConnectPage() {
 
   return (
     <>
-      <p>
-        <Link to="/runs">Back to runs</Link>
-      </p>
+      <Breadcrumb items={[{ label: "Runs", href: "/runs" }, { label: "Connect" }]} />
       <PageHeader
         eyebrow="Agent setup"
         title="Connect an agent"

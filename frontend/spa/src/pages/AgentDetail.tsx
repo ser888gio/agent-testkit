@@ -4,6 +4,7 @@ import { ApiError, apiSend } from "../api";
 import { Loading, useView } from "../components/useView";
 import { DataTable } from "../components/table";
 import {
+  Breadcrumb,
   EmptyState,
   ErrorNote,
   PageHeader,
@@ -106,9 +107,7 @@ export function AgentDetailPage() {
 
   return (
     <>
-      <p>
-        <Link to="/agents">Back to agents</Link>
-      </p>
+      <Breadcrumb items={[{ label: "Agents", href: "/agents" }, { label: agentId }]} />
       <PageHeader eyebrow="Agent detail" title={agentId} />
 
       <section className="panel" data-testid="agent-profile" aria-labelledby="profile-title">
