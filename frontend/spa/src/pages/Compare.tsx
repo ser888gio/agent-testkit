@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
-import { EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../components/ui";
+import { Breadcrumb, EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../components/ui";
 import { DataTable } from "../components/table";
 import { DeltaList } from "../components/DeltaList";
 
@@ -48,6 +48,7 @@ export function ComparePage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Runs", href: "/runs" }, { label: "Compare" }]} />
       <p>
         <Link to={`/runs/${a}`}>
           Run <span className="mono">{a.slice(0, 8)}</span>

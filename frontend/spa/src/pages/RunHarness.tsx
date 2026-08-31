@@ -1,6 +1,6 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
-import { EmptyState, formatMs, PageHeader, Panel, ScoreBar, StatCard, StatusBadge } from "../components/ui";
+import { Breadcrumb, EmptyState, formatMs, PageHeader, Panel, ScoreBar, StatCard, StatusBadge } from "../components/ui";
 import { ExportMenu } from "../components/ExportMenu";
 
 interface AssertionJson {
@@ -65,13 +65,14 @@ export function RunHarnessPage() {
 
   return (
     <>
-      <p className="page-context">
-        <Link to={`/runs/${runId}`}>
-          Run <span className="mono">{runId.slice(0, 8)}</span>
-        </Link>{" "}
-        ·{" "}
-        <Link to={`/agents/${encodeURIComponent(view.context.agent)}`}>{view.context.agent}</Link>
-      </p>
+      <Breadcrumb
+        items={[
+          { label: "Runs", href: "/runs" },
+          { label: view.context.agent, href: `/agents/${encodeURIComponent(view.context.agent)}` },
+          { label: `Run ${runId.slice(0, 8)}`, href: `/runs/${runId}` },
+          { label: "Harness" },
+        ]}
+      />
       <PageHeader
         eyebrow="Page harness"
         title="Test Harness"

@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
-import { EmptyState, LinkButton, PageHeader, ScoreBar, StatusBadge } from "../components/ui";
+import { Breadcrumb, EmptyState, LinkButton, PageHeader, ScoreBar, StatusBadge } from "../components/ui";
 import { DataTable } from "../components/table";
 
 interface AgentRow {
@@ -21,6 +21,7 @@ export function AgentsPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Agents" }]} />
       <PageHeader
         eyebrow="Targets"
         title="Agents"

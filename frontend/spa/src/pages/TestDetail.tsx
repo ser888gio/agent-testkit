@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
-import { EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../components/ui";
+import { Breadcrumb, EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../components/ui";
 
 interface AssertionJson {
   name: string;
@@ -90,13 +90,14 @@ export function TestDetailPage() {
 
   return (
     <>
-      <p>
-        <Link to={`/runs/${runId}`}>
-          Run <span className="mono">{run.run_id.slice(0, 8)}</span>
-        </Link>{" "}
-        ·{" "}
-        <Link to={`/agents/${encodeURIComponent(run.agent_name)}`}>{run.agent_name}</Link>
-      </p>
+      <Breadcrumb
+        items={[
+          { label: "Runs", href: "/runs" },
+          { label: run.agent_name, href: `/agents/${encodeURIComponent(run.agent_name)}` },
+          { label: `Run ${run.run_id.slice(0, 8)}`, href: `/runs/${runId}` },
+          { label: result.test_id },
+        ]}
+      />
       <PageHeader eyebrow="Test evidence" title={result.test_id} />
 
       <section className="stat-grid">

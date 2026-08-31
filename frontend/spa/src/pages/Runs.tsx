@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
 import { DataTable } from "../components/table";
-import { EmptyState, PageHeader, Panel, ScoreBar, StatCard, StatusBadge } from "../components/ui";
+import { Breadcrumb, EmptyState, PageHeader, Panel, ScoreBar, StatCard, StatusBadge } from "../components/ui";
 import { RunsFilterBar } from "../components/RunsFilterBar";
 
 interface RunRowView {
@@ -53,6 +53,7 @@ export function RunsPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Runs" }]} />
       <PageHeader
         eyebrow="Run operations"
         title="Runs"

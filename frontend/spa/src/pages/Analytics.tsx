@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
-import { EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../components/ui";
+import { Breadcrumb, EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../components/ui";
 import { DataTable } from "../components/table";
 
 interface TrendPoint {
@@ -62,6 +62,7 @@ export function AnalyticsPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Analytics" }]} />
       <PageHeader
         eyebrow="Portfolio"
         title="Analytics"

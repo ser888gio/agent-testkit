@@ -192,6 +192,39 @@ export function Panel({
   );
 }
 
+// Structure follows shadcn's breadcrumb (nav > ol > li, aria-current on the
+// last crumb): https://ui.shadcn.com/docs/components/base/breadcrumb
+// Replaces the ad-hoc `<p className="page-context">` trail in RunHarness.tsx.
+export function Breadcrumb({
+  items,
+}: {
+  items: { label: React.ReactNode; href?: string }[];
+}) {
+  return (
+    <nav aria-label="Breadcrumb" className="breadcrumb">
+      <ol>
+        {items.map((item, index) => {
+          const isLast = index === items.length - 1;
+          return (
+            <li key={index}>
+              {item.href && !isLast ? (
+                <Link to={item.href}>{item.label}</Link>
+              ) : (
+                <span aria-current={isLast ? "page" : undefined}>{item.label}</span>
+              )}
+              {!isLast ? (
+                <span className="breadcrumb-separator" aria-hidden="true">
+                  /
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
 export function Spinner() {
   return <span className="spinner" aria-hidden="true" />;
 }
