@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
 import { Breadcrumb, EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../components/ui";
 import { DataTable } from "../components/table";
+import { DonutChart, PassFailBarChart, RateBarChart, ScoreAreaChart } from "../components/Chart";
 
 interface TrendPoint {
   started_at: string;
@@ -60,6 +61,20 @@ export function AnalyticsPage() {
   if (!view) return <Loading />;
   const { totals, trend } = view;
 
+  const trendData = trend.map((p) => ({ label: p.started_at.slice(0, 10), score: p.score }));
+  // The gate rate is a share of runs, so the ring is pass vs the remainder.
+  const passedRuns = Math.round((totals.gate_rate / 100) * totals.runs);
+  const gateDonut = [
+    { label: "Passed gate", value: passedRuns, color: "var(--pass-text)" },
+    { label: "Failed gate", value: totals.runs - passedRuns, color: "var(--fail-text)" },
+  ];
+  const riskBars = view.risks.map((seg) => ({
+    label: seg.risk,
+    passed: seg.total - seg.failed,
+    failed: seg.failed,
+  }));
+  const categoryBars = view.categories.map((row) => ({ label: row.label, percent: row.percent }));
+
   return (
     <>
       <Breadcrumb items={[{ label: "Analytics" }]} />
@@ -92,113 +107,110 @@ export function AnalyticsPage() {
         />
       ) : (
         <>
-          <section className="stat-grid" aria-label="Portfolio summary">
-            <StatCard
-              label="Latest score"
-              value={`${totals.latest_score}%`}
-              note={deltaNote(totals.delta)}
-              tone={totals.delta < 0 ? "danger" : undefined}
-              testid="stat-latest-score"
-            />
-            <StatCard
-              label="Gate pass rate"
-              value={`${totals.gate_rate}%`}
-              note={`${totals.runs} runs recorded`}
-              testid="stat-gate-rate"
-            />
-            <StatCard
-              label="Critical failures"
-              value={totals.critical}
-              note="across stored runs"
-              tone={totals.critical ? "danger" : undefined}
-              testid="stat-critical-total"
-            />
-            <StatCard
-              label="Agents under test"
-              value={totals.agents}
-              note="with recorded evidence"
-              testid="stat-agent-count"
-            />
+          <section className="summary-grid" aria-label="Portfolio summary">
+            <Panel testid="chart-gate" titleId="gate-title" title="Gate outcome" blurb={<>Across the {totals.runs} most recent stored runs.</>}>
+              <div className="summary-split">
+                <DonutChart
+                  data={gateDonut}
+                  centerValue={`${totals.gate_rate}%`}
+                  centerLabel="passed gate"
+                />
+                <dl className="summary-facts">
+                  <div>
+                    <dt>Runs recorded</dt>
+                    <dd>{totals.runs}</dd>
+                  </div>
+                  <div>
+                    <dt>Passed gate</dt>
+                    <dd>{passedRuns}</dd>
+                  </div>
+                  <div>
+                    <dt>Critical failures</dt>
+                    <dd className={totals.critical ? "is-bad" : undefined}>{totals.critical}</dd>
+                  </div>
+                  <div>
+                    <dt>Agents under test</dt>
+                    <dd>{totals.agents}</dd>
+                  </div>
+                </dl>
+              </div>
+            </Panel>
+
+            <section className="stat-grid stat-grid-compact">
+              <StatCard
+                label="Latest score"
+                value={`${totals.latest_score}%`}
+                note={deltaNote(totals.delta)}
+                tone={totals.delta < 0 ? "danger" : undefined}
+                testid="stat-latest-score"
+              />
+              <StatCard
+                label="Gate pass rate"
+                value={`${totals.gate_rate}%`}
+                note={`${totals.runs} runs recorded`}
+                testid="stat-gate-rate"
+              />
+              <StatCard
+                label="Critical failures"
+                value={totals.critical}
+                note="across stored runs"
+                tone={totals.critical ? "danger" : undefined}
+                testid="stat-critical-total"
+              />
+              <StatCard
+                label="Agents under test"
+                value={totals.agents}
+                note="with recorded evidence"
+                testid="stat-agent-count"
+              />
+            </section>
           </section>
 
-          <Panel testid="chart-trend" titleId="trend-title" title="Score trend" blurb={<>Weighted score of the last {trend.length} run(s), oldest to newest.</>}>
-            <figure className="chart">
-              {/* Fixed 0-100 axis: a 90 must not read as a disaster next to a 95. */}
-              <svg
-                viewBox="0 0 100 40"
-                preserveAspectRatio="none"
-                role="img"
-                aria-label={`Score across the last ${trend.length} runs, from ${trend[0].score}% to ${trend[trend.length - 1].score}%`}
-              >
-                <title>
-                  {`Score across the last ${trend.length} runs, from ${trend[0].score}% to ${trend[trend.length - 1].score}%`}
-                </title>
-                <line className="chart-grid" x1="0" y1="20" x2="100" y2="20" />
-                <line className="chart-grid" x1="0" y1="8" x2="100" y2="8" />
-                <polyline className="chart-line" points={view.sparkline} />
-              </svg>
-              <figcaption>
-                <span>{trend[0].started_at.slice(0, 10)}</span>
-                <span className="quiet">50% and 80% gridlines</span>
-                <span>{trend[trend.length - 1].started_at.slice(0, 10)}</span>
-              </figcaption>
-            </figure>
+          <Panel
+            testid="chart-trend"
+            titleId="trend-title"
+            title="Score trend"
+            blurb={<>Weighted score of the last {trend.length} run(s), oldest to newest.</>}
+          >
+            <ScoreAreaChart data={trendData} />
           </Panel>
 
           <section className="detail-grid">
-            <Panel testid="chart-categories" titleId="category-title" title="Failure rate by category" blurb={<>Share of results that failed or errored. Bars scale to the worst category.</>}>
-              {!view.categories.length ? (
+            <Panel
+              testid="chart-categories"
+              titleId="category-title"
+              title="Failure rate by category"
+              blurb={<>Share of results that failed or errored, worst first.</>}
+            >
+              {!categoryBars.length ? (
                 <p className="quiet">No categorised results yet.</p>
               ) : (
-                <ul className="bar-list">
-                  {view.categories.map((row) => (
-                    <li key={row.label}>
-                      <span className="bar-label mono">{row.label}</span>
-                      <span className="bar-track">
-                        {/* A failure rate has no "good" band: only zero is good. */}
-                        <span
-                          className={`bar-fill${
-                            row.value >= 0.35
-                              ? " bar-fill-bad"
-                              : row.value > 0
-                                ? " bar-fill-warn"
-                                : " bar-fill-none"
-                          }`}
-                          style={{ width: `${row.width}%` }}
-                        />
-                      </span>
-                      <span className="bar-value">
-                        {row.percent}%<span className="quiet"> of {row.total}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <RateBarChart data={categoryBars} height={Math.max(200, categoryBars.length * 34)} />
               )}
             </Panel>
 
-            <Panel testid="chart-risk" titleId="risk-title" title="Coverage by risk" blurb={<>How much of the evidence sits at each risk level.</>}>
-              {!view.risks.length ? (
+            <Panel
+              testid="chart-risk"
+              titleId="risk-title"
+              title="Coverage by risk"
+              blurb={<>How much of the evidence sits at each risk level, and how much of it failed.</>}
+            >
+              {!riskBars.length ? (
                 <p className="quiet">No results yet.</p>
               ) : (
-                <ul className="bar-list">
-                  {view.risks.map((seg) => (
-                    <li key={seg.risk}>
-                      <span className="bar-label">
+                <>
+                  <PassFailBarChart data={riskBars} />
+                  <ul className="risk-legend">
+                    {view.risks.map((seg) => (
+                      <li key={seg.risk}>
                         <StatusBadge status={seg.risk} />
-                      </span>
-                      <span className="bar-track">
-                        <span
-                          className={`bar-fill${seg.failed ? " bar-fill-bad" : ""}`}
-                          style={{ width: `${seg.share}%` }}
-                        />
-                      </span>
-                      <span className="bar-value">
-                        {seg.total}
-                        <span className="quiet"> results, {seg.failed} failed</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                        <span className="quiet">
+                          {seg.total} results, {seg.failed} failed
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               )}
             </Panel>
           </section>
