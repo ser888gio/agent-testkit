@@ -2066,6 +2066,8 @@ svg.export-icon {
   }
 
   .sidebar.open { transform: translateX(0); }
+}
+
 /* Analytics: donut summary row and chart legends. */
 .summary-grid {
   display: grid;
