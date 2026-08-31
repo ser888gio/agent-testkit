@@ -1,6 +1,15 @@
 import { Link } from "react-router-dom";
-import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader, Panel } from "../ui";
+import { useView, Loading } from "../components/useView";
+import { EmptyState, PageHeader, Panel } from "../components/ui";
+import { Meta } from "../components/Meta";
+
+interface LLMRole {
+  configured: boolean;
+  model?: string;
+  endpoint?: string;
+  api_key_env?: string | null;
+  api_key_present?: boolean;
+}
 
 interface SettingsView {
   settings: {
@@ -11,6 +20,12 @@ interface SettingsView {
     auth_state: string;
     redaction_patterns: string[];
     egress_allow_local: boolean;
+    llm: {
+      source: string | null;
+      error: string | null;
+      attacker: LLMRole;
+      judge: LLMRole;
+    };
   };
   principal: {
     org_id: string;
@@ -19,19 +34,6 @@ interface SettingsView {
     roles: string[];
     auth_method: string;
   };
-}
-
-function Meta({ entries }: { entries: [string, React.ReactNode][] }) {
-  return (
-    <dl className="harness-meta">
-      {entries.map(([key, value]) => (
-        <div key={key}>
-          <dt>{key}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
 }
 
 export function SettingsPage() {
@@ -130,6 +132,44 @@ export function SettingsPage() {
                 <>
                   Editable per target on the <Link to="/agents">agent's page</Link>; workers refuse
                   hosts outside it.
+                </>,
+              ],
+            ]}
+          />
+        </Panel>
+
+        <Panel
+          title="Attacker & Judge Models"
+          blurb="The LLMs that write adaptive attack turns and decide whether one landed."
+          testid="settings-llm"
+        >
+          <Meta
+            entries={[
+              ["Attacker", llmRole(s.llm.attacker)],
+              ["Judge", llmRole(s.llm.judge)],
+              [
+                "Source",
+                s.llm.error ? (
+                  <span className="quiet">{s.llm.error}</span>
+                ) : s.llm.source ? (
+                  <span className="mono">{s.llm.source}</span>
+                ) : (
+                  <span className="quiet">
+                    No config file. Copy{" "}
+                    <span className="mono">agentaudit/llm.example.yaml</span> to{" "}
+                    <span className="mono">llm.yaml</span>, or set{" "}
+                    <span className="mono">AGENTAUDIT_LLM_CONFIG</span>.
+                  </span>
+                ),
+              ],
+              [
+                "Keys",
+                <>
+                  The config file names an environment variable —{" "}
+                  <span className="mono">api_key_ref: env://OPENAI_API_KEY</span> — and never holds
+                  the key itself. The key is supplied to the server's environment, so it is never
+                  committed, persisted, or returned by this API. Editing it here would mean storing
+                  it here.
                 </>,
               ],
             ]}

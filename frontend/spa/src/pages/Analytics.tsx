@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
-import { useView, Loading } from "../useView";
-import { EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../ui";
-import { DataTable } from "../table";
+import { useView, Loading } from "../components/useView";
+import { EmptyState, PageHeader, Panel, StatCard, StatusBadge } from "../components/ui";
+import { DataTable } from "../components/table";
 
 interface TrendPoint {
   started_at: string;

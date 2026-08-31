@@ -14,7 +14,7 @@ import {
   Sun,
   type LucideIcon,
 } from "lucide-react";
-import { useSession } from "./session";
+import { useSession } from "../session";
 
 // testids are asserted as string literals against this source file by
 // tests/test_web.py::test_spa_source_keeps_nav_and_action_hooks. Keep them
