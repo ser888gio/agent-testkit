@@ -23,7 +23,7 @@ from agentaudit.core.store import DEFAULT_ORG
 
 _LOG = logging.getLogger(__name__)
 _ALGORITHMS = ["RS256"]
-_REQUIRED_CLAIMS = ["exp", "iss", "aud", "sub", "typ"]
+_REQUIRED_CLAIMS = ["exp", "iss", "aud", "sub", "azp"]
 ORG_CLAIM = "org_id"
 SESSION_COOKIE = "agentaudit_session"
 LOGIN_STATE_COOKIE = "agentaudit_login_state"
@@ -54,18 +54,15 @@ class _Settings:
     client_id: str
     redirect_uri: str
     token_endpoint: str
+    authorization_endpoint: str
 
     @property
     def authorization_url(self) -> str:
-        return f"{self.issuer.rstrip('/')}/protocol/openid-connect/auth"
+        return self.authorization_endpoint
 
     @property
     def token_url(self) -> str:
         return self.token_endpoint
-
-    @property
-    def logout_url(self) -> str:
-        return f"{self.issuer.rstrip('/')}/protocol/openid-connect/logout"
 
     @property
     def cookie_secure(self) -> bool:
@@ -113,10 +110,14 @@ def _settings() -> _Settings | None:
     missing = [name for name, value in zip(_OIDC_ENV_VARS, values, strict=True) if not value]
     if missing:
         raise AuthConfigError(f"OIDC is incompletely configured; missing: {missing}")
+    issuer = values[1].rstrip("/")
     token_endpoint = os.environ.get("AGENTAUDIT_OIDC_TOKEN_URL", "").strip()
     if not token_endpoint:
-        token_endpoint = f"{values[1].rstrip('/')}/protocol/openid-connect/token"
-    return _Settings(*values, token_endpoint)
+        token_endpoint = f"{issuer}/protocol/openid-connect/token"
+    authorization_endpoint = os.environ.get("AGENTAUDIT_OIDC_AUTH_URL", "").strip()
+    if not authorization_endpoint:
+        authorization_endpoint = f"{issuer}/protocol/openid-connect/auth"
+    return _Settings(*values, token_endpoint, authorization_endpoint)
 
 
 _jwks_client: PyJWKClient | None = None
@@ -144,13 +145,21 @@ def _bearer(request: Request) -> str | None:
 
 
 def _roles(claims: dict) -> frozenset[str]:
-    realm_access = claims.get("realm_access", {})
-    if not isinstance(realm_access, dict):
-        return frozenset()
-    values = realm_access.get("roles", [])
+    """Read the flat `roles` claim, tolerating a scalar.
+
+    Clerk's JWT templates expose `{{org.role}}` as a single string, so a token
+    may carry either a list or one bare role. Anything else -- a dict, a list
+    with a non-string in it -- yields no roles at all, which `_principal_from_token`
+    turns into a 403. Failing closed here matters more than being permissive:
+    a malformed claim must never be read as "some role was present".
+    """
+    values = claims.get("roles", [])
+    if isinstance(values, str):
+        values = [values]
     if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
         return frozenset()
-    return frozenset(values)
+    # Clerk namespaces org roles as `org:admin`; the app's vocabulary is bare.
+    return frozenset(value.split(":", 1)[-1] for value in values)
 
 
 def _principal_from_token(token: str, settings: _Settings) -> tuple[Principal, dict]:
@@ -170,8 +179,15 @@ def _principal_from_token(token: str, settings: _Settings) -> tuple[Principal, d
     except (jwt_exceptions.PyJWKClientError, jwt_exceptions.PyJWTError) as exc:
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN) from exc
 
-    if claims.get("typ") != "Bearer":
+    # Authorized party: the token must have been minted for this client. This is
+    # what stops a token issued to a different application on the same IdP
+    # instance from being replayed here.
+    if claims.get("azp") != settings.client_id:
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
+    # A user who has not yet joined an organization gets `sts: pending`. Such a
+    # token carries no usable tenancy, so it is refused rather than defaulted.
+    if claims.get("sts") == "pending":
+        raise HTTPException(status_code=403, detail="organization membership required")
     org_id = claims.get(ORG_CLAIM)
     subject = claims.get("sub")
     email = claims.get("email", "")
@@ -356,19 +372,16 @@ def complete_browser_login(
 
 
 def end_browser_session(session_id: str | None) -> str:
-    settings = _settings()
+    """Destroy the server-side session and return where to send the browser.
+
+    Only the local session is ended; there is no IdP round-trip. Once the
+    session row is gone the cookie is inert, so a federated logout would buy
+    nothing here beyond a redirect the deployment has to keep in sync.
+    """
     if session_id:
         with _state_lock:
             _sessions.pop(session_id, None)
-    if settings is None:
-        return "/"
-    query = parse.urlencode(
-        {
-            "client_id": settings.client_id,
-            "post_logout_redirect_uri": settings.redirect_uri.rsplit("/auth/callback", 1)[0] + "/",
-        }
-    )
-    return f"{settings.logout_url}?{query}"
+    return "/"
 
 
 def cookie_secure() -> bool:

@@ -22,10 +22,10 @@ from fastapi import HTTPException
 
 from agentaudit.web import auth
 
-ISSUER = "https://keycloak.test/realms/agentaudit"
+ISSUER = "https://idp.test/oidc"
 AUDIENCE = "agentaudit-api"
 CLIENT_ID = "agentaudit-web"
-JWKS_URL = "https://keycloak.test/realms/agentaudit/protocol/openid-connect/certs"
+JWKS_URL = "https://idp.test/oidc/.well-known/jwks.json"
 
 _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -39,8 +39,8 @@ def _token(key=_KEY, alg="RS256", **overrides) -> str:
         "sub": "user-1",
         "email": "user@acme.test",
         "org_id": "acme",
-        "typ": "Bearer",
-        "realm_access": {"roles": ["viewer"]},
+        "azp": CLIENT_ID,
+        "roles": ["viewer"],
         "iat": now,
         "exp": now + 300,
     }
@@ -130,6 +130,7 @@ def test_hmac_signed_with_public_key_is_401(oidc):
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
+
     # PyJWT refuses to *sign* this, so the attacker's token is built by hand --
     # which is what a real attacker does anyway.
     def b64(raw: bytes) -> bytes:
@@ -138,8 +139,15 @@ def test_hmac_signed_with_public_key_is_401(oidc):
     header = b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
     payload = b64(
         json.dumps(
-            {"iss": ISSUER, "aud": AUDIENCE, "sub": "x", "org_id": "acme",
-             "exp": int(time.time()) + 300}
+            {
+                "iss": ISSUER,
+                "aud": AUDIENCE,
+                "sub": "x",
+                "org_id": "acme",
+                "azp": CLIENT_ID,
+                "roles": ["viewer"],
+                "exp": int(time.time()) + 300,
+            }
         ).encode()
     )
     signing_input = header + b"." + payload
@@ -157,8 +165,28 @@ def test_missing_sub_is_401(oidc):
 
 def test_token_without_application_role_is_403(oidc):
     with pytest.raises(HTTPException) as exc:
-        auth.current_principal(_request(_token(realm_access={"roles": ["offline_access"]})))
+        auth.current_principal(_request(_token(roles=["offline_access"])))
     assert exc.value.status_code == 403
+
+
+def test_malformed_roles_claim_grants_nothing(oidc):
+    """A roles claim of the wrong shape must not be read as 'some role'."""
+    with pytest.raises(HTTPException) as exc:
+        auth.current_principal(_request(_token(roles={"roles": ["admin"]})))
+    assert exc.value.status_code == 403
+
+
+def test_scalar_org_role_is_accepted(oidc):
+    """The IdP emits a single org role as a bare string, not a list."""
+    principal = auth.current_principal(_request(_token(roles="org:admin")))
+    assert principal.roles == frozenset({"admin"})
+    assert principal.can_mutate
+
+
+def test_namespaced_role_is_stripped_to_app_vocabulary(oidc):
+    principal = auth.current_principal(_request(_token(roles=["org:viewer"])))
+    assert principal.roles == frozenset({"viewer"})
+    assert not principal.can_mutate
 
 
 def test_org_id_query_parameter_is_ignored(oidc):
@@ -196,8 +224,20 @@ def test_partial_config_raises_instead_of_falling_back(monkeypatch):
         auth.current_principal(_request(_token()))
 
 
-def test_id_token_is_rejected_even_if_other_claims_are_valid(oidc):
-    _expect_401(_request(_token(typ="ID")))
+def test_token_for_another_client_is_rejected(oidc):
+    """A token minted for a different app on the same IdP must not be replayable."""
+    _expect_401(_request(_token(azp="some-other-app")))
+
+
+def test_token_without_azp_is_401(oidc):
+    _expect_401(_request(_token(azp=None)))
+
+
+def test_pending_organization_membership_is_403(oidc):
+    """A user who has not joined an org yet carries no usable tenancy."""
+    with pytest.raises(HTTPException) as exc:
+        auth.current_principal(_request(_token(sts="pending", org_id=None)))
+    assert exc.value.status_code == 403
 
 
 def test_code_pkce_callback_creates_server_side_session(oidc, monkeypatch):
@@ -208,9 +248,7 @@ def test_code_pkce_callback_creates_server_side_session(oidc, monkeypatch):
         lambda _settings, _code, _verifier: {"access_token": "access-token"},
     )
     claims = {"exp": int(time.time()) + 300}
-    principal = auth.Principal(
-        "acme", "user-1", "user@acme.test", frozenset({"viewer"})
-    )
+    principal = auth.Principal("acme", "user-1", "user@acme.test", frozenset({"viewer"}))
     monkeypatch.setattr(
         auth,
         "_principal_from_token",
