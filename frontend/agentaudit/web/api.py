@@ -540,11 +540,33 @@ def discover_agent(agent_id: str, principal: Principal = Depends(require_admin))
 # Connect (run configuration)
 
 
+def _is_offerable_target(path: Path) -> bool:
+    """Hide targets a demo visitor cannot successfully run.
+
+    Under AGENTAUDIT_DEMO_MODE only in-process (`type: callable`) targets are
+    offered. The shipped HTTP configs point at hosts that do not exist, at
+    loopback (which the worker egress policy refuses), or at credential
+    templates -- each a dead end in the picker on a hosted instance.
+    """
+    if os.environ.get("AGENTAUDIT_DEMO_MODE", "").strip().lower() not in {"1", "true", "yes"}:
+        return True
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return False
+    if not isinstance(loaded, dict):
+        return False
+    agent = loaded.get("agent")
+    return isinstance(agent, dict) and agent.get("type") == "callable"
+
+
 @router.get("/connect-options")
 def connect_options(principal: Principal = Depends(current_principal)) -> dict:  # noqa: ARG001
     root = PACKAGE_DIR.parent
     targets = sorted(
-        p.relative_to(root).as_posix() for p in (PACKAGE_DIR / "config").glob("*.yaml")
+        p.relative_to(root).as_posix()
+        for p in (PACKAGE_DIR / "config").glob("*.yaml")
+        if _is_offerable_target(p)
     )
     pack_roots = sorted(
         p.relative_to(root).as_posix() for p in (PACKAGE_DIR / "packs").iterdir() if is_pack_dir(p)

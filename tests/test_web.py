@@ -1435,6 +1435,32 @@ def test_connect_options_preselect_last_used_target_and_pack(tmp_path, monkeypat
     assert body["default_pack"] == _TREASURY["packs"]
 
 
+def test_demo_mode_hides_unrunnable_http_targets(tmp_path, monkeypatch):
+    """A hosted demo must not offer configs that cannot succeed.
+
+    The shipped HTTP targets point at a nonexistent host, at loopback (refused
+    by the worker egress policy) or at a credential template.
+    """
+    monkeypatch.setenv("AGENTAUDIT_DEMO_MODE", "1")
+    client = _client(str(tmp_path / "demo.db"), monkeypatch)
+
+    targets = client.get("/api/connect-options").json()["targets"]
+
+    assert any(t.endswith("config/treasury-agent.yaml") for t in targets)
+    assert not any(t.endswith("config/demo-stub-http.yaml") for t in targets)
+    assert not any(t.endswith("config/treasury-http.yaml") for t in targets)
+    assert not any(t.endswith("config/my-agent.example.yaml") for t in targets)
+
+
+def test_http_targets_are_offered_when_demo_mode_is_off(tmp_path, monkeypatch):
+    monkeypatch.delenv("AGENTAUDIT_DEMO_MODE", raising=False)
+    client = _client(str(tmp_path / "nodemo.db"), monkeypatch)
+
+    targets = client.get("/api/connect-options").json()["targets"]
+
+    assert any(t.endswith("config/demo-stub-http.yaml") for t in targets)
+
+
 def test_connect_options_values_are_accepted_by_the_run_route(tmp_path, monkeypatch):
     """The picker values must round-trip: whatever GET offers, enqueue accepts.
 
