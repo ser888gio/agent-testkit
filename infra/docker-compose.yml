@@ -19,31 +19,25 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      keycloak:
-        condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"
     environment:
       AGENTAUDIT_DB: /data/agentaudit.db
       AGENTAUDIT_PACKS: /opt/venv/lib/python3.12/site-packages/agentaudit/packs
       AGENTAUDIT_AUTH_MODE: oidc
-      AGENTAUDIT_OIDC_ISSUER: http://localhost:8080/realms/agentaudit
-      AGENTAUDIT_OIDC_JWKS_URL: http://keycloak:8080/realms/agentaudit/protocol/openid-connect/certs
-      AGENTAUDIT_OIDC_TOKEN_URL: http://keycloak:8080/realms/agentaudit/protocol/openid-connect/token
-      AGENTAUDIT_OIDC_AUDIENCE: agentaudit-api
-      AGENTAUDIT_OIDC_CLIENT_ID: agentaudit-web
-      AGENTAUDIT_OIDC_REDIRECT_URI: http://localhost:8000/auth/callback
+      AGENTAUDIT_OIDC_ISSUER: ${AGENTAUDIT_OIDC_ISSUER:?set in infra/.env}
+      AGENTAUDIT_OIDC_JWKS_URL: ${AGENTAUDIT_OIDC_JWKS_URL:?set in infra/.env}
+      AGENTAUDIT_OIDC_TOKEN_URL: ${AGENTAUDIT_OIDC_TOKEN_URL:?set in infra/.env}
+      AGENTAUDIT_OIDC_AUTH_URL: ${AGENTAUDIT_OIDC_AUTH_URL:?set in infra/.env}
+      AGENTAUDIT_OIDC_AUDIENCE: ${AGENTAUDIT_OIDC_AUDIENCE:?set in infra/.env}
+      AGENTAUDIT_OIDC_CLIENT_ID: ${AGENTAUDIT_OIDC_CLIENT_ID:?set in infra/.env}
+      AGENTAUDIT_OIDC_REDIRECT_URI: ${AGENTAUDIT_OIDC_REDIRECT_URI:?set in infra/.env}
+      AGENTAUDIT_SESSION_COOKIE_SECURE: ${AGENTAUDIT_SESSION_COOKIE_SECURE:-1}
     volumes:
       # Persist the sqlite run store across container restarts.
       - agentaudit-data:/data
     restart: unless-stopped
 
-  # Runs tenant jobs against third-party agents. The container is the isolation
-  # boundary: it is the only service that talks to an untrusted endpoint, so it
-  # gets its own network with no route to the control plane (agentaudit, keycloak,
-  # keycloak-db all sit on the default network and are unreachable from here).
-  # The DB is reached as a *file* on the shared volume, not as a network service,
-  # which is what lets the worker be network-isolated and still persist runs.
   worker:
     build:
       context: ..
@@ -55,8 +49,6 @@ services:
     command: ["agentaudit", "worker", "--db", "/data/agentaudit.db"]
     environment:
       AGENTAUDIT_DB: /data/agentaudit.db
-      # Provision each target's `secret_ref` (env://VAR) here, not on the web
-      # service: the worker is the only process that dials a partner endpoint.
     networks:
       - egress
     read_only: true
@@ -66,8 +58,6 @@ services:
       - ALL
     security_opt:
       - "no-new-privileges:true"
-    # Backstops to the per-run ceilings in core/isolation.py, which bound a
-    # single run; these bound the container if that layer is defeated.
     pids_limit: 512
     mem_limit: 2g
     volumes:
@@ -121,14 +111,7 @@ services:
     restart: unless-stopped
 
 networks:
-  # The worker's only network. Nothing else joins it, so the worker has no TCP
-  # route to keycloak, keycloak-db, or the agentaudit web service. Outbound to
-  # partner endpoints is still governed per-target by core/egress.py.
-  #
-  # Link-local (169.254.169.254, cloud metadata) is NOT blocked here — no compose
-  # network driver blocks it portably. egress.py rejects it at the app layer;
-  # a host firewall rule is required for the OS-level guarantee. See infra/CLAUDE.md.
-  egress:
+   egress:
     driver: bridge
 
 volumes:

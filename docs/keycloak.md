@@ -1,4 +1,10 @@
-# Identity and local Keycloak
+# Identity and local Keycloak (superseded)
+
+> **Superseded.** `agentaudit.web.auth` now targets a hosted OIDC provider, and the
+> claim shape below is out of date: tokens carry a flat `roles` claim and an `azp`
+> authorized-party check, not `realm_access.roles` and `typ`. The Keycloak services
+> remain in `infra/docker-compose.yml` as a local fallback only. This page is kept
+> for that path; it does not describe the deployed setup.
 
 Phase 2 uses Keycloak for identity and organization membership. AgentAudit remains
 responsible for application authorization: `viewer` is read-only and `admin` may launch
