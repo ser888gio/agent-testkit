@@ -1,5 +1,17 @@
 # syntax=docker/dockerfile:1
 
+# ---- spa: build the React bundle ----
+# vite.config.ts writes to ../agentaudit/web/spa_dist, so the whole frontend/
+# tree is copied in and the output lands at frontend/agentaudit/web/spa_dist.
+# spa_dist is gitignored, so without this stage pip packages no bundle at all
+# and the served dashboard is app.py's "not built yet" placeholder.
+FROM node:22-slim AS spa
+
+WORKDIR /build
+COPY frontend ./frontend
+WORKDIR /build/frontend/spa
+RUN npm ci && npm run build
+
 # ---- builder: install deps and the package into a venv ----
 FROM python:3.12-slim AS builder
 
@@ -18,6 +30,9 @@ COPY agentaudit ./agentaudit
 COPY backend ./backend
 COPY frontend ./frontend
 COPY infra/alembic ./infra/alembic
+
+# Overlay the built bundle so setuptools package-data picks it up.
+COPY --from=spa /build/frontend/agentaudit/web/spa_dist ./frontend/agentaudit/web/spa_dist
 
 RUN pip install .
 
@@ -39,6 +54,8 @@ RUN useradd --create-home --uid 1000 app \
 WORKDIR /app
 
 # Everything (code, templates, static, packs) ships inside the installed wheel.
+# Do not add the SPA sources here: app.py's stale-bundle banner compares source
+# mtimes against the build and would fire on every page in the container.
 COPY --from=builder /opt/venv /opt/venv
 
 USER app

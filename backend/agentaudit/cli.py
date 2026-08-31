@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from importlib.resources import files
@@ -768,7 +769,20 @@ def ui_cmd(
         raise typer.Exit(1) from exc
 
     typer.echo(f"agentaudit ui running at http://{host}:{port}")
-    uvicorn.run("agentaudit.web.app:app", host=host, port=port)
+    # Without this the web process configures no logging at all and the
+    # identity-provider warnings in web/auth.py go nowhere.
+    logging.basicConfig(level=logging.INFO)
+    # Behind a TLS-terminating reverse proxy the app must read the forwarded
+    # scheme, or it builds http:// redirects for an https:// site. Trusting any
+    # client is safe here because only the proxy can reach the bound port.
+    uvicorn.run(
+        "agentaudit.web.app:app",
+        host=host,
+        port=port,
+        log_level="info",
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
 
 
 if __name__ == "__main__":
