@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
-import { EmptyState, LinkButton, PageHeader, StatusBadge } from "../components/ui";
+import { Breadcrumb, EmptyState, LinkButton, PageHeader, StatusBadge } from "../components/ui";
 import { DataTable } from "../components/table";
 import { TestsFilterBar } from "../components/TestsFilterBar";
 
@@ -36,6 +36,7 @@ export function TestsPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Tests" }]} />
       <PageHeader
         eyebrow="Coverage library"
         title="Tests"

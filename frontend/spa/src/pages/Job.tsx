@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
-import { EmptyState, ErrorNote, PageHeader, Panel, Spinner } from "../components/ui";
+import { Breadcrumb, EmptyState, ErrorNote, PageHeader, Panel, Spinner } from "../components/ui";
 
 interface JobView {
   id: string;
@@ -113,6 +113,7 @@ export function JobPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Runs", href: "/runs" }, { label: `Job ${job.id.slice(0, 8)}` }]} />
       <PageHeader
         eyebrow={job.discovery ? "Queued discovery" : "Queued run"}
         title={

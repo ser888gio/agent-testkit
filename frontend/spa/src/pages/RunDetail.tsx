@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
 import { DataTable } from "../components/table";
-import { EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../components/ui";
+import { Breadcrumb, EmptyState, formatMs, PageHeader, Panel, RiskBadge, StatCard, StatusBadge } from "../components/ui";
 
 interface TestResultJson {
   test_id: string;
@@ -79,9 +79,13 @@ export function RunDetailPage() {
 
   return (
     <>
-      <p>
-        <Link to="/runs">Back to runs</Link> · <Link to={`/agents/${encodeURIComponent(run.agent_name)}`}>{run.agent_name}</Link>
-      </p>
+      <Breadcrumb
+        items={[
+          { label: "Runs", href: "/runs" },
+          { label: run.agent_name, href: `/agents/${encodeURIComponent(run.agent_name)}` },
+          { label: `Run ${run.run_id.slice(0, 8)}` },
+        ]}
+      />
       <PageHeader
         eyebrow="Run detail"
         title={

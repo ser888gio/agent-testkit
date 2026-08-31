@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
-import { EmptyState, ErrorNote, PageHeader } from "../components/ui";
+import { Breadcrumb, EmptyState, ErrorNote, PageHeader } from "../components/ui";
 
 interface FormOptions {
   categories: string[];
@@ -52,9 +52,7 @@ export function TestNewPage() {
 
   return (
     <>
-      <p>
-        <Link to="/tests">Back to tests</Link>
-      </p>
+      <Breadcrumb items={[{ label: "Tests", href: "/tests" }, { label: "Define Test" }]} />
       <PageHeader
         eyebrow="Coverage authoring"
         title="Define Test"

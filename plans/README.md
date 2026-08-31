@@ -11,23 +11,24 @@ your row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Branch | Status |
 |------|-------|----------|--------|------------|--------|--------|
-| 006 | Return the test suite to green (3 defects) | P1 | S | — | `fix/006-green-the-suite` | DONE (reviewed; suite verified green 954 passed / 0 failed — commits `17cb903`, `a84c681`, `c8ffe1a` in worktree `agent-acdd6ff891f6327b3`, unmerged) |
-| 007 | Make CI actually run on `develop` | P1 | S | 006 | `chore/007-ci-actually-runs` | TODO |
-| 001 | Reject backslash-form open redirect in login `next` | P1 | S | — | `advisor/001-next-url-backslash` | DONE (reviewed — commit `949bbff` in worktree `agent-aee8e1e9084ee414d`, unmerged) |
-| 002 | Build the SPA before `uv build` so wheels ship a dashboard | P1 | S | — | `advisor/002-wheel-ships-spa` | TODO |
-| 003 | Stop the worker when its job lease is lost | P1 | S | — | `advisor/003-worker-stops-on-lease-loss` | TODO |
-| 008 | Stop labelling fully-completed jobs `expired` | P2 | S | — | `fix/008-job-deadline-race` | DONE (reviewed — commit `559fb06` in worktree `agent-a7436b89a9065da31`, unmerged) |
-| 004 | Add frame-protection headers to the dashboard | P2 | S | — | `advisor/004-frame-headers` | DONE (reviewed — commit `e3fe118` in worktree `agent-a1e1ec5c809e398d9`, unmerged) |
-| 010 | Mark authenticated API responses uncacheable | P2 | S | 004 | `fix/010-api-cache-control` | TODO |
-| 005 | Fail loudly on unrecognized path params in the route-table auth walk | P2 | S | — | `advisor/005-route-walk-hardening` | TODO |
-| 009 | Stop nested git worktrees polluting the working tree | P3 | S | — | `chore/009-ignore-nested-worktrees` | DONE (reviewed, unmerged — commit `b154525` in worktree `agent-a0d83bef547640cc1`) |
+| 006 | Return the test suite to green (3 defects) | P1 | S | — | `fix/006-green-the-suite` | MERGED to develop (commits `17cb903`, `a84c681`, `c8ffe1a`) |
+| 007 | Make CI actually run on `develop` | P1 | S | 006 | `chore/007-ci-actually-runs` | MERGED to develop (commit `79f683a`) — complexity gate independently verified passing |
+| 001 | Reject backslash-form open redirect in login `next` | P1 | S | — | `advisor/001-next-url-backslash` | MERGED to develop (commit `949bbff`) |
+| 002 | Build the SPA before `uv build` so wheels ship a dashboard | P1 | S | — | `advisor/002-wheel-ships-spa` | READY — 007 has landed, no longer blocked |
+| 003 | Stop the worker when its job lease is lost | P1 | S | — | `advisor/003-worker-stops-on-lease-loss` | MERGED to develop (commit `7bc6b40`) — plan was REWRITTEN against post-008 code |
+| 008 | Stop labelling fully-completed jobs `expired` | P2 | S | — | `fix/008-job-deadline-race` | MERGED to develop (commit `559fb06`) |
+| 004 | Add frame-protection headers to the dashboard | P2 | S | — | `advisor/004-frame-headers` | MERGED to develop (commit `e3fe118`) |
+| 010 | Mark authenticated API responses uncacheable | P2 | S | 004 | `fix/010-api-cache-control` | MERGED to develop (commit `7a18afe`) |
+| 005 | Fail loudly on unrecognized path params in the route-table auth walk | P2 | S | — | `advisor/005-route-walk-hardening` | MERGED to develop (commit `27c28a3`) |
+| 009 | Stop nested git worktrees polluting the working tree | P3 | S | — | `chore/009-ignore-nested-worktrees` | MERGED to develop (commit `b154525`) — commit lacks the repo trailers |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
 
-Branches for 006–010 have been created off `develop` and are empty (they point
-at `develop`'s tip). Branches for 001–005 are named in those plans but have not
-been created.
+**Status as of 2026-08-29:** plans 001, 004, 005, 006, 008 and 009 are reviewed
+and merged into `develop` (tip `62c7c0f`, later merged with origin at `89a3068`).
+The full suite on merged `develop` is **959 passed, 1 skipped, 0 failed** — it was
+4 failed / 951 passed before this batch. Local `develop` is not pushed.
 
 ## Dependency notes
 
