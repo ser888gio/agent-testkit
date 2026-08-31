@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
-import { EmptyState, PageHeader, Panel } from "../components/ui";
+import { Breadcrumb, EmptyState, PageHeader, Panel } from "../components/ui";
 import { Meta } from "../components/Meta";
 
 interface LLMRole {
@@ -45,6 +45,7 @@ export function SettingsPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Settings" }]} />
       <PageHeader
         eyebrow="Workspace"
         title="Settings"
