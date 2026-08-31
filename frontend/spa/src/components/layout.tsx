@@ -1,4 +1,4 @@
-// App shell: sidebar navigation, theme toggle, footer.
+// App shell: top header, sidebar navigation, footer.
 
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
@@ -6,7 +6,6 @@ import {
   Bot,
   ChartLine,
   ListChecks,
-  Menu,
   Moon,
   Rows3,
   Settings as SettingsIcon,
@@ -15,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useSession } from "../session";
+import { Header } from "./header";
 
 // testids are asserted as string literals against this source file by
 // tests/test_web.py::test_spa_source_keeps_nav_and_action_hooks. Keep them
@@ -72,7 +72,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // navigation so a route change closes it.
   const [menuOpen, setMenuOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
-  const toggleRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
@@ -83,7 +82,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setMenuOpen(false);
-      toggleRef.current?.focus();
+      document.querySelector<HTMLButtonElement>('[data-testid="nav-toggle"]')?.focus();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -94,6 +93,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <a className="skip-link" href="#content">
         Skip to content
       </a>
+      {/* App renders Loading until the session resolves, so this is set by
+          the time Layout mounts; the context type is nullable regardless. */}
+      {session ? (
+        <Header
+          session={session}
+          navOpen={menuOpen}
+          onToggleNav={() => setMenuOpen((open) => !open)}
+          themeToggle={<ThemeToggle />}
+        />
+      ) : null}
       <div className="layout">
         <aside className="sidebar">
           <Link className="brand" to="/" aria-label="agentaudit runs">
@@ -102,18 +111,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
             <span>agentaudit</span>
           </Link>
-          <button
-            ref={toggleRef}
-            type="button"
-            className="nav-toggle-button"
-            data-testid="nav-toggle"
-            aria-expanded={menuOpen}
-            aria-controls="primary-nav"
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <Menu className="nav-icon" aria-hidden="true" />
-            <span>Menu</span>
-          </button>
           <nav
             ref={navRef}
             id="primary-nav"
@@ -136,7 +133,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </nav>
         </aside>
         <main id="content" tabIndex={-1}>
-          <ThemeToggle />
           {children}
           <footer className="site-footer" data-testid="site-footer">
             <p className="site-footer-brand">agentaudit</p>

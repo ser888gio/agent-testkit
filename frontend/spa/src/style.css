@@ -235,7 +235,7 @@ main:focus-visible {
 
 .sidebar {
   position: sticky;
-  top: 0;
+  top: var(--header-h);
   z-index: 5;
   align-self: start;
   display: flex;
@@ -244,7 +244,7 @@ main:focus-visible {
   justify-content: flex-start;
   gap: 1.25rem;
   width: 240px;
-  height: 100vh;
+  height: calc(100vh - var(--header-h));
   padding: 1rem;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--hairline);
@@ -277,7 +277,6 @@ main:focus-visible {
 }
 
 /* Desktop: the sidebar is always open, so the hamburger has no job. */
-.nav-toggle-button { display: none; }
 
 .sidebar nav {
   display: flex;
@@ -1112,10 +1111,6 @@ pre {
    than a flex child so it does not sit in main's column and disturb the
    footer's margin-top:auto pinning. */
 .theme-toggle {
-  position: absolute;
-  top: clamp(1.25rem, 4vw, 3rem);
-  right: clamp(1rem, 3vw, 2rem);
-  z-index: 5;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1457,27 +1452,7 @@ pre {
   .sidebar {
     align-items: stretch;
     gap: 0.65rem;
-    /* Brand and hamburger share a row; nav drops below when opened. */
-    display: grid;
-    grid-template-columns: 1fr auto;
   }
-
-  .nav-toggle-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 2.5rem;
-    padding: 0 0.7rem;
-    color: var(--ink-subtle);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .nav-toggle-button:hover { color: var(--ink); background: var(--surface-1); }
 
   /* Collapsed by default; .open is applied by the React toggle (see the
      .sidebar nav.open rule at the end of this file). */
@@ -1723,3 +1698,225 @@ svg.export-icon {
 }
 .th-sort:hover { color: var(--ink); }
 .th-sort:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---- Top app header ---------------------------------------------------- */
+
+:root { --header-h: 4rem; }
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: var(--header-h);
+  padding: 0 clamp(0.75rem, 2vw, 1.25rem);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.header-icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  color: var(--ink-subtle);
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.header-icon-button:hover {
+  color: var(--ink);
+  background: var(--surface-3);
+  border-color: var(--hairline-strong);
+}
+
+.header-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Unread marker. Decorative: the button's aria-label carries the meaning. */
+.header-icon-button.has-dot::after {
+  content: "";
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  background: var(--fail-text);
+  border: 2px solid var(--surface-1);
+  border-radius: var(--radius-pill);
+}
+
+.header-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  max-width: 26rem;
+}
+
+.header-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  width: 1rem;
+  height: 1rem;
+  color: var(--ink-subtle);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  pointer-events: none;
+}
+
+.header-search input {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 3.25rem 0 2.35rem;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.header-search input::placeholder { color: var(--ink-subtle); }
+
+.header-search kbd {
+  position: absolute;
+  right: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  color: var(--ink-subtle);
+  background: var(--surface-3);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.75rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* The theme toggle sits in the header action row; match the icon buttons. */
+.app-header .theme-toggle {
+  width: 2.5rem;
+  height: 2.5rem;
+  background: var(--surface-1);
+  border-radius: var(--radius-pill);
+}
+
+.account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 0.5rem 0 0.25rem;
+  color: var(--ink);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.account-trigger:hover { background: var(--surface-3); }
+
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  color: #fff;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.account-name {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 15rem;
+  padding: 0.4rem;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-float);
+  z-index: 20;
+}
+
+.account-menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.account-menu-head small { color: var(--ink-subtle); font-size: 0.8125rem; }
+
+.account-menu-rule {
+  height: 1px;
+  margin: 0.35rem 0;
+  background: var(--hairline);
+}
+
+.account-menu-list a {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.6rem;
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  text-decoration: none;
+  cursor: pointer;
+  outline: none;
+}
+
+.account-menu-list a[data-highlighted] {
+  background: var(--surface-3);
+}
+
+.account-menu-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--ink-subtle);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (max-width: 700px) {
+  .header-search kbd { display: none; }
+  .account-name { display: none; }
+}

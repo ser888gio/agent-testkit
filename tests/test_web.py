@@ -651,7 +651,7 @@ def test_analytics_sparkline_carries_one_point_per_run(tmp_path, monkeypatch):
 
 def test_spa_source_keeps_nav_and_action_hooks():
     """UI automation anchors on data-testid, not display copy. Keep them stable."""
-    layout = (SPA_SRC / "layout.tsx").read_text(encoding="utf-8")
+    layout = (SPA_SRC / "components/layout.tsx").read_text(encoding="utf-8")
     for hook in (
         "nav-analytics",
         "nav-runs",
