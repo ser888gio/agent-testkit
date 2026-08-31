@@ -18,6 +18,9 @@ const SessionContext = createContext<Session | null>(null);
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   useEffect(() => {
+    // The public landing page has no session to fetch, and apiGet's 401 handler
+    // would bounce a logged-out visitor to /login before they ever saw it.
+    if (window.location.pathname === "/welcome") return;
     apiGet<Session & { csrf_token: string }>("/session").then((s) => {
       setCsrfToken(s.csrf_token);
       setSession(s);

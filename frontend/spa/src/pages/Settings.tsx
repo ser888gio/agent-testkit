@@ -11,6 +11,20 @@ interface LLMRole {
   api_key_present?: boolean;
 }
 
+// A role reads as one line: the model, then whether its key actually resolves
+// on this worker -- the distinction core/llm.py:describe is built to report.
+function llmRole(role: LLMRole): React.ReactNode {
+  if (!role.configured) return <span className="quiet">Not configured</span>;
+  return (
+    <span>
+      <span className="mono">{role.model ?? "unnamed model"}</span>
+      {role.api_key_env && !role.api_key_present ? (
+        <span className="quiet"> · key {role.api_key_env} not set</span>
+      ) : null}
+    </span>
+  );
+}
+
 interface SettingsView {
   settings: {
     db_path: string;

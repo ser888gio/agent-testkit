@@ -68,83 +68,116 @@ function ThemeToggle() {
 export function Layout({ children }: { children: React.ReactNode }) {
   const session = useSession();
   const location = useLocation();
-  // Below the sidebar breakpoint the nav collapses behind a button. Reset on
-  // navigation so a route change closes it.
-  const [menuOpen, setMenuOpen] = useState(false);
+  // The header button collapses the sidebar to an icon rail. Persisted so the
+  // choice survives a reload, which is the whole point of a manual toggle.
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("aa-sidebar") === "collapsed";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("aa-sidebar", collapsed ? "collapsed" : "open");
+    } catch {
+      // Storage blocked: the toggle still works for this page view.
+    }
+  }, [collapsed]);
+
+  // Below the sidebar breakpoint it becomes an overlay; a route change closes
+  // it so the destination is not hidden behind the nav.
+  const [navOpen, setNavOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
-  useEffect(() => setMenuOpen(false), [location.pathname]);
+  useEffect(() => setNavOpen(false), [location.pathname]);
 
   // Escape closes the open menu and returns focus to the button that opened
   // it, which is otherwise lost somewhere in the collapsed nav.
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!navOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setMenuOpen(false);
+      setNavOpen(false);
       document.querySelector<HTMLButtonElement>('[data-testid="nav-toggle"]')?.focus();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [menuOpen]);
+  }, [navOpen]);
 
   return (
     <>
       <a className="skip-link" href="#content">
         Skip to content
       </a>
-      {/* App renders Loading until the session resolves, so this is set by
-          the time Layout mounts; the context type is nullable regardless. */}
-      {session ? (
-        <Header
-          session={session}
-          navOpen={menuOpen}
-          onToggleNav={() => setMenuOpen((open) => !open)}
-          themeToggle={<ThemeToggle />}
-        />
-      ) : null}
-      <div className="layout">
-        <aside className="sidebar">
+      <div className={`layout${collapsed ? " collapsed" : ""}`}>
+        <aside className={`sidebar${navOpen ? " open" : ""}`}>
           <Link className="brand" to="/" aria-label="agentaudit runs">
             <span className="brand-mark" aria-hidden="true">
               AK
             </span>
-            <span>agentaudit</span>
+            <span className="brand-name">agentaudit</span>
           </Link>
-          <nav
-            ref={navRef}
-            id="primary-nav"
-            aria-label="Primary"
-            className={menuOpen ? "open" : undefined}
-          >
+          <nav ref={navRef} id="primary-nav" aria-label="Primary">
+            <p className="nav-section">Menu</p>
             {NAV.map(({ to, testid, label, Icon }) => (
               <NavLink
                 key={to}
                 to={to}
                 end={to === "/"}
                 data-testid={testid}
+                title={label}
                 className={({ isActive }) => (isActive ? "active" : undefined)}
               >
                 <Icon className="nav-icon" aria-hidden="true" />
-                <span>{label}</span>
+                <span className="nav-label">{label}</span>
               </NavLink>
             ))}
-            {session?.oidc_enabled ? <a href="/logout"><span>Sign out</span></a> : null}
           </nav>
         </aside>
-        <main id="content" tabIndex={-1}>
-          {children}
-          <footer className="site-footer" data-testid="site-footer">
-            <p className="site-footer-brand">agentaudit</p>
-            <p>
-              Black-box testing and assurance for AI agents. Evidence produced here is technical
-              evidence, not a CE marking or compliance determination.
-            </p>
-            <p className="quiet">
-              © {new Date().getFullYear()} agentaudit · Apache-2.0 licensed
-            </p>
-          </footer>
-        </main>
+        {/* Click-catcher for the overlay sidebar on narrow viewports. */}
+        {navOpen ? (
+          <button
+            type="button"
+            className="sidebar-scrim"
+            aria-label="Close navigation"
+            onClick={() => setNavOpen(false)}
+          />
+        ) : null}
+        <div className="shell">
+          {/* App renders Loading until the session resolves, so this is set
+              by the time Layout mounts; the context type is nullable. */}
+          {session ? (
+            <Header
+              session={session}
+              collapsed={collapsed}
+              onToggleNav={() => {
+                // One button, two jobs: it collapses the rail on desktop and
+                // opens the overlay where the sidebar is off-canvas.
+                if (window.matchMedia("(max-width: 920px)").matches) {
+                  setNavOpen((open) => !open);
+                } else {
+                  setCollapsed((c) => !c);
+                }
+              }}
+              themeToggle={<ThemeToggle />}
+            />
+          ) : null}
+          <main id="content" tabIndex={-1}>
+            {children}
+            <footer className="site-footer" data-testid="site-footer">
+              <p className="site-footer-brand">agentaudit</p>
+              <p>
+                Black-box testing and assurance for AI agents. Evidence produced here is technical
+                evidence, not a CE marking or compliance determination.
+              </p>
+              <p className="quiet">
+                &copy; {new Date().getFullYear()} agentaudit &middot; Apache-2.0 licensed
+              </p>
+            </footer>
+          </main>
+        </div>
       </div>
     </>
   );

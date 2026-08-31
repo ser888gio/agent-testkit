@@ -1,38 +1,10 @@
 // Top app bar: sidebar toggle, search, theme toggle, notifications, account menu.
 
-import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Bell, CircleHelp, LogOut, PanelLeft, Search, Settings, UserRound } from "lucide-react";
+import { CircleHelp, LogOut, PanelLeft, Settings, UserRound } from "lucide-react";
 import type { Session } from "../session";
-
-function SearchBox() {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "k" || !(event.metaKey || event.ctrlKey)) return;
-      event.preventDefault();
-      inputRef.current?.focus();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
-  return (
-    <div className="header-search">
-      <Search className="header-search-icon" aria-hidden="true" />
-      <input
-        ref={inputRef}
-        type="search"
-        data-testid="header-search"
-        placeholder="Search or type command..."
-        aria-label="Search"
-      />
-      <kbd aria-hidden="true">⌘K</kbd>
-    </div>
-  );
-}
+import { CommandPalette } from "./CommandPalette";
 
 function initials(session: Session): string {
   const name = session.subject || session.email;
@@ -95,12 +67,12 @@ function AccountMenu({ session }: { session: Session }) {
 export function Header({
   session,
   onToggleNav,
-  navOpen,
+  collapsed,
   themeToggle,
 }: {
   session: Session;
   onToggleNav: () => void;
-  navOpen: boolean;
+  collapsed: boolean;
   themeToggle: React.ReactNode;
 }) {
   return (
@@ -109,24 +81,16 @@ export function Header({
         type="button"
         className="header-icon-button"
         data-testid="nav-toggle"
-        aria-expanded={navOpen}
+        aria-expanded={!collapsed}
         aria-controls="primary-nav"
         aria-label="Toggle navigation"
         onClick={onToggleNav}
       >
         <PanelLeft className="header-icon" aria-hidden="true" />
       </button>
-      <SearchBox />
+      <CommandPalette />
       <div className="header-actions">
         {themeToggle}
-        <button
-          type="button"
-          className="header-icon-button has-dot"
-          data-testid="header-notifications"
-          aria-label="Notifications"
-        >
-          <Bell className="header-icon" aria-hidden="true" />
-        </button>
         <AccountMenu session={session} />
       </div>
     </header>

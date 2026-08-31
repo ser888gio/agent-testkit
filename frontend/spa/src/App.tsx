@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./components/layout";
 import { useSession } from "./session";
 import { Loading } from "./components/useView";
@@ -17,6 +17,7 @@ import { GeneratedPage } from "./pages/Generated";
 import { JobPage } from "./pages/Job";
 import { ComparePage } from "./pages/Compare";
 import { SettingsPage } from "./pages/Settings";
+import { LandingPage } from "./pages/Landing";
 import { EmptyState, PageHeader } from "./components/ui";
 
 function NotFound() {
@@ -30,6 +31,9 @@ function NotFound() {
 
 export function App() {
   const session = useSession();
+  // The landing page is public, so it renders ahead of the session gate below
+  // and outside <Layout>, which needs a session for the account menu.
+  if (useLocation().pathname === "/welcome") return <LandingPage />;
   if (!session) {
     return (
       <div className="layout">

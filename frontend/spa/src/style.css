@@ -229,13 +229,22 @@ main:focus-visible {
 
 .layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100vh;
+}
+
+.layout.collapsed { --sidebar-w: 4.5rem; }
+
+/* The column that is not the sidebar: header pinned, page scrolling under it. */
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .sidebar {
   position: sticky;
-  top: var(--header-h);
+  top: 0;
   z-index: 5;
   align-self: start;
   display: flex;
@@ -243,9 +252,9 @@ main:focus-visible {
   align-items: stretch;
   justify-content: flex-start;
   gap: 1.25rem;
-  width: 240px;
-  height: calc(100vh - var(--header-h));
-  padding: 1rem;
+  width: var(--sidebar-w);
+  height: 100vh;
+  padding: 1rem 0.75rem;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--hairline);
   backdrop-filter: blur(14px);
@@ -1426,14 +1435,6 @@ pre {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .sidebar {
-    position: sticky;
-    width: auto;
-    height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--hairline);
-  }
-
   /* The sidebar stacks above main here rather than beside it, so a full-viewport
      main would push the page past 100vh and strand the footer below the fold. */
   main { min-height: 0; }
@@ -1449,22 +1450,6 @@ pre {
 }
 
 @media (max-width: 700px) {
-  .sidebar {
-    align-items: stretch;
-    gap: 0.65rem;
-  }
-
-  /* Collapsed by default; .open is applied by the React toggle (see the
-     .sidebar nav.open rule at the end of this file). */
-  .sidebar nav {
-    display: none;
-    grid-column: 1 / -1;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .sidebar nav a { flex: 0 0 auto; }
-
   main { padding-top: 1rem; }
 
   .page-header,
@@ -1674,15 +1659,6 @@ svg.export-icon {
   font-weight: 600;
 }
 
-/* React SPA shell: the mobile menu is state-driven (a button + .open class)
-   rather than the checkbox hack the legacy markup used. Same visual behavior. */
-@media (max-width: 700px) {
-  .sidebar nav.open {
-    display: flex;
-    grid-column: 1 / -1;
-  }
-}
-
 /* Sortable headers are buttons so keyboard and screen readers get the affordance;
    they inherit the th's mono uppercase styling and only add the arrow. */
 .th-sort {
@@ -1748,18 +1724,6 @@ svg.export-icon {
   stroke-linejoin: round;
 }
 
-/* Unread marker. Decorative: the button's aria-label carries the meaning. */
-.header-icon-button.has-dot::after {
-  content: "";
-  position: absolute;
-  top: 0.35rem;
-  right: 0.4rem;
-  width: 0.5rem;
-  height: 0.5rem;
-  background: var(--fail-text);
-  border: 2px solid var(--surface-1);
-  border-radius: var(--radius-pill);
-}
 
 .header-search {
   position: relative;
@@ -1919,4 +1883,152 @@ svg.export-icon {
 @media (max-width: 700px) {
   .header-search kbd { display: none; }
   .account-name { display: none; }
+}
+
+/* ---- Sidebar rail + collapse ------------------------------------------- */
+
+:root { --sidebar-w: 250px; }
+
+.brand-name,
+.nav-label,
+.nav-section {
+  /* Hidden by width, not display:none, so the label stays in the a11y tree
+     and the icon keeps its accessible name when collapsed. */
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.nav-section {
+  margin: 0.25rem 0 0.35rem 0.7rem;
+  color: var(--ink-subtle);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.layout.collapsed .brand-name,
+.layout.collapsed .nav-label {
+  width: 0;
+  opacity: 0;
+}
+
+.layout.collapsed .nav-section { opacity: 0; }
+
+.layout.collapsed .sidebar nav a,
+.layout.collapsed .brand {
+  justify-content: center;
+  gap: 0;
+}
+
+.sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  padding: 0;
+  background: rgb(0 0 0 / 45%);
+  border: 0;
+  cursor: pointer;
+}
+
+/* ---- Header search results --------------------------------------------- */
+
+.header-search-results {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 22rem;
+  overflow-y: auto;
+  padding: 0.4rem;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-float);
+}
+
+.header-search-empty {
+  margin: 0;
+  padding: 0.75rem 0.6rem;
+  color: var(--ink-subtle);
+  font-size: 0.875rem;
+}
+
+.header-search-group + .header-search-group {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.header-search-group-label {
+  margin: 0.25rem 0 0.2rem 0.6rem;
+  color: var(--ink-subtle);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.header-search-results button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.header-search-results button.active { background: var(--surface-3); }
+
+.header-search-results button span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.header-search-results button strong {
+  font-size: 0.875rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-search-results button small {
+  color: var(--ink-subtle);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-search-hit-icon {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  color: var(--ink-subtle);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+
+@media (max-width: 920px) {
+  /* Off-canvas: the sidebar overlays the page instead of taking a column. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 6;
+    height: 100vh;
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open { transform: translateX(0); }
 }
