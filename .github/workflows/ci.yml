@@ -77,7 +77,7 @@ jobs:
           persist-credentials: false
 
       - name: Run complexipy
-        uses: rohaquinlop/complexipy-action@v3
+        uses: rohaquinlop/complexipy-action@e2b05bcc06d899a24e2b6bb8b1354ac42800a95e # v7.0.1
         with:
           paths: .
           max_complexity_allowed: 26
