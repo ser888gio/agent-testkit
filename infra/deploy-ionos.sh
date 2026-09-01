@@ -11,8 +11,9 @@
 # accounts, see docs/deploy-clerk.md):
 #   - Cloud Panel firewall: allow 22, 80, 443 only. Port 8000 must stay closed.
 #   - DNS: an A record for $DEPLOY_HOST -> this VPS IPv4. No AAAA (no IPv6).
-#   - Clerk: OAuth app, Organizations enabled, JWT template emitting
-#     org_id + roles, redirect URI https://$DEPLOY_HOST/auth/callback
+#   - Clerk: OAuth app, Organizations enabled, every user in an org with a
+#     role, redirect URI https://$DEPLOY_HOST/auth/callback. No JWT template
+#     is involved: org_id/roles come from userinfo (see docs/deploy-clerk.md).
 set -euo pipefail
 
 : "${DEPLOY_HOST:?set DEPLOY_HOST to the public hostname, e.g. demo.example.com}"

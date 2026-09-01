@@ -268,6 +268,7 @@ def test_code_pkce_callback_creates_server_side_session(oidc, monkeypatch):
         "_exchange_code",
         lambda _settings, _code, _verifier: {"access_token": "access-token"},
     )
+    monkeypatch.setattr(auth, "_userinfo", lambda _settings, _token: {})
     claims = {"exp": int(time.time()) + 300}
     principal = auth.Principal("acme", "user-1", "user@acme.test", frozenset({"viewer"}))
     monkeypatch.setattr(
@@ -299,3 +300,46 @@ def test_safe_next_url_rejects_leading_backslash():
 
 def test_safe_next_url_accepts_safe_local_path_with_query():
     assert auth._safe_next_url("/safe/path?x=1") == "/safe/path?x=1"
+
+
+def test_browser_login_reads_org_from_userinfo(oidc, monkeypatch):
+    """Clerk's OAuth access token carries no org_id/roles/email; userinfo does."""
+    _destination, state = auth.begin_browser_login("/runs")
+    monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": "access-token"})
+    monkeypatch.setattr(
+        auth,
+        "_userinfo",
+        lambda _s, _t: {"org_id": "acme", "roles": "org:admin", "email": "user@acme.test"},
+    )
+    # A token shaped like Clerk's: sub/exp only, no identity claims at all.
+    token = _token(org_id=None, roles=None, email=None, azp=None)
+    monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": token})
+
+    _session_id, principal, next_url = auth.complete_browser_login("code", state, state)
+
+    assert principal.org_id == "acme"
+    assert principal.roles == frozenset({"admin"})
+    assert principal.email == "user@acme.test"
+    assert next_url == "/runs"
+
+
+def test_browser_login_without_org_gets_private_tenant(oidc, monkeypatch):
+    """A stranger with no Clerk org still logs in, isolated in their own tenant."""
+    _destination, state = auth.begin_browser_login("/")
+    token = _token(org_id=None, roles=None, email=None, azp=None)
+    monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": token})
+    monkeypatch.setattr(auth, "_userinfo", lambda _s, _t: {"email": "stranger@example.test"})
+
+    _session_id, principal, _next_url = auth.complete_browser_login("code", state, state)
+
+    assert principal.org_id == "user:user-1"
+    assert principal.roles == frozenset({"admin"})
+
+
+def test_bearer_token_without_org_is_still_401(oidc):
+    """The private-tenant fallback is for PKCE-bound logins only.
+
+    A bare bearer token has nothing binding it to this client, so letting one
+    mint its own tenant would turn any token this IdP issues into a workspace.
+    """
+    _expect_401(_request(_token(org_id=None)))
