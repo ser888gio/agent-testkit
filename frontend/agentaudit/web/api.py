@@ -560,17 +560,8 @@ def _is_offerable_target(path: Path) -> bool:
     return isinstance(agent, dict) and agent.get("type") == "callable"
 
 
-@router.get("/connect-options")
-def connect_options(principal: Principal = Depends(current_principal)) -> dict:  # noqa: ARG001
-    root = PACKAGE_DIR.parent
-    targets = sorted(
-        p.relative_to(root).as_posix()
-        for p in (PACKAGE_DIR / "config").glob("*.yaml")
-        if _is_offerable_target(p)
-    )
-    pack_roots = sorted(
-        p.relative_to(root).as_posix() for p in (PACKAGE_DIR / "packs").iterdir() if is_pack_dir(p)
-    )
+def _pack_tests(root: Path, pack_roots: list[str]) -> dict[str, list[dict]]:
+    """Test metadata for every discoverable pack, keyed by pack path."""
     pack_tests: dict[str, list[dict]] = {}
     for rel in pack_roots:
         try:
@@ -587,6 +578,53 @@ def connect_options(principal: Principal = Depends(current_principal)) -> dict: 
             for t in cases
             if isinstance(t, TestCase)
         ]
+    return pack_tests
+
+
+def _defaults_from_last_job(
+    root: Path,
+    targets: list[str],
+    pack_roots: list[str],
+    registered_targets: list[dict],
+    last_job,
+) -> tuple[str | None, str | None]:
+    """The (target, pack) to preselect, derived from this org's last job.
+
+    A shipped config file wins when one carries the job's target id; otherwise
+    the id is matched against the tenant's registered rows.
+    """
+    for rel in targets:
+        try:
+            raw = yaml.safe_load((root / rel).read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            continue
+        if isinstance(raw, dict) and str(raw.get("id")) == last_job.target_id:
+            default_target = rel
+            break
+    else:
+        default_target = next(
+            (t["id"] for t in registered_targets if t["id"] == last_job.target_id),
+            None,
+        )
+    default_pack = next(
+        (rel for rel in pack_roots if Path(rel).name == last_job.pack_id),
+        None,
+    )
+    return default_target, default_pack
+
+
+@router.get("/connect-options")
+def connect_options(principal: Principal = Depends(current_principal)) -> dict:  # noqa: ARG001
+    root = PACKAGE_DIR.parent
+    targets = sorted(
+        p.relative_to(root).as_posix()
+        for p in (PACKAGE_DIR / "config").glob("*.yaml")
+        if _is_offerable_target(p)
+    )
+    pack_roots = sorted(
+        p.relative_to(root).as_posix() for p in (PACKAGE_DIR / "packs").iterdir() if is_pack_dir(p)
+    )
+    pack_tests = _pack_tests(root, pack_roots)
     store = get_store()
     # Targets the tenant registered by endpoint URL: runnable straight from
     # their stored rows, no shipped config needed.
@@ -598,22 +636,8 @@ def connect_options(principal: Principal = Depends(current_principal)) -> dict: 
     last_jobs = store.jobs.list_recent(principal.org_id, limit=1)
     default_target = default_pack = None
     if last_jobs:
-        for rel in targets:
-            try:
-                raw = yaml.safe_load((root / rel).read_text(encoding="utf-8"))
-            except (OSError, yaml.YAMLError):
-                continue
-            if isinstance(raw, dict) and str(raw.get("id")) == last_jobs[0].target_id:
-                default_target = rel
-                break
-        else:
-            default_target = next(
-                (t["id"] for t in registered_targets if t["id"] == last_jobs[0].target_id),
-                None,
-            )
-        default_pack = next(
-            (rel for rel in pack_roots if Path(rel).name == last_jobs[0].pack_id),
-            None,
+        default_target, default_pack = _defaults_from_last_job(
+            root, targets, pack_roots, registered_targets, last_jobs[0]
         )
     return {
         "targets": targets,
