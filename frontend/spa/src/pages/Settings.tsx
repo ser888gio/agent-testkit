@@ -1,61 +1,116 @@
-import { Link } from "react-router-dom";
-import { useView, Loading } from "../components/useView";
-import { Breadcrumb, EmptyState, PageHeader, Panel } from "../components/ui";
-import { Meta } from "../components/Meta";
+import { useEffect, useState } from "react";
+import { ApiError, apiGet, apiSend } from "../api";
+import { Breadcrumb, EmptyState, ErrorNote, PageHeader, Panel } from "../components/ui";
 
-interface LLMRole {
-  configured: boolean;
-  model?: string;
-  endpoint?: string;
-  api_key_env?: string | null;
-  api_key_present?: boolean;
-}
+const ROLES = [
+  {
+    key: "attacker" as const,
+    title: "Attacker model",
+    blurb: "Writes the adaptive attack turns that probe your agent.",
+  },
+  {
+    key: "judge" as const,
+    title: "Judge model",
+    blurb: "Decides whether an attack turn actually landed.",
+  },
+];
 
-// A role reads as one line: the model, then whether its key actually resolves
-// on this worker -- the distinction core/llm.py:describe is built to report.
-function llmRole(role: LLMRole): React.ReactNode {
-  if (!role.configured) return <span className="quiet">Not configured</span>;
-  return (
-    <span>
-      <span className="mono">{role.model ?? "unnamed model"}</span>
-      {role.api_key_env && !role.api_key_present ? (
-        <span className="quiet"> · key {role.api_key_env} not set</span>
-      ) : null}
-    </span>
-  );
+type Role = (typeof ROLES)[number]["key"];
+
+// Clicking one fills the URL only. The model list is deliberately not here: it
+// changes weekly per provider, and a stale dropdown is worse than a text field.
+const PRESETS = [
+  {
+    name: "OpenRouter",
+    endpoint: "https://openrouter.ai/api/v1/chat/completions",
+    model: "openai/gpt-4o-mini",
+    keys: "openrouter.ai/keys",
+  },
+  {
+    name: "OpenAI",
+    endpoint: "https://api.openai.com/v1/chat/completions",
+    model: "gpt-4o-mini",
+    keys: "platform.openai.com/api-keys",
+  },
+  {
+    name: "Groq",
+    endpoint: "https://api.groq.com/openai/v1/chat/completions",
+    model: "llama-3.3-70b-versatile",
+    keys: "console.groq.com/keys",
+  },
+];
+
+interface StoredRole {
+  endpoint: string;
+  model: string;
+  api_key_set: boolean;
 }
 
 interface SettingsView {
-  settings: {
-    db_path: string;
-    package_dir: string;
-    config_dir: string;
-    packs_dir: string;
-    auth_state: string;
-    redaction_patterns: string[];
-    egress_allow_local: boolean;
-    llm: {
-      source: string | null;
-      error: string | null;
-      attacker: LLMRole;
-      judge: LLMRole;
-    };
-  };
-  principal: {
-    org_id: string;
-    subject: string;
-    email: string;
-    roles: string[];
-    auth_method: string;
-  };
+  llm: Partial<Record<Role, StoredRole>>;
+  default_endpoint: string;
 }
 
-export function SettingsPage() {
-  const { view, error } = useView<SettingsView>("/settings");
+// The key is write-only: the server returns `api_key_set`, never the value, so
+// an empty field means "leave the stored key alone" rather than "clear it".
+interface Draft {
+  endpoint: string;
+  model: string;
+  api_key: string;
+}
 
-  if (error) return <EmptyState title="Could not load settings" body={error} />;
-  if (!view) return <Loading />;
-  const s = view.settings;
+const EMPTY: Draft = { endpoint: "", model: "", api_key: "" };
+
+export function SettingsPage() {
+  const [view, setView] = useState<SettingsView | null>(null);
+  const [drafts, setDrafts] = useState<Record<Role, Draft>>({ attacker: EMPTY, judge: EMPTY });
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    apiGet<SettingsView>("/settings")
+      .then((data) => {
+        setView(data);
+        setDrafts({
+          attacker: toDraft(data.llm.attacker),
+          judge: toDraft(data.llm.judge),
+        });
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof ApiError ? err.detail : "Could not load settings."),
+      );
+  }, []);
+
+  if (error && !view) return <EmptyState title="Could not load settings" body={error} />;
+  if (!view) return <EmptyState title="Loading" body="Fetching settings..." />;
+
+  const set = (role: Role, field: keyof Draft, value: string) => {
+    setDrafts((d) => ({ ...d, [role]: { ...d[role], [field]: value } }));
+    setSaved(false);
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const body = Object.fromEntries(
+        ROLES.map(({ key }) => [key, toBody(drafts[key], view.default_endpoint)]),
+      );
+      const result = await apiSend<{ llm: SettingsView["llm"] }>("/settings/llm", "PUT", body);
+      setView({ ...view, llm: result.llm });
+      setDrafts({
+        attacker: toDraft(result.llm.attacker),
+        judge: toDraft(result.llm.judge),
+      });
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Could not save settings.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <>
@@ -63,161 +118,112 @@ export function SettingsPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Settings"
-        subtitle={
-          <>
-            Deployment-owned runtime configuration. These come from the environment the server and
-            its workers were started with, so they are changed there, not here. Per-target settings
-            that <em>are</em> editable live on each <Link to="/agents">agent's page</Link>.
-          </>
-        }
+        subtitle="Bring your own model. These credentials are used only to run your audits; leave a role blank to turn it off."
       />
 
-      <section className="settings-grid">
-        <Panel title="Storage" blurb="Where runs, agents, and test results are read from.">
-          <Meta
-            entries={[
-              ["Database", <span className="mono">{s.db_path}</span>],
-              ["Package Root", <span className="mono">{s.package_dir}</span>],
-            ]}
-          />
-        </Panel>
+      <Panel
+        title="Getting a key"
+        blurb="agentaudit talks the OpenAI chat-completions format, so any provider that speaks it works."
+      >
+        <p>
+          The quickest route is <strong>OpenRouter</strong>, which fronts most models behind one
+          key. Sign up at <span className="mono">openrouter.ai</span>, create a key under{" "}
+          <span className="mono">openrouter.ai/keys</span>, then paste it below with the base URL{" "}
+          <span className="mono">https://openrouter.ai/api/v1/chat/completions</span> and a model
+          name such as <span className="mono">openai/gpt-4o-mini</span> or{" "}
+          <span className="mono">anthropic/claude-sonnet-4</span> — OpenRouter model names are
+          always <span className="mono">vendor/model</span>.
+        </p>
+        <p className="quiet">
+          Going direct to a vendor works the same way, and so does a local server (Ollama, vLLM,
+          LiteLLM) if you point the base URL at it and leave the key blank. Use the buttons on each
+          role below to fill in a provider's URL.
+        </p>
+      </Panel>
 
-        <Panel title="Run Inputs" blurb="Allowed local roots for targets and packs.">
-          <Meta
-            entries={[
-              ["Configs", <span className="mono">{s.config_dir}</span>],
-              ["Packs", <span className="mono">{s.packs_dir}</span>],
-            ]}
-          />
-        </Panel>
+      {error ? <ErrorNote message={error} /> : null}
+      {saved ? <p className="quiet">Saved.</p> : null}
 
-        <Panel title="Security" blurb="State-changing routes require an admin session or bearer token.">
-          <Meta
-            entries={[
-              ["Authentication", s.auth_state],
-              [
-                "Writable Routes",
-                <>
-                  Protected by session role plus <span className="mono">x-csrf-token</span>, or an
-                  OIDC bearer token.
-                </>,
-              ],
-            ]}
-          />
-        </Panel>
+      <form onSubmit={submit} className="settings-grid" data-testid="llm-form">
+        {ROLES.map(({ key, title, blurb }) => (
+          <Panel key={key} title={title} blurb={blurb} testid={`settings-${key}`}>
+            <div className="test-form">
+              <p className="quiet">
+                Fill from:{" "}
+                {PRESETS.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => {
+                      set(key, "endpoint", preset.endpoint);
+                      if (!drafts[key].model.trim()) set(key, "model", preset.model);
+                    }}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </p>
 
-        <Panel
-          title="Evidence & Redaction"
-          blurb="What the harness masks before anything is persisted or displayed."
-          testid="settings-redaction"
-        >
-          <Meta
-            entries={[
-              ["Built-in Masks", s.redaction_patterns.join(", ")],
-              ["Mask Format", <span className="mono">«redacted:name»</span>],
-              [
-                "Scope",
-                "Per-target policies add patterns and literals on top of the built-ins; they cannot remove them.",
-              ],
-              ["Defense in Depth", "Redaction runs in the runner and is re-applied on save."],
-            ]}
-          />
-        </Panel>
+              <label>
+                API base URL
+                <input
+                  type="url"
+                  value={drafts[key].endpoint}
+                  onChange={(e) => set(key, "endpoint", e.target.value)}
+                  placeholder={view.default_endpoint}
+                  data-testid={`${key}-endpoint`}
+                />
+                <span className="quiet">Any OpenAI-compatible chat-completions endpoint.</span>
+              </label>
 
-        <Panel
-          title="Egress"
-          blurb="Where run traffic may go. Enforced worker-side, per target."
-          testid="settings-egress"
-        >
-          <Meta
-            entries={[
-              [
-                "Allow Local Endpoints",
-                <>
-                  {s.egress_allow_local ? "Enabled (development only)" : "Disabled"}{" "}
-                  <span className="quiet">
-                    Set by <span className="mono">AGENTAUDIT_EGRESS_ALLOW_LOCAL</span> in the
-                    worker's environment. Deliberately not tenant-settable: a bypass you can toggle
-                    from the UI is not a bypass fix.
-                  </span>
-                </>,
-              ],
-              [
-                "Host Allowlist",
-                <>
-                  Editable per target on the <Link to="/agents">agent's page</Link>; workers refuse
-                  hosts outside it.
-                </>,
-              ],
-            ]}
-          />
-        </Panel>
+              <label>
+                Model name
+                <input
+                  value={drafts[key].model}
+                  onChange={(e) => set(key, "model", e.target.value)}
+                  placeholder="gpt-4o-mini"
+                  data-testid={`${key}-model`}
+                />
+              </label>
 
-        <Panel
-          title="Attacker & Judge Models"
-          blurb="The LLMs that write adaptive attack turns and decide whether one landed."
-          testid="settings-llm"
-        >
-          <Meta
-            entries={[
-              ["Attacker", llmRole(s.llm.attacker)],
-              ["Judge", llmRole(s.llm.judge)],
-              [
-                "Source",
-                s.llm.error ? (
-                  <span className="quiet">{s.llm.error}</span>
-                ) : s.llm.source ? (
-                  <span className="mono">{s.llm.source}</span>
-                ) : (
-                  <span className="quiet">
-                    No config file. Copy{" "}
-                    <span className="mono">agentaudit/llm.example.yaml</span> to{" "}
-                    <span className="mono">llm.yaml</span>, or set{" "}
-                    <span className="mono">AGENTAUDIT_LLM_CONFIG</span>.
-                  </span>
-                ),
-              ],
-              [
-                "Keys",
-                <>
-                  The config file names an environment variable —{" "}
-                  <span className="mono">api_key_ref: env://OPENAI_API_KEY</span> — and never holds
-                  the key itself. The key is supplied to the server's environment, so it is never
-                  committed, persisted, or returned by this API. Editing it here would mean storing
-                  it here.
-                </>,
-              ],
-            ]}
-          />
-        </Panel>
+              <label>
+                API key
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={drafts[key].api_key}
+                  onChange={(e) => set(key, "api_key", e.target.value)}
+                  placeholder={view.llm[key]?.api_key_set ? "Stored — leave blank to keep" : ""}
+                  data-testid={`${key}-key`}
+                />
+                <span className="quiet">
+                  Blank is fine for a local model server that needs no key.
+                </span>
+              </label>
+            </div>
+          </Panel>
+        ))}
 
-        <Panel title="Access" blurb="The principal this session acts as." testid="settings-access">
-          <Meta
-            entries={[
-              ["Organization", <span className="mono">{view.principal.org_id}</span>],
-              ["Subject", <span className="mono">{view.principal.subject}</span>],
-              ["Email", view.principal.email],
-              ["Roles", [...view.principal.roles].sort().join(", ")],
-              ["Method", view.principal.auth_method],
-            ]}
-          />
-        </Panel>
-
-        <Panel title="Interface" blurb="Current dashboard navigation and polling behavior.">
-          <Meta
-            entries={[
-              [
-                "Sections",
-                "Analytics, Harness, Runs, Agents, Tests, Generated, Settings",
-              ],
-              [
-                "Polling",
-                `Job status polls every two seconds while work is live; signed in as ${view.principal.subject}.`,
-              ],
-            ]}
-          />
-        </Panel>
-      </section>
+        <button type="submit" disabled={busy} data-testid="llm-save">
+          {busy ? "Saving..." : "Save"}
+        </button>
+      </form>
     </>
   );
+}
+
+function toDraft(role: StoredRole | undefined): Draft {
+  return role ? { endpoint: role.endpoint, model: role.model, api_key: "" } : EMPTY;
+}
+
+// A role with no model name is off. The endpoint falls back to the default so a
+// user who only knows their model name does not have to look the URL up.
+function toBody(draft: Draft, defaultEndpoint: string) {
+  if (!draft.model.trim()) return null;
+  return {
+    endpoint: draft.endpoint.trim() || defaultEndpoint,
+    model: draft.model.trim(),
+    api_key: draft.api_key || null,
+  };
 }

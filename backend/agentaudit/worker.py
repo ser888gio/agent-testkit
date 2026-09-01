@@ -20,6 +20,7 @@ import threading
 import time
 import uuid
 
+from agentaudit.core import llm
 from agentaudit.core.audit import execute as execute_audit
 from agentaudit.core.config import ConfigError, HTTPSpec, TargetConfig, load_target_dict
 from agentaudit.core.discovery import discover
@@ -167,9 +168,7 @@ def _prepare_target(store: Store, job: JobRow) -> tuple[TargetConfig, Redactor, 
 
     secrets = resolve_secret(secret_ref)
     try:
-        target = load_target_dict(
-            raw_config, source=f"target '{job.target_id}'", secrets=secrets
-        )
+        target = load_target_dict(raw_config, source=f"target '{job.target_id}'", secrets=secrets)
     except (ConfigError, ValueError) as exc:
         raise PermanentJobError(str(exc)) from exc
 
@@ -238,6 +237,28 @@ def _apply_selection(job: JobRow, tests: list) -> list:
     return selected
 
 
+def _tenant_llm_config(store: Store, org_id: str) -> llm.LLMConfig | None:
+    """This org's own attacker/judge models, or None to fall back to the deployment's.
+
+    The key is read here and handed to the config object rather than exported to
+    `os.environ`: workers run jobs for several orgs concurrently, and a process
+    env var is shared by all of them.
+    """
+    rows = store.get_llm_secrets(org_id)
+    if not rows:
+        return None
+
+    def role(name: str) -> llm.RoleConfig | None:
+        row = rows.get(name)
+        if row is None:
+            return None
+        return llm.RoleConfig(
+            model=row["model"], endpoint=row["endpoint"], api_key_literal=row["api_key"]
+        )
+
+    return llm.LLMConfig(attacker=role("attacker"), judge=role("judge"))
+
+
 def execute_job(
     store: Store, job: JobRow, *, lost_lease: threading.Event | None = None
 ) -> str | None:
@@ -250,6 +271,13 @@ def execute_job(
     still saves whatever ran as a (shorter) run, same as any other partial
     evidence. `work_once` is what turns that into the job's terminal state.
     """
+    with llm.override(_tenant_llm_config(store, job.org_id)):
+        return _execute_job(store, job, lost_lease=lost_lease)
+
+
+def _execute_job(
+    store: Store, job: JobRow, *, lost_lease: threading.Event | None = None
+) -> str | None:
     if job.pack_id == DISCOVERY_PACK_ID:
         execute_discovery(store, job)
         return None
@@ -388,9 +416,7 @@ def work_once(
         log.error("job %s hit an infrastructure fault; leaving it to lease expiry", job.id)
     else:
         if store.jobs.is_cancelled(job.id):
-            store.jobs.release(
-                job.id, owner, state="failed", run_id=run_id, error=CANCELLED_ERROR
-            )
+            store.jobs.release(job.id, owner, state="failed", run_id=run_id, error=CANCELLED_ERROR)
         else:
             store.jobs.release(job.id, owner, state="done", run_id=run_id)
     finally:
