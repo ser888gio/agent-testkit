@@ -32,11 +32,30 @@ def test_compose_enables_oidc_and_binds_public_services_to_loopback():
     services = _compose()["services"]
     environment = services["agentaudit"]["environment"]
     assert environment["AGENTAUDIT_AUTH_MODE"] == "oidc"
-    assert environment["AGENTAUDIT_OIDC_AUDIENCE"] == "agentaudit-api"
-    assert environment["AGENTAUDIT_OIDC_TOKEN_URL"].startswith("http://keycloak:8080/")
+
+    for name in (
+        "AGENTAUDIT_OIDC_ISSUER",
+        "AGENTAUDIT_OIDC_JWKS_URL",
+        "AGENTAUDIT_OIDC_TOKEN_URL",
+        "AGENTAUDIT_OIDC_AUTH_URL",
+        "AGENTAUDIT_OIDC_AUDIENCE",
+        "AGENTAUDIT_OIDC_CLIENT_ID",
+        "AGENTAUDIT_OIDC_REDIRECT_URI",
+    ):
+        assert environment[name].startswith(f"${{{name}:?")
+    # Secure cookies are the default; only an explicit override relaxes them.
+    assert (
+        environment["AGENTAUDIT_SESSION_COOKIE_SECURE"] == "${AGENTAUDIT_SESSION_COOKIE_SECURE:-1}"
+    )
+    # TLS terminates at the reverse proxy, so nothing binds beyond loopback.
     assert services["agentaudit"]["ports"] == ["127.0.0.1:8000:8000"]
     assert services["keycloak"]["ports"] == ["127.0.0.1:8080:8080"]
-    assert services["agentaudit"]["depends_on"]["keycloak"]["condition"] == "service_healthy"
+    # The app no longer waits on a local IdP -- the provider is hosted. What it
+    # must still wait for is the migration job.
+    assert (
+        services["agentaudit"]["depends_on"]["migrate"]["condition"]
+        == "service_completed_successfully"
+    )
 
 
 def test_compose_requires_secrets_instead_of_shipping_defaults():
