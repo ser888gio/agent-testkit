@@ -32,11 +32,23 @@ def test_compose_enables_oidc_and_binds_public_services_to_loopback():
     services = _compose()["services"]
     environment = services["agentaudit"]["environment"]
     assert environment["AGENTAUDIT_AUTH_MODE"] == "oidc"
-    assert environment["AGENTAUDIT_OIDC_AUDIENCE"] == "agentaudit-api"
-    assert environment["AGENTAUDIT_OIDC_TOKEN_URL"].startswith("http://keycloak:8080/")
+    # The provider is chosen in infra/.env, not baked in here: the same compose file
+    # serves a hosted provider (docs/deploy-clerk.md) and the local Keycloak stack.
+    for name in (
+        "AGENTAUDIT_OIDC_ISSUER",
+        "AGENTAUDIT_OIDC_JWKS_URL",
+        "AGENTAUDIT_OIDC_TOKEN_URL",
+        "AGENTAUDIT_OIDC_AUTH_URL",
+        "AGENTAUDIT_OIDC_AUDIENCE",
+        "AGENTAUDIT_OIDC_CLIENT_ID",
+        "AGENTAUDIT_OIDC_REDIRECT_URI",
+    ):
+        assert environment[name] == f"${{{name}:?set in infra/.env}}"
     assert services["agentaudit"]["ports"] == ["127.0.0.1:8000:8000"]
     assert services["keycloak"]["ports"] == ["127.0.0.1:8080:8080"]
-    assert services["agentaudit"]["depends_on"]["keycloak"]["condition"] == "service_healthy"
+    # agentaudit must not depend on keycloak: a hosted-provider deploy starts
+    # migrate/agentaudit/worker only.
+    assert "keycloak" not in services["agentaudit"]["depends_on"]
 
 
 def test_compose_requires_secrets_instead_of_shipping_defaults():
