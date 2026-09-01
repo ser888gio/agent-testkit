@@ -233,6 +233,27 @@ def test_token_without_azp_is_401(oidc):
     _expect_401(_request(_token(azp=None)))
 
 
+def test_exchanged_token_without_azp_is_accepted(oidc):
+    """Clerk omits `azp`; the PKCE exchange binds that token to this client.
+
+    The bearer path above keeps requiring it -- there is no exchange behind a
+    bare Authorization header, so `azp` is the only binding it has.
+    """
+    principal, _claims = auth._principal_from_token(
+        _token(azp=None), auth._settings(), require_azp=False
+    )
+    assert principal.org_id == "acme"
+
+
+def test_exchanged_token_with_wrong_azp_is_still_401(oidc):
+    """Tolerating an absent `azp` must not tolerate a wrong one."""
+    with pytest.raises(HTTPException) as exc:
+        auth._principal_from_token(
+            _token(azp="some-other-client"), auth._settings(), require_azp=False
+        )
+    assert exc.value.status_code == 401
+
+
 def test_pending_organization_membership_is_403(oidc):
     """A user who has not joined an org yet carries no usable tenancy."""
     with pytest.raises(HTTPException) as exc:
@@ -252,7 +273,7 @@ def test_code_pkce_callback_creates_server_side_session(oidc, monkeypatch):
     monkeypatch.setattr(
         auth,
         "_principal_from_token",
-        lambda _token, _settings: (principal, claims),
+        lambda _token, _settings, **_kwargs: (principal, claims),
     )
 
     session_id, session_principal, next_url = auth.complete_browser_login(

@@ -40,7 +40,13 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - "python -c \"import sys,socket; s=socket.create_connection(('127.0.0.1',8000),3); s.sendall(b'GET / HTTP/1.0\r\nHost: localhost\r\nAccept: text/html\r\n\r\n'); d=s.recv(64); sys.exit(0 if b' 303 ' in d or b' 200 ' in d else 1)\""
+        - >-
+          python -c "import sys,socket;
+          req=(chr(13)+chr(10)).join(['GET / HTTP/1.0','Host: localhost','Accept: text/html','','']);
+          s=socket.create_connection(('127.0.0.1',8000),3);
+          s.sendall(req.encode());
+          d=s.recv(64);
+          sys.exit(0 if b' 303 ' in d or b' 200 ' in d else 1)"
       interval: 30s
       timeout: 5s
       retries: 3

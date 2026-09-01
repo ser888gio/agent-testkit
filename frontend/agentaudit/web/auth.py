@@ -23,7 +23,13 @@ from agentaudit.core.store import DEFAULT_ORG
 
 _LOG = logging.getLogger(__name__)
 _ALGORITHMS = ["RS256"]
-_REQUIRED_CLAIMS = ["exp", "iss", "aud", "sub", "azp"]
+# `aud` and `azp` are deliberately absent. Clerk's OAuth applications issue
+# access tokens carrying neither and expose no setting to add them, so
+# requiring either rejects every real token. Both are still *verified* when an
+# IdP does send them (see below); what binds a token to this client when they
+# are missing is the PKCE code exchange itself, which only the holder of the
+# code_verifier for this client_id can complete.
+_REQUIRED_CLAIMS = ["exp", "iss", "sub"]
 ORG_CLAIM = "org_id"
 SESSION_COOKIE = "agentaudit_session"
 LOGIN_STATE_COOKIE = "agentaudit_login_state"
@@ -162,27 +168,46 @@ def _roles(claims: dict) -> frozenset[str]:
     return frozenset(value.split(":", 1)[-1] for value in values)
 
 
-def _principal_from_token(token: str, settings: _Settings) -> tuple[Principal, dict]:
+def _principal_from_token(
+    token: str, settings: _Settings, *, require_azp: bool = True
+) -> tuple[Principal, dict]:
+    """Validate a token and derive its principal.
+
+    `require_azp` is the caller's assertion about what else binds the token to
+    this client. A bare bearer token has nothing behind it, so `azp` is the only
+    proof and stays mandatory. A token just fetched by `_exchange_code` is bound
+    by the PKCE exchange itself, so an IdP that omits `azp` (Clerk) is tolerated.
+    """
     try:
         signing_key = _client(settings.jwks_url).get_signing_key_from_jwt(token)
+        # Read-only peek to see whether the IdP sent `aud` at all. Nothing from
+        # here is trusted; the verified decode below is the only source of truth.
+        unverified = jwt.decode(token, options={"verify_signature": False})
         claims = jwt.decode(
             token,
             signing_key.key,
             algorithms=_ALGORITHMS,
             issuer=settings.issuer,
             audience=settings.audience,
-            options={"require": _REQUIRED_CLAIMS},
+            # An IdP that omits `aud` entirely (Clerk) still gets a verified
+            # audience when it does send one; only the absence is tolerated.
+            options={"require": _REQUIRED_CLAIMS, "verify_aud": "aud" in unverified},
         )
     except jwt_exceptions.PyJWKClientConnectionError as exc:
         _LOG.warning("OIDC JWKS endpoint is unavailable")
         raise HTTPException(status_code=503, detail=_IDP_UNAVAILABLE) from exc
     except (jwt_exceptions.PyJWKClientError, jwt_exceptions.PyJWTError) as exc:
+        # Signature, issuer, audience and required-claim failures all land here
+        # and are otherwise indistinguishable from the opaque 401 below.
+        _LOG.warning("OIDC token validation failed: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN) from exc
 
-    # Authorized party: the token must have been minted for this client. This is
-    # what stops a token issued to a different application on the same IdP
-    # instance from being replayed here.
-    if claims.get("azp") != settings.client_id:
+    # Authorized party: when the IdP sends `azp` it must name this client, which
+    # stops a token issued to a different application on the same IdP instance
+    # from being replayed here. An IdP that omits it (Clerk) leaves that job to
+    # the PKCE exchange in `_exchange_code`; a *wrong* azp is still refused.
+    if (require_azp or "azp" in claims) and claims.get("azp") != settings.client_id:
+        _LOG.warning("OIDC azp mismatch: token azp=%r", claims.get("azp"))
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
     # A user who has not yet joined an organization gets `sts: pending`. Such a
     # token carries no usable tenancy, so it is refused rather than defaulted.
@@ -192,6 +217,9 @@ def _principal_from_token(token: str, settings: _Settings) -> tuple[Principal, d
     subject = claims.get("sub")
     email = claims.get("email", "")
     if not isinstance(org_id, str) or not org_id.strip():
+        _LOG.warning(
+            "OIDC token carries no usable %s; claims present: %s", ORG_CLAIM, sorted(claims)
+        )
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
     if not isinstance(subject, str) or not subject.strip():
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
@@ -300,7 +328,7 @@ def begin_browser_login(next_url: str | None) -> tuple[str, str]:
             "response_type": "code",
             "client_id": settings.client_id,
             "redirect_uri": settings.redirect_uri,
-            "scope": "openid profile email org",
+            "scope": "openid profile email user:org:read",
             "state": state,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
@@ -322,13 +350,22 @@ def _exchange_code(settings: _Settings, code: str, verifier: str) -> dict:
     token_request = urlrequest.Request(
         settings.token_url,
         data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        # Clerk fronts its token endpoint with Cloudflare, which 403s urllib's
+        # default agent (error 1010). Identify the app instead of the runtime.
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "agentaudit",
+        },
         method="POST",
     )
     try:
         with urlrequest.urlopen(token_request, timeout=10) as response:  # noqa: S310
             token_response = json.loads(response.read())
     except error.HTTPError as exc:
+        # The IdP's error code is the only thing that distinguishes a replayed
+        # code from a redirect_uri or client mismatch; without it the 401 below
+        # is undiagnosable. The body is an OAuth error object, not user data.
+        _LOG.warning("OIDC token exchange rejected: %s %s", exc.code, exc.read()[:300])
         raise HTTPException(status_code=401, detail="authorization code rejected") from exc
     except (error.URLError, TimeoutError) as exc:
         _LOG.warning("OIDC token endpoint is unavailable")
@@ -361,7 +398,7 @@ def complete_browser_login(
     access_token = token_response.get("access_token")
     if not isinstance(access_token, str) or not access_token:
         raise HTTPException(status_code=503, detail="identity provider returned no access token")
-    principal, claims = _principal_from_token(access_token, settings)
+    principal, claims = _principal_from_token(access_token, settings, require_azp=False)
     csrf_token = secrets.token_urlsafe(32)
     principal = replace(principal, auth_method="session", csrf_token=csrf_token)
     session_id = secrets.token_urlsafe(48)

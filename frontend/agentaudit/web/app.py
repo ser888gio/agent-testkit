@@ -118,13 +118,19 @@ def login(next: str | None = None) -> RedirectResponse:  # noqa: A002
     destination, state = begin_browser_login(next)
     response = RedirectResponse(destination, status_code=302)
     if state:
+        # The IdP returns the browser here with a cross-site 303, and Chrome
+        # withholds a `lax` cookie on that navigation where Firefox sends it --
+        # the callback then sees no state and 401s. `none` is what survives the
+        # round trip, and browsers only accept it on a Secure cookie, so plain
+        # -http loopback dev keeps `lax` (same-site there, so it still arrives).
+        secure = cookie_secure()
         response.set_cookie(
             LOGIN_STATE_COOKIE,
             state,
             max_age=300,
             httponly=True,
-            secure=cookie_secure(),
-            samesite="lax",
+            secure=secure,
+            samesite="none" if secure else "lax",
         )
     return response
 
