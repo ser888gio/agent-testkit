@@ -61,6 +61,7 @@ class _Settings:
     redirect_uri: str
     token_endpoint: str
     authorization_endpoint: str
+    userinfo_endpoint: str
 
     @property
     def authorization_url(self) -> str:
@@ -123,7 +124,10 @@ def _settings() -> _Settings | None:
     authorization_endpoint = os.environ.get("AGENTAUDIT_OIDC_AUTH_URL", "").strip()
     if not authorization_endpoint:
         authorization_endpoint = f"{issuer}/protocol/openid-connect/auth"
-    return _Settings(*values, token_endpoint, authorization_endpoint)
+    userinfo_endpoint = os.environ.get("AGENTAUDIT_OIDC_USERINFO_URL", "").strip()
+    if not userinfo_endpoint:
+        userinfo_endpoint = f"{issuer}/oauth/userinfo"
+    return _Settings(*values, token_endpoint, authorization_endpoint, userinfo_endpoint)
 
 
 _jwks_client: PyJWKClient | None = None
@@ -169,7 +173,11 @@ def _roles(claims: dict) -> frozenset[str]:
 
 
 def _principal_from_token(
-    token: str, settings: _Settings, *, require_azp: bool = True
+    token: str,
+    settings: _Settings,
+    *,
+    require_azp: bool = True,
+    identity: dict | None = None,
 ) -> tuple[Principal, dict]:
     """Validate a token and derive its principal.
 
@@ -177,6 +185,12 @@ def _principal_from_token(
     this client. A bare bearer token has nothing behind it, so `azp` is the only
     proof and stays mandatory. A token just fetched by `_exchange_code` is bound
     by the PKCE exchange itself, so an IdP that omits `azp` (Clerk) is tolerated.
+
+    `identity` supplies org/role/email when the token itself cannot carry them.
+    Clerk's OAuth access tokens hold only `client_id, exp, iat, iss, jti, nbf,
+    scope, sub` -- no JWT template applies to them, so the browser-login path
+    reads those claims from the userinfo endpoint instead. The token is still
+    what is *verified*; `identity` only names the user it already authenticated.
     """
     try:
         signing_key = _client(settings.jwks_url).get_signing_key_from_jwt(token)
@@ -209,23 +223,39 @@ def _principal_from_token(
     if (require_azp or "azp" in claims) and claims.get("azp") != settings.client_id:
         _LOG.warning("OIDC azp mismatch: token azp=%r", claims.get("azp"))
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
-    # A user who has not yet joined an organization gets `sts: pending`. Such a
-    # token carries no usable tenancy, so it is refused rather than defaulted.
-    if claims.get("sts") == "pending":
-        raise HTTPException(status_code=403, detail="organization membership required")
-    org_id = claims.get(ORG_CLAIM)
+    source = claims if identity is None else identity
     subject = claims.get("sub")
-    email = claims.get("email", "")
-    if not isinstance(org_id, str) or not org_id.strip():
-        _LOG.warning(
-            "OIDC token carries no usable %s; claims present: %s", ORG_CLAIM, sorted(claims)
-        )
-        raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
+    email = source.get("email", "")
     if not isinstance(subject, str) or not subject.strip():
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
     if not isinstance(email, str):
         raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
-    roles = _roles(claims)
+
+    # Clerk marks a user whose org membership has not been accepted yet. That
+    # is a distinct, diagnosable state, so it is refused ahead of the
+    # private-tenant fallback rather than being silently absorbed by it.
+    if source.get("sts") == "pending":
+        raise HTTPException(status_code=403, detail="organization membership required")
+
+    org_id = source.get(ORG_CLAIM)
+    roles = _roles(source)
+    if not isinstance(org_id, str) or not org_id.strip():
+        # No IdP-supplied tenancy. A browser login is still bound to one real
+        # user by the PKCE exchange, so it gets a private tenant keyed on that
+        # user's stable `sub` -- every store query is already scoped by org_id,
+        # so this isolates the user's runs from everyone else's with no further
+        # filtering. A bare bearer token (`identity is None`) has no such
+        # binding and is still refused: handing it a tenant would let any
+        # token issued by this IdP quietly mint its own workspace.
+        if identity is None:
+            _LOG.warning(
+                "OIDC token carries no usable %s; claims present: %s", ORG_CLAIM, sorted(claims)
+            )
+            raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
+        org_id = f"user:{subject.strip()}"
+        # Sole occupant of a tenant nobody else can reach, so admin over it.
+        roles = roles or frozenset({"admin"})
+
     if roles.isdisjoint({"admin", "viewer"}):
         raise HTTPException(status_code=403, detail="application role required")
 
@@ -379,6 +409,36 @@ def _exchange_code(settings: _Settings, code: str, verifier: str) -> dict:
     return token_response
 
 
+def _userinfo(settings: _Settings, access_token: str) -> dict:
+    """Fetch the identity claims Clerk's OAuth access token cannot carry.
+
+    Returns the raw userinfo object; `_principal_from_token` applies the same
+    shape checks to it that it applies to token claims, so a malformed or
+    partial response fails closed there rather than here.
+    """
+    userinfo_request = urlrequest.Request(
+        settings.userinfo_endpoint,
+        headers={"Authorization": f"Bearer {access_token}", "User-Agent": "agentaudit"},
+        method="GET",
+    )
+    try:
+        with urlrequest.urlopen(userinfo_request, timeout=10) as response:  # noqa: S310
+            userinfo = json.loads(response.read())
+    except error.HTTPError as exc:
+        _LOG.warning("OIDC userinfo rejected: %s %s", exc.code, exc.read()[:300])
+        raise HTTPException(status_code=401, detail=_INVALID_TOKEN) from exc
+    except (error.URLError, TimeoutError) as exc:
+        _LOG.warning("OIDC userinfo endpoint is unavailable")
+        raise HTTPException(status_code=503, detail=_IDP_UNAVAILABLE) from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        _LOG.warning("OIDC userinfo endpoint returned an invalid response")
+        raise HTTPException(status_code=503, detail=_IDP_UNAVAILABLE) from exc
+    if not isinstance(userinfo, dict):
+        _LOG.warning("OIDC userinfo endpoint returned a non-object response")
+        raise HTTPException(status_code=503, detail=_IDP_UNAVAILABLE)
+    return userinfo
+
+
 def complete_browser_login(
     code: str,
     state: str,
@@ -398,7 +458,9 @@ def complete_browser_login(
     access_token = token_response.get("access_token")
     if not isinstance(access_token, str) or not access_token:
         raise HTTPException(status_code=503, detail="identity provider returned no access token")
-    principal, claims = _principal_from_token(access_token, settings, require_azp=False)
+    principal, claims = _principal_from_token(
+        access_token, settings, require_azp=False, identity=_userinfo(settings, access_token)
+    )
     csrf_token = secrets.token_urlsafe(32)
     principal = replace(principal, auth_method="session", csrf_token=csrf_token)
     session_id = secrets.token_urlsafe(48)

@@ -31,24 +31,28 @@ defaulting it would merge tenants. Clerk marks a user who has not yet joined an
 organization with `sts: "pending"`; those tokens are refused for the same
 reason.
 
-### JWT template
+### Where the org claims come from
 
-This is where most first deploys fail. The template must emit both claims:
+**Not from a JWT template.** Templates apply to Clerk *session* tokens
+(`getToken({template})`); this deployment uses the OAuth authorization-code
+flow, whose access token carries a fixed claim set and nothing else:
 
-```json
-{
-  "org_id": "{{org.id}}",
-  "roles": "{{org.role}}"
-}
+```
+client_id, exp, iat, iss, jti, nbf, scope, sub
 ```
 
-`{{org.role}}` interpolates to a single string such as `org:admin`, not a list.
-`auth.py:_roles` accepts either shape and strips the `org:` prefix, so this is
-correct as written. A role that is neither `admin` nor `viewer` after stripping
-yields a 403.
+No template, scope, or dashboard setting adds `org_id` to that. So
+`complete_browser_login` fetches identity from the **userinfo endpoint**
+(`_userinfo` in `auth.py`) and passes it to `_principal_from_token` as
+`identity`. The access token is still what gets signature-verified; userinfo
+only names the user it already authenticated.
 
-Set the template's audience to the same value you put in
-`AGENTAUDIT_OIDC_AUDIENCE`.
+`AGENTAUDIT_OIDC_USERINFO_URL` overrides the endpoint; it defaults to
+`<issuer>/oauth/userinfo`.
+
+The role may arrive as a single string such as `org:admin` rather than a list.
+`auth.py:_roles` accepts either shape and strips the `org:` prefix. A role that
+is neither `admin` nor `viewer` after stripping yields a 403.
 
 ### Endpoints
 
