@@ -44,7 +44,10 @@ Anthropic behind a proxy -- works against the client that is already here.
 
 from __future__ import annotations
 
+import contextlib
 import os
+from collections.abc import Iterator
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -70,17 +73,26 @@ class RoleConfig(BaseModel):
     model: str
     endpoint: str = DEFAULT_ENDPOINT
     api_key_ref: str | None = None
+    api_key_literal: str | None = None
+    """A key supplied by the tenant through the settings UI, held in the DB.
+
+    Only `worker.py:_tenant_llm_config` sets this. A config *file* still may not
+    carry a literal -- `load_llm_dict` refuses one -- because a file is meant to
+    be committable, which the account setting behind this field is not.
+    """
     timeout_s: float = 30.0
     temperature: float | None = None
 
     def api_key(self) -> str | None:
-        """Resolve `api_key_ref` from the process environment.
+        """The tenant's own key if there is one, else `api_key_ref` from the environment.
 
         Returns None rather than raising when the variable is unset: an
         unauthenticated local endpoint (Ollama, vLLM) is a legitimate setup, and
         a wrong-or-missing key surfaces as `AttackerUnavailable` at call time,
         which every caller already falls back from.
         """
+        if self.api_key_literal:
+            return self.api_key_literal
         name = _env_name(self.api_key_ref)
         return os.environ.get(name) if name else None
 
@@ -124,6 +136,12 @@ def load_llm_dict(raw: Any, source: str = "<dict>") -> LLMConfig:
     for role, section in raw.items():
         if not isinstance(section, dict):
             continue
+        if "api_key_literal" in section:
+            raise LLMConfigError(
+                f"llm config at {source} sets {role}.api_key_literal; that field exists only "
+                "for a key a tenant supplied through the settings UI. Use api_key_ref: "
+                "env://YOUR_VAR in a file."
+            )
         for key, value in section.items():
             if isinstance(value, str) and credentials.looks_like_secret(value):
                 raise LLMConfigError(
@@ -141,6 +159,24 @@ def load_llm_dict(raw: Any, source: str = "<dict>") -> LLMConfig:
         if role is not None:
             _env_name(role.api_key_ref)
     return config
+
+
+# Set for the duration of one job by `worker.py`, so a tenant's own model
+# configuration reaches `build_attacker`/`build_judge` -- which are called deep
+# inside the runner and take no config argument. A ContextVar rather than a
+# module global because workers run jobs for different orgs concurrently in
+# threads, and a global would leak one tenant's key into another's run.
+_override: ContextVar[LLMConfig | None] = ContextVar("agentaudit_llm_override", default=None)
+
+
+@contextlib.contextmanager
+def override(config: LLMConfig | None) -> Iterator[None]:
+    """Make `load_llm_config()` return `config` inside this block."""
+    token = _override.set(config)
+    try:
+        yield
+    finally:
+        _override.reset(token)
 
 
 def config_path() -> Path | None:
@@ -163,6 +199,10 @@ def load_llm_config(path: str | Path | None = None) -> LLMConfig:
     missing file is not an error. The env-var path stays supported because it is
     what every existing deployment, CI job and docstring in this repo uses.
     """
+    if path is None:
+        active = _override.get()
+        if active is not None:
+            return active
     resolved = Path(path) if path is not None else config_path()
     if resolved is None:
         return _from_env()

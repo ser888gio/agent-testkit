@@ -138,6 +138,16 @@ CREATE TABLE IF NOT EXISTS jobs (
     timeout_seconds INTEGER,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
+CREATE TABLE IF NOT EXISTS llm_settings (
+    org_id TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('attacker', 'judge')),
+    endpoint TEXT NOT NULL,
+    model TEXT NOT NULL,
+    api_key TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (org_id, role),
+    FOREIGN KEY (org_id) REFERENCES orgs(id)
+);
 CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT NOT NULL,
     org_id TEXT NOT NULL,
@@ -544,9 +554,7 @@ class JobQueue:
         so a long run cannot grow this row without bound.
         """
         with self._store._connection() as conn, conn:
-            row = conn.execute(
-                "SELECT progress_json FROM jobs WHERE id = ?", (job_id,)
-            ).fetchone()
+            row = conn.execute("SELECT progress_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
             if row is None:
                 return
             recent = json.loads(row["progress_json"]) if row["progress_json"] else []
@@ -821,6 +829,65 @@ class Store:
         with self._connection() as conn, conn:
             cursor = conn.execute(
                 "DELETE FROM targets WHERE org_id = ? AND id = ?", (org_id, target_id)
+            )
+        return cursor.rowcount == 1
+
+    def save_llm_settings(
+        self, org_id: str, role: str, endpoint: str, model: str, api_key: str | None
+    ) -> None:
+        """Store one tenant's own model for a role. `api_key=None` keeps the stored key.
+
+        This is the one place a credential literal is persisted, and it is
+        deliberate: a tenant supplying their own key has nowhere else to put it
+        -- `save_target` refuses literals because a *target* config is partner
+        input, while this row is the operator's own account setting. It is never
+        returned by any read; `get_llm_settings` reports only whether it is set.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as conn, conn:
+            self._ensure_org(conn, org_id, now)
+            conn.execute(
+                """
+                INSERT INTO llm_settings (org_id, role, endpoint, model, api_key, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(org_id, role) DO UPDATE SET
+                    endpoint = excluded.endpoint,
+                    model = excluded.model,
+                    api_key = COALESCE(excluded.api_key, llm_settings.api_key),
+                    updated_at = excluded.updated_at
+                """,
+                (org_id, role, endpoint, model, api_key, now),
+            )
+
+    def get_llm_settings(self, org_id: str) -> dict[str, dict]:
+        """Each configured role as {endpoint, model, api_key_set}. Never the key."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT role, endpoint, model, api_key FROM llm_settings WHERE org_id = ?",
+                (org_id,),
+            ).fetchall()
+        return {
+            row["role"]: {
+                "endpoint": row["endpoint"],
+                "model": row["model"],
+                "api_key_set": bool(row["api_key"]),
+            }
+            for row in rows
+        }
+
+    def get_llm_secrets(self, org_id: str) -> dict[str, dict]:
+        """Same rows including the key. Worker-side only; never served over HTTP."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT role, endpoint, model, api_key FROM llm_settings WHERE org_id = ?",
+                (org_id,),
+            ).fetchall()
+        return {row["role"]: dict(row) for row in rows}
+
+    def delete_llm_settings(self, org_id: str, role: str) -> bool:
+        with self._connection() as conn, conn:
+            cursor = conn.execute(
+                "DELETE FROM llm_settings WHERE org_id = ? AND role = ?", (org_id, role)
             )
         return cursor.rowcount == 1
 

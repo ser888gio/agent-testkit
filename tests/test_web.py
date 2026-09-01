@@ -261,7 +261,7 @@ def test_unknown_test_404(tmp_path, monkeypatch):
 # --- settings ----------------------------------------------------------------
 
 
-def test_settings_api_shows_safe_runtime_config(tmp_path, monkeypatch):
+def test_settings_api_returns_no_llm_config_by_default(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     client = _client(db, monkeypatch)
@@ -269,24 +269,63 @@ def test_settings_api_shows_safe_runtime_config(tmp_path, monkeypatch):
     resp = client.get("/api/settings")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["settings"]["db_path"] == db
+    assert body["llm"] == {}
+    assert body["default_endpoint"].startswith("https://")
+    # nothing about the deployment's own environment leaks through this view
     assert "AGENTAUDIT_OIDC" not in json.dumps(body)
 
 
-def test_settings_api_shows_redaction_egress_and_access(tmp_path, monkeypatch):
+def test_settings_api_saves_llm_role_and_never_returns_the_key(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.put(
+        "/api/settings/llm",
+        json={
+            "attacker": {
+                "endpoint": "https://api.openai.com/v1/chat/completions",
+                "model": "gpt-4o-mini",
+                "api_key": "sk-secret-value",
+            },
+            "judge": None,
+        },
+    )
+    assert resp.status_code == 200
+
+    body = client.get("/api/settings").json()
+    assert body["llm"]["attacker"]["model"] == "gpt-4o-mini"
+    assert body["llm"]["attacker"]["api_key_set"] is True
+    assert "judge" not in body["llm"]
+    assert "sk-secret-value" not in json.dumps(body)
+
+
+def test_settings_api_keeps_stored_key_when_none_is_sent(tmp_path, monkeypatch):
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+    role = {"endpoint": "https://api.openai.com/v1/chat/completions", "model": "m"}
+
+    client.put("/api/settings/llm", json={"attacker": {**role, "api_key": "sk-keep-me"}})
+    # a second save that only renames the model must not wipe the key
+    client.put("/api/settings/llm", json={"attacker": {**role, "model": "m2"}})
+
+    body = client.get("/api/settings").json()
+    assert body["llm"]["attacker"]["model"] == "m2"
+    assert body["llm"]["attacker"]["api_key_set"] is True
+
+
+def test_settings_api_rejects_a_non_https_llm_endpoint(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")
     _seed_store(db)
     monkeypatch.delenv("AGENTAUDIT_EGRESS_ALLOW_LOCAL", raising=False)
     client = _client(db, monkeypatch)
 
-    body = client.get("/api/settings").json()
-
-    # built-in masks are compliance evidence: list them, name the mask format
-    assert "api_key" in body["settings"]["redaction_patterns"]
-    assert body["settings"]["egress_allow_local"] is False
-    # the acting principal (dev principal outside OIDC)
-    assert body["principal"]["email"] == "dev@localhost"
-    assert body["principal"]["roles"] == ["admin", "viewer"]
+    resp = client.put(
+        "/api/settings/llm",
+        json={"attacker": {"endpoint": "http://evil.example/v1", "model": "m"}},
+    )
+    assert resp.status_code == 400
 
 
 # --- test library ------------------------------------------------------------

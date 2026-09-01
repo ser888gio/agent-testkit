@@ -43,7 +43,6 @@ from agentaudit.core.evolve import (
 from agentaudit.core.findings import order_by_failure
 from agentaudit.core.loader import LoaderError, discover
 from agentaudit.core.profile import AgentProfile
-from agentaudit.core.redaction import builtin_pattern_names
 from agentaudit.core.regressions import compare
 from agentaudit.core.schema import Category, Risk, TestCase
 from agentaudit.core.store import DISCOVERY_PACK_ID
@@ -60,8 +59,6 @@ from agentaudit.web.runtime import (
     PACKAGE_DIR,
     USER_PACK_ID,
     get_artifacts_dir,
-    get_db_path,
-    get_packs_dir,
     get_store,
     import_first_party,
     import_pack,
@@ -916,32 +913,59 @@ def reject_test(body: TestIdBody, principal: Principal = Depends(require_admin))
 # Settings
 
 
+class LLMRoleBody(BaseModel):
+    """One role's model. `api_key` omitted keeps whatever key is already stored."""
+
+    endpoint: str = Field(min_length=1, max_length=2048)
+    model: str = Field(min_length=1, max_length=200)
+    api_key: str | None = Field(default=None, max_length=4096)
+
+
+class LLMSettingsBody(BaseModel):
+    attacker: LLMRoleBody | None = None
+    judge: LLMRoleBody | None = None
+
+
 @router.get("/settings")
 def settings_info(principal: Principal = Depends(current_principal)) -> dict:
-    auth_state = (
-        f"OIDC ({os.environ['AGENTAUDIT_OIDC_ISSUER']})"
-        if auth_enabled()
-        else "Local development principal (single-tenant, loopback only)"
-    )
+    """The tenant's own model configuration, plus the deployment default it falls back to.
+
+    Keys are never returned -- only whether one is stored -- for the same reason
+    `llm.describe` never returned one.
+    """
     return {
-        "settings": {
-            "db_path": get_db_path(),
-            "package_dir": str(PACKAGE_DIR),
-            "config_dir": str(PACKAGE_DIR / "config"),
-            "packs_dir": str(get_packs_dir()),
-            "auth_state": auth_state,
-            "redaction_patterns": builtin_pattern_names(),
-            "egress_allow_local": os.environ.get("AGENTAUDIT_EGRESS_ALLOW_LOCAL") == "1",
-            "llm": llm.describe(),
-        },
-        "principal": {
-            "org_id": principal.org_id,
-            "subject": principal.subject,
-            "email": principal.email,
-            "roles": sorted(principal.roles),
-            "auth_method": principal.auth_method,
-        },
+        "llm": get_store().get_llm_settings(principal.org_id),
+        "fallback": llm.describe(),
+        "default_endpoint": llm.DEFAULT_ENDPOINT,
     }
+
+
+@router.put("/settings/llm")
+def save_llm_settings(
+    body: LLMSettingsBody, principal: Principal = Depends(require_admin)
+) -> dict:
+    """Replace this org's model configuration. A null role clears it."""
+    store = get_store()
+    for role, spec in (("attacker", body.attacker), ("judge", body.judge)):
+        if spec is None:
+            store.delete_llm_settings(principal.org_id, role)
+            continue
+        # Scheme-only, deliberately: this is the operator's own model host, not a
+        # partner-supplied target, so it has no allowlist to sit inside and the
+        # DNS-pinning that `validate_endpoint` does belongs at dial time. https
+        # is still required -- the key travels in that request.
+        parts = urlsplit(spec.endpoint)
+        allow_http = os.environ.get("AGENTAUDIT_EGRESS_ALLOW_LOCAL") == "1"
+        if parts.scheme not in ("https", *(("http",) if allow_http else ())):
+            raise HTTPException(status_code=400, detail=f"{role} endpoint must use https")
+        if not parts.hostname or parts.username or parts.password:
+            raise HTTPException(
+                status_code=400, detail=f"{role} endpoint must be a URL without credentials"
+            )
+        store.save_llm_settings(
+            principal.org_id, role, spec.endpoint, spec.model, spec.api_key or None
+        )
+    return {"llm": store.get_llm_settings(principal.org_id)}
 
 
 # ---------------------------------------------------------------------------
