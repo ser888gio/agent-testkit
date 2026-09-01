@@ -56,6 +56,12 @@ def test_compose_enables_oidc_and_binds_public_services_to_loopback():
         services["agentaudit"]["depends_on"]["migrate"]["condition"]
         == "service_completed_successfully"
     )
+        assert environment[name] == f"${{{name}:?set in infra/.env}}"
+    assert services["agentaudit"]["ports"] == ["127.0.0.1:8000:8000"]
+    assert services["keycloak"]["ports"] == ["127.0.0.1:8080:8080"]
+    # agentaudit must not depend on keycloak: a hosted-provider deploy starts
+    # migrate/agentaudit/worker only.
+    assert "keycloak" not in services["agentaudit"]["depends_on"]
 
 
 def test_compose_requires_secrets_instead_of_shipping_defaults():

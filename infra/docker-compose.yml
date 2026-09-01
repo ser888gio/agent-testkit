@@ -33,6 +33,7 @@ services:
       AGENTAUDIT_OIDC_CLIENT_ID: ${AGENTAUDIT_OIDC_CLIENT_ID:?set in infra/.env}
       AGENTAUDIT_OIDC_REDIRECT_URI: ${AGENTAUDIT_OIDC_REDIRECT_URI:?set in infra/.env}
       AGENTAUDIT_SESSION_COOKIE_SECURE: ${AGENTAUDIT_SESSION_COOKIE_SECURE:-1}
+      AGENTAUDIT_DEMO_MODE: ${AGENTAUDIT_DEMO_MODE:-0}
     volumes:
       # Persist the sqlite run store across container restarts.
       - agentaudit-data:/data

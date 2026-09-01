@@ -31,6 +31,22 @@ a second way to touch the database.
 - Migrations are forward-only in production — applied at deploy time by explicit command,
   never implicitly on app startup, so two replicas booting together can't race.
 
+## Identity-provider services
+
+A deployment on a hosted provider (Clerk) needs neither `keycloak` nor
+`keycloak-db`, and on a small VPS a JVM plus Postgres is real memory. Such a
+deploy names its services: `up -d migrate agentaudit worker`.
+
+Compose profiles do **not** help here, and neither does an override file:
+interpolation runs at parse time across every service, before profile selection
+and before overlay merging, so `${KEYCLOAK_ADMIN_PASSWORD:?...}` fires even for
+a container that will never start. Both were tried and reverted. The five
+`KEYCLOAK_*`/demo-secret variables therefore keep their `:?` form — the guard
+against shipping a default secret is worth more than the ergonomics, and it is
+pinned by `tests/test_phase2_infra.py::test_compose_requires_secrets_instead_of_shipping_defaults`.
+`infra/.env.example` satisfies the parse with visibly-unused placeholders and
+says so; real values are required only when Keycloak actually runs.
+
 ## Egress policy (T15)
 
 Worker-side environment, deployment-owned. Never derived from target config.
@@ -75,7 +91,9 @@ boundary rather than a deployment convenience.
 - **Link-local / cloud metadata (`169.254.169.254`) is not blocked by compose.**
   No network driver blocks it portably. `core/egress.py` rejects it at the app
   layer; an OS-level guarantee requires a host firewall rule on the deployment
-  host. This is deployment-operator responsibility.
+  host. This is deployment-operator responsibility — the rule belongs in the
+  `DOCKER-USER` chain, since Docker's own rules run before `INPUT`. See
+  [`../docs/deploy-clerk.md`](../docs/deploy-clerk.md) for a worked example.
 - **An agent can still reach `isolation.py`'s module globals** via
   `sandbox.__class__` on the RPC proxy. Python resolves class-level dunders
   without calling `__getattr__`, so no guard there can intercept it; the proxy
