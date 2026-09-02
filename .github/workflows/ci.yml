@@ -147,10 +147,13 @@ jobs:
         run: npm run build
         working-directory: website
 
+  # complexity is intentionally not gating: the pinned action passes -j to a
+  # complexipy that no longer accepts it, so the job dies on arg parsing
+  # before reading any code. It still runs for visibility.
   required:
     name: Required
     if: ${{ always() }}
-    needs: [tests, lint, complexity, package, docs]
+    needs: [tests, lint, package, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -159,12 +162,10 @@ jobs:
         env:
           TESTS_RESULT: ${{ needs.tests.result }}
           LINT_RESULT: ${{ needs.lint.result }}
-          COMPLEXITY_RESULT: ${{ needs.complexity.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
         run: |
           test "$TESTS_RESULT" = "success"
           test "$LINT_RESULT" = "success"
-          test "$COMPLEXITY_RESULT" = "success"
           test "$PACKAGE_RESULT" = "success"
           test "$DOCS_RESULT" = "success"
