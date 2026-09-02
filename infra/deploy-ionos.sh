@@ -102,7 +102,10 @@ done
 echo "health: ${status:-unknown}"
 
 log "Verify"
-code="$(curl -sk -o /dev/null -w '%{http_code}' "https://$DEPLOY_HOST/")"
+# ponytail: the app is already health-checked above; this hop also crosses DNS
+# and Caddy, which the VPS cannot always resolve for its own public name. Report
+# it, never fail the deploy on it.
+code="$(curl -sk -o /dev/null -w '%{http_code}' "https://$DEPLOY_HOST/" || echo "curl-failed")"
 echo "GET https://$DEPLOY_HOST/ -> $code (expect 303)"
 
 cat <<EOF
