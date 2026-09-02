@@ -168,3 +168,30 @@ jobs:
           test "$COMPLEXITY_RESULT" = "success"
           test "$PACKAGE_RESULT" = "success"
           test "$DOCS_RESULT" = "success"
+
+  deploy:
+    name: Deploy to VPS
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+    needs: required
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+
+    steps:
+      # deploy-ionos.sh is idempotent and rebuilds the image from the pulled
+      # source, so pull + re-run is the whole update path.
+      - name: Pull and redeploy over SSH
+        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 20m
+          script: |
+            cd /srv/agent-testkit
+            git fetch --prune origin
+            git reset --hard origin/main
+            DEPLOY_HOST='${{ secrets.DEPLOY_HOST }}' bash infra/deploy-ionos.sh
