@@ -32,8 +32,9 @@ extend:
 1. **Endpoint-only** — the customer exposes a single HTTP endpoint
    (`POST /run {"input": ...} -> {"text": ...}`). agentaudit's `HTTPAgent` calls it exactly
    like any other API consumer would. No prompts, tools, orchestration, or source are ever
-   shared. This is the mode `docs/specs/http-verify.md` proves is behaviorally identical to
-   the in-process path.
+   shared. This is the mode `tests/test_http_agent.py`
+   (`test_http_and_callable_agent_produce_identical_text`) proves is behaviorally
+   identical to the in-process path.
 2. **Managed sandbox** — agentaudit also owns the fake tools/services (`FakeBank`,
    `FakeInbox`, ...) that the customer's agent is wired to *for the test run only*, so
    action-safety assertions (`no_payment_created`, `no_external_forward`, ...) can observe

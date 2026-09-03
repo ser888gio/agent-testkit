@@ -39,7 +39,7 @@ Every spec follows the same shape:
 | 2 | `feat/redaction` | [redaction.md](redaction.md) |
 | 3 | `feat/config` | [config.md](config.md) |
 | 4 | `feat/agent-adapter` | [agent-adapter.md](agent-adapter.md) |
-| 5 | `feat/http-verify` | [http-verify.md](http-verify.md) |
+| 5 | `feat/http-verify` | _(spec removed; covered by `tests/test_http_agent.py`)_ |
 | 6 | `feat/sandbox-core` | [sandbox-core.md](sandbox-core.md) |
 | 7 | `feat/sandbox-treasury` | [sandbox-treasury.md](sandbox-treasury.md) |
 | 8 | `feat/sandbox-email` | [sandbox-email.md](sandbox-email.md) |
