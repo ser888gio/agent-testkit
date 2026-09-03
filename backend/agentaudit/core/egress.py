@@ -41,7 +41,12 @@ def default_resolver(host: str, port: int) -> list[str]:
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror as exc:
-        raise EgressError(f"cannot resolve host '{host}': {exc}") from exc
+        raise EgressError(
+            f"cannot resolve host '{host}': {exc}. This is a DNS lookup failure, "
+            "not an allowlist rejection -- the host is either misspelled, was "
+            "renamed, or no longer exists. Check the target's registered "
+            "endpoint and re-register it with the current hostname if needed."
+        ) from exc
     return [info[4][0] for info in infos]
 
 
@@ -136,7 +141,12 @@ def validate_endpoint(
 
     host = normalize_host(parts.hostname)
     if host not in policy.allowed_hosts:
-        raise EgressError(f"host '{host}' is not in the target's allowlist")
+        raise EgressError(
+            f"host '{host}' is not in the target's allowlist. The target's "
+            "registered endpoint doesn't match the host this run tried to call "
+            "-- re-register the target with the correct endpoint, or fix the "
+            "config if the hostname was typed wrong."
+        )
 
     try:
         port = parts.port or (443 if parts.scheme == "https" else 80)
