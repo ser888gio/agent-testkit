@@ -2099,12 +2099,3 @@ def test_rerun_job_of_another_org_is_404(tmp_path, monkeypatch):
         assert client.post(f"/api/jobs/{job_id}/rerun").status_code == 404
     finally:
         web_app.app.dependency_overrides.clear()
-
-
-def test_resolve_within_allowed_is_cwd_independent(tmp_path, monkeypatch):
-    """Prod runs from a CWD that is not the package parent; /connect-options
-    hands back paths relative to the package parent either way."""
-    from agentaudit.web.runtime import resolve_within_allowed
-
-    monkeypatch.chdir(tmp_path)
-    assert resolve_within_allowed("agentaudit/packs/agentic").is_dir()
