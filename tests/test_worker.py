@@ -6,6 +6,8 @@ import pytest
 
 import agentaudit.core.audit as audit_module
 import agentaudit.worker as worker
+from agentaudit.core.discovery import ShapeUnknown
+from agentaudit.core.profile import AgentProfile
 from agentaudit.core.store import JobQueue, Store
 from agentaudit.worker import JobCancelled, PermanentJobError, execute_job, main, work_once
 
@@ -865,3 +867,63 @@ def test_discovery_fails_permanently_when_no_shape_gets_the_prompt_through(tmp_p
     assert job.state == "failed"
     assert "did not answer" in (job.error or "")
     assert store.get_target_profile("org-a", "shape-target") is None
+
+
+def _shape_run_store(tmp_path, monkeypatch, result, name="shape-run.db"):
+    """A registered HTTP target with a run job queued against it."""
+    _stub_shape(monkeypatch, result)
+    store = Store(str(tmp_path / name))
+    store.save_target(
+        "org-a",
+        "shape-target",
+        "Shape Target",
+        _HTTP_TARGET_CONFIG,
+        allowed_hosts=["agent.example"],
+    )
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST])
+    job_id = store.jobs.enqueue("org-a", "shape-target", "pack-1")
+    return store, job_id
+
+
+def test_run_against_an_unprofiled_target_confirms_the_request_shape(tmp_path, monkeypatch):
+    """register -> run must not score a reply to a prompt that never arrived.
+
+    The shape intake wrote is a guess. Nothing gates enqueue on discovery, so
+    the run path confirms it itself the first time.
+    """
+    store, _ = _shape_run_store(
+        tmp_path, monkeypatch, ({"json": {"prompt": "{{ input }}"}}, "$.completion")
+    )
+
+    work_once(store, "w1")
+
+    agent = store.get_target("org-a", "shape-target")["agent"]
+    assert agent["request"] == {"json": {"prompt": "{{ input }}"}}
+    assert agent["response"]["text_path"] == "$.completion"
+
+
+def test_run_against_an_unconfirmable_target_fails_instead_of_scoring_nothing(
+    tmp_path, monkeypatch
+):
+    """No shape answers -> the job fails. A green run over an unsent prompt is worse."""
+    store, job_id = _shape_run_store(
+        tmp_path, monkeypatch, ShapeUnknown("no known shape"), name="shape-run-fail.db"
+    )
+
+    work_once(store, "w1")
+
+    assert store.jobs.get("org-a", job_id).state == "failed"
+    assert store.list_runs("org-a", "shape-target") == []
+
+
+def test_run_against_an_already_profiled_target_does_not_reprobe(tmp_path, monkeypatch):
+    """`profiled_at` means the shape was confirmed against the live endpoint."""
+    store, _ = _shape_run_store(
+        tmp_path, monkeypatch, ShapeUnknown("must not be called"), name="shape-run-skip.db"
+    )
+    store.save_target_profile("org-a", "shape-target", AgentProfile(id="shape-target"))
+
+    work_once(store, "w1")
+
+    # ShapeUnknown would have failed the job had detection run at all.
+    assert len(store.list_runs("org-a", "shape-target")) == 1
