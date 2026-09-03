@@ -1004,6 +1004,21 @@ class Store:
             return None
         return AgentProfile.model_validate_json(row["profile_json"]), row["profiled_at"]
 
+    def get_target_profiled_at(self, org_id: str, target_id: str) -> str | None:
+        """When the target was last discovered, or None if it never has been.
+
+        Separate from `get_target_profile` because the callers that only need
+        "has this been confirmed?" should not pay to deserialize a profile.
+        """
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT profiled_at FROM targets WHERE org_id = ? AND id = ?",
+                (org_id, target_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(target_id)
+        return row["profiled_at"]
+
     def list_targets(self, org_id: str) -> list[TargetRow]:
         with self._connection() as conn:
             rows = conn.execute(

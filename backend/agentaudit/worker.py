@@ -343,6 +343,22 @@ def _execute_job(
         return None
 
     target, redactor, endpoint = _prepare_target(store, job)
+
+    # A target registered through the form carries a *guessed* request shape
+    # (intake fills `input_path`, default "input"). A wrong guess is not an
+    # error: the agent answers a prompt it never received and this run scores
+    # that reply. `profiled_at` is null until discovery has confirmed the shape
+    # against the live endpoint, so confirm it here for a target that has never
+    # been profiled -- register -> run must not be a legal path to a green run
+    # that tested nothing.
+    if store.get_target_profiled_at(job.org_id, job.target_id) is None:
+        target = _confirm_request_shape(
+            store,
+            job,
+            target,
+            lambda cfg, cases: run_tests(cfg, cases, redactor=redactor, endpoint=endpoint),
+        )
+
     try:
         tests = load_tests_from_rows(store.get_pack_tests(job.org_id, job.pack_id))
     except KeyError as exc:
