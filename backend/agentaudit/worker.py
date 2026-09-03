@@ -181,6 +181,13 @@ def _prepare_target(store: Store, job: JobRow) -> tuple[TargetConfig, Redactor, 
                 EgressPolicy.from_iterable(allowed_hosts),
                 # Deployment-owned, from the worker's own environment. Never
                 # from the target: a tenant-settable bypass is not a bypass fix.
+                #
+                # ponytail: process-wide, so on a worker where it is set it
+                # relaxes the https and private-address checks for *every*
+                # org's target, not just the local stub it was set for. That
+                # is fine on a single-tenant dev box and is the ceiling here:
+                # if a shared worker ever needs it, scope it to an explicit
+                # target-id allowlist rather than widening it further.
                 allow_private=os.environ.get("AGENTAUDIT_EGRESS_ALLOW_LOCAL") == "1",
             )
         except EgressError as exc:
