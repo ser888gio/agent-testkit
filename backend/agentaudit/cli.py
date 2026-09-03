@@ -21,6 +21,7 @@ from sqlalchemy import create_engine
 from agentaudit.core.adapters import ADAPTERS
 from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.audit import execute as execute_audit
+from agentaudit.core.campaign import DEFAULT_MAX_TURNS, CampaignBudget, run_campaign
 from agentaudit.core.config import ConfigError, load_target, load_target_dict
 from agentaudit.core.discovery import discover as discover_profile
 from agentaudit.core.evolve import (
@@ -95,6 +96,7 @@ def _pending_migrations(cfg: AlembicConfig) -> list[tuple[str, str]]:
     pending = list(scripts.iterate_revisions(scripts.get_heads(), current_heads))
     return [(revision.revision, revision.doc or "") for revision in reversed(pending)]
 
+
 app = typer.Typer(no_args_is_help=True)
 
 
@@ -106,9 +108,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def main(
-    version: bool = typer.Option(
-        False, "--version", callback=_version_callback, is_eager=True
-    ),
+    version: bool = typer.Option(False, "--version", callback=_version_callback, is_eager=True),
 ) -> None:
     _force_utf8_stdio()
 
@@ -117,13 +117,9 @@ def _print_table(rr, report) -> None:
     typer.echo(f"agentaudit run - target: {rr.agent_name}   ({len(rr.results)} tests)")
     by_cat: dict[str, dict[str, int]] = {}
     for r in rr.results:
-        counts = by_cat.setdefault(
-            r.category.value, {"pass": 0, "fail": 0, "err": 0, "skip": 0}
-        )
+        counts = by_cat.setdefault(r.category.value, {"pass": 0, "fail": 0, "err": 0, "skip": 0})
         counts[
-            {"passed": "pass", "failed": "fail", "error": "err", "skipped": "skip"}[
-                r.status.value
-            ]
+            {"passed": "pass", "failed": "fail", "error": "err", "skipped": "skip"}[r.status.value]
         ] += 1
 
     typer.echo(f"{'CATEGORY':<20}{'PASS':>6}{'FAIL':>6}{'ERR':>6}{'SKIP':>6}")
@@ -247,7 +243,7 @@ def plan_cmd(
     packs_dir: str = typer.Argument(...),
     target: str | None = typer.Option(None, "--target"),
     endpoint: str | None = typer.Option(
-        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+        None, "--endpoint", help='Agent URL. POSTs {"input": ...}, reads {"text": ...}.'
     ),
     max_tests: int | None = typer.Option(None, "--max-tests", min=1),
     format: str = typer.Option("table", "--format"),
@@ -275,7 +271,7 @@ def evolve_cmd(
     packs_dir: str = typer.Argument(...),
     target: str | None = typer.Option(None, "--target"),
     endpoint: str | None = typer.Option(
-        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+        None, "--endpoint", help='Agent URL. POSTs {"input": ...}, reads {"text": ...}.'
     ),
     db: str | None = typer.Option(None, "--db"),
     max_candidates: int = typer.Option(20, "--max-candidates", min=1),
@@ -286,6 +282,18 @@ def evolve_cmd(
         "--keep-runs",
         min=0,
         help="Runs a generated test survives before expiring unless promoted. 0 never expires.",
+    ),
+    campaign: bool = typer.Option(
+        False,
+        "--campaign",
+        help="Branch: escalate each candidate over multiple turns instead of one-shot probes.",
+    ),
+    max_turns: int = typer.Option(
+        DEFAULT_MAX_TURNS,
+        "--max-turns",
+        min=1,
+        max=20,
+        help="Escalation depth per candidate. Requires --campaign.",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Print candidates and admission reasons without storing them."
@@ -300,7 +308,16 @@ def evolve_cmd(
 
     Kept tests are provisional: they run for --keep-runs runs and then expire
     unless a human promotes them into a pack.
+
+    --campaign narrows generation to the escalating ladders in adaptive.py and
+    refines each turn from the agent's last reply, so a candidate is pushed over
+    several turns rather than probed once. It costs more model calls and more
+    runs per candidate; --max-turns bounds that.
     """
+    if max_turns != DEFAULT_MAX_TURNS and not campaign:
+        typer.echo("error: --max-turns only applies with --campaign.", err=True)
+        raise typer.Exit(2)
+
     generator = build_generator()
     if generator is None:
         missing = [
@@ -309,9 +326,7 @@ def evolve_cmd(
             if not os.environ.get(name)
         ]
         typer.echo(
-            "error: evolution needs an attacker model. Set "
-            + " and ".join(missing)
-            + ".\n"
+            "error: evolution needs an attacker model. Set " + " and ".join(missing) + ".\n"
             "       For a fully local campaign, point it at Ollama:\n"
             "         AGENTAUDIT_ATTACKER_ENDPOINT="
             "http://localhost:11434/v1/chat/completions\n"
@@ -327,14 +342,29 @@ def evolve_cmd(
     def run_fn(tests):
         return execute_audit(cfg, tests).result
 
-    result = run_evolution(
-        generator,
-        run_fn,
-        categories=categories,
-        budget=EvolveBudget(
-            max_candidates=max_candidates, max_kept=max_kept, wall_clock_s=wall_clock
-        ),
-    )
+    # `CampaignResult` mirrors `EvolveResult`'s fields and `as_pack_rows()`, so
+    # everything below this branch is common to both.
+    if campaign:
+        result = run_campaign(
+            generator,
+            run_fn,
+            categories=categories,
+            budget=CampaignBudget(
+                max_candidates=max_candidates,
+                max_kept=max_kept,
+                wall_clock_s=wall_clock,
+                max_turns=max_turns,
+            ),
+        )
+    else:
+        result = run_evolution(
+            generator,
+            run_fn,
+            categories=categories,
+            budget=EvolveBudget(
+                max_candidates=max_candidates, max_kept=max_kept, wall_clock_s=wall_clock
+            ),
+        )
 
     for candidate in result.kept:
         verdict = "LANDED" if candidate.landed else "held"
@@ -380,7 +410,7 @@ def incident_import_cmd(
     transcript: str = typer.Argument(..., help="Path to a plain-text incident transcript."),
     target: str | None = typer.Option(None, "--target"),
     endpoint: str | None = typer.Option(
-        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+        None, "--endpoint", help='Agent URL. POSTs {"input": ...}, reads {"text": ...}.'
     ),
     db: str | None = typer.Option(None, "--db"),
     category: str | None = typer.Option(
@@ -484,13 +514,11 @@ def run_cmd(
     packs_dir: str = typer.Argument(...),
     target: str | None = typer.Option(None, "--target"),
     endpoint: str | None = typer.Option(
-        None, "--endpoint", help="Agent URL. POSTs {\"input\": ...}, reads {\"text\": ...}."
+        None, "--endpoint", help='Agent URL. POSTs {"input": ...}, reads {"text": ...}.'
     ),
     db: str | None = typer.Option(None, "--db"),
     fail_under: float = typer.Option(0.0, "--fail-under"),
-    block_on_critical: bool = typer.Option(
-        True, "--block-on-critical/--no-block-on-critical"
-    ),
+    block_on_critical: bool = typer.Option(True, "--block-on-critical/--no-block-on-critical"),
     tag: list[str] = typer.Option([], "--tag"),
     category: list[str] = typer.Option([], "--category"),
     format: str = typer.Option("table", "--format"),
@@ -626,9 +654,7 @@ def report_cmd(
         raise typer.Exit(2) from exc
 
     try:
-        content = render_report(
-            rr, report, format, plan=store.get_run_plan(DEFAULT_ORG, run)
-        )
+        content = render_report(rr, report, format, plan=store.get_run_plan(DEFAULT_ORG, run))
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
@@ -658,12 +684,8 @@ def compare_cmd(
     typer.echo(f"agentaudit compare - {run_a[:8]} -> {run_b[:8]}")
     if diff.critical_regressions:
         typer.echo(f"CRITICAL REGRESSIONS: {', '.join(diff.critical_regressions)}")
-    typer.echo(
-        f"Newly failing ({len(diff.newly_failing)}): {', '.join(diff.newly_failing)}"
-    )
-    typer.echo(
-        f"Newly passing ({len(diff.newly_passing)}): {', '.join(diff.newly_passing)}"
-    )
+    typer.echo(f"Newly failing ({len(diff.newly_failing)}): {', '.join(diff.newly_failing)}")
+    typer.echo(f"Newly passing ({len(diff.newly_passing)}): {', '.join(diff.newly_passing)}")
     typer.echo(f"Added: {', '.join(diff.added)}")
     typer.echo(f"Removed: {', '.join(diff.removed)}")
     typer.echo(

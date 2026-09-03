@@ -635,3 +635,65 @@ def test_force_utf8_stdio_tolerates_a_stream_without_reconfigure(monkeypatch):
     from agentaudit.cli import _force_utf8_stdio
 
     _force_utf8_stdio()  # must not raise
+
+
+def test_max_turns_without_campaign_is_an_error(tmp_path):
+    # --max-turns only reaches the branching loop. Accepting it silently on a
+    # plain evolve run would let an operator believe they had bounded something.
+    result = runner.invoke(
+        app,
+        [
+            "evolve",
+            TREASURY_PACK,
+            "--target",
+            TREASURY_TARGET,
+            "--max-turns",
+            "3",
+            "--db",
+            str(tmp_path / "e.db"),
+        ],
+    )
+    assert result.exit_code == 2
+    assert "--max-turns only applies with --campaign" in result.output
+
+
+def test_campaign_flag_runs_the_branching_loop_with_the_turn_budget(tmp_path, monkeypatch):
+    """--campaign must reach `campaign.run_campaign`, not plain `evolve`."""
+    from agentaudit.core.campaign import CampaignResult
+
+    calls = {}
+
+    def fake_run_campaign(generator, run_fn, *, archive=None, categories=None, budget=None):
+        calls["budget"] = budget
+        calls["categories"] = categories
+        return CampaignResult(stopped_because="budget")
+
+    def fail_run_evolution(*args, **kwargs):
+        raise AssertionError("--campaign must not fall through to plain evolve")
+
+    monkeypatch.setattr("agentaudit.cli.build_generator", lambda: object())
+    monkeypatch.setattr("agentaudit.cli.run_campaign", fake_run_campaign)
+    monkeypatch.setattr("agentaudit.cli.run_evolution", fail_run_evolution)
+
+    result = runner.invoke(
+        app,
+        [
+            "evolve",
+            TREASURY_PACK,
+            "--target",
+            TREASURY_TARGET,
+            "--campaign",
+            "--max-turns",
+            "3",
+            "--max-candidates",
+            "2",
+            "--db",
+            str(tmp_path / "e.db"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls["budget"].max_turns == 3
+    assert calls["budget"].max_candidates == 2
+    # Seeded from the pack's own categories, same as a plain evolve run.
+    assert calls["categories"]

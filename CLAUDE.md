@@ -67,13 +67,14 @@ The practical framing for contributors is:
 > This repo is the execution and evidence core of a larger adaptive agent assurance
 > platform.
 
-Suggested next product milestones (1-3, 5 and 6 shipped; see
+Suggested next product milestones (all shipped; see
 [`IMPLEMENTATION-TESTS-PLAN.md`](IMPLEMENTATION-TESTS-PLAN.md) for the full roadmap):
 
 1. ~~`AgentProfile` model.~~ — `core/profile.py`, `core/discovery.py`
 2. ~~Test-library metadata tagged by domain, capability, risk, and preconditions.~~ — `core/catalog.py`
 3. ~~Planner that ranks tests from profile plus risk.~~ — `core/planner.py`
-4. Iterative attack loop with branching and retries.
+4. ~~Iterative attack loop with branching and retries.~~ — `core/campaign.py`,
+   reachable as `agentaudit evolve --campaign`
 5. ~~Reporting that explains why a test was selected for a given agent.~~ — `reports/plan.py`
 6. ~~Adapter *execution*: run the external tools the planner selected and merge their
    evidence into the run.~~ — `ExternalEvalAdapter.execute`, `core/audit.py:run_external`
