@@ -33,7 +33,12 @@ _ENV_REFS_RE = re.compile(r"\$\{([A-Za-z_]\w*)\}")
 
 
 def resolve_within_allowed(value: str) -> Path:
-    candidate = Path(value).resolve()
+    # Relative values come from /connect-options, which names paths relative to
+    # PACKAGE_DIR.parent -- not the process CWD. Those coincide in a repo
+    # checkout and do not in the container, where the package sits in
+    # site-packages and the CWD is elsewhere.
+    raw = Path(value)
+    candidate = (raw if raw.is_absolute() else PACKAGE_DIR.parent / raw).resolve()
     for root in ALLOWED_ROOTS:
         try:
             candidate.relative_to(root.resolve())
