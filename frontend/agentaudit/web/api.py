@@ -179,7 +179,7 @@ def session_info(principal: Principal = Depends(current_principal)) -> dict:
 def analytics(principal: Principal = Depends(current_principal)) -> dict:
     store = get_store()
     org = principal.org_id
-    trend = store.score_trend(org, limit=30)
+    trend = store.analytics.score_trend(org, limit=30)
     rows = store.list_runs(org, limit=100)
     gates = sum(1 for r in rows if r.status not in BAD_STATUSES)
     latest = trend[-1]["score"] if trend else 0
@@ -187,9 +187,9 @@ def analytics(principal: Principal = Depends(current_principal)) -> dict:
     return {
         "trend": _serialize(trend),
         "sparkline": sparkline_points([p["score"] for p in trend]),
-        "categories": _serialize(bar_rows(store.category_failure_rates(org))),
-        "flaky": _serialize(store.flakiest_tests(org, limit=8)),
-        "risks": _serialize(donut_segments(store.risk_breakdown(org))),
+        "categories": _serialize(bar_rows(store.analytics.category_failure_rates(org))),
+        "flaky": _serialize(store.analytics.flakiest_tests(org, limit=8)),
+        "risks": _serialize(donut_segments(store.analytics.risk_breakdown(org))),
         "totals": {
             "runs": len(rows),
             "agents": len({r.agent_id for r in rows}),
@@ -279,7 +279,7 @@ def test_detail(
         (s for s in (plan.selected if plan else []) if s.test_id in (test_id, base_id)),
         None,
     )
-    history = get_store().test_history(
+    history = get_store().analytics.test_history(
         principal.org_id, test_id, agent_id=rr.agent_name, limit=20
     )
     timeline = window_timeline(build_timeline(result))
@@ -451,7 +451,7 @@ def agent_detail(agent_id: str, principal: Principal = Depends(current_principal
     store = get_store()
     org = principal.org_id
     runs = store.list_runs(org, agent_id)
-    matrix = store.pass_fail_matrix(org, agent_id)
+    matrix = store.analytics.pass_fail_matrix(org, agent_id)
     latest_run_id = runs[0].id if runs else None
     run_views = [_run_view(runview.run_row(r)) for r in runs]
     # An agent id is the target id it was run against, so the profile keys off
