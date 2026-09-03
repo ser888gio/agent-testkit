@@ -1,15 +1,21 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from agentaudit.core.config import CallableSpec, HTTPSpec, TargetConfig
 from agentaudit.core.discovery import (
     ECHO_PROBE,
     MEMORY_PHRASE,
     MEMORY_PROBE,
     PROBES,
+    SHAPE_PHRASE,
     TOOLS_PROBE,
+    ShapeUnknown,
+    detect_shape,
     discover,
     parse_tool_names,
     profile_from_config,
+    shape_probe,
 )
 from agentaudit.core.schema import Category, Risk, RunResult, Status, TestResult
 
@@ -214,3 +220,77 @@ def test_tool_names_are_parsed_without_a_run():
     assert parse_tool_names("none") == []
     # A name long enough to be prose is not a name.
     assert parse_tool_names("x" * 60) == []
+
+
+# --- request/response shape probing -----------------------------------------
+
+
+def _shape_runner(accepts):
+    """A runner where only the shape matching `accepts` gets the prompt through.
+
+    Models the real failure: a wrong request key means the agent never sees the
+    probe token, so the assertion fails rather than the request erroring.
+    """
+    now = datetime.now(timezone.utc)
+
+    def _run(config, tests):
+        shape = (config.agent.request, config.agent.response.text_path)
+        status = Status.passed if shape == accepts else Status.failed
+        return RunResult(
+            run_id="r1",
+            agent_name=config.id,
+            started_at=now,
+            finished_at=now,
+            results=[
+                TestResult(
+                    test_id=t.id,
+                    category=t.category,
+                    risk=t.risk,
+                    status=status,
+                    started_at=now,
+                    finished_at=now,
+                )
+                for t in tests
+            ],
+        )
+
+    return _run
+
+
+def test_detect_shape_returns_the_candidate_the_agent_answers():
+    """An OpenAI-shaped agent is found even though it is not the first guess."""
+    wanted = (
+        {"json": {"messages": [{"role": "user", "content": "{{ input }}"}]}},
+        "$.choices[0].message.content",
+    )
+    assert detect_shape(_target(http=True), runner=_shape_runner(wanted)) == wanted
+
+
+def test_detect_shape_prefers_the_first_candidate_that_answers():
+    wanted = ({"json": {"input": "{{ input }}"}}, "$.text")
+    assert detect_shape(_target(http=True), runner=_shape_runner(wanted)) == wanted
+
+
+def test_detect_shape_raises_when_no_candidate_gets_the_prompt_through():
+    """Refusing beats registering a target whose runs would score empty replies."""
+    with pytest.raises(ShapeUnknown, match="did not answer"):
+        detect_shape(_target(http=True), runner=_shape_runner(("nothing", "matches")))
+
+
+def test_detect_shape_error_names_the_shapes_tried_and_no_agent_output():
+    with pytest.raises(ShapeUnknown) as exc:
+        detect_shape(_target(http=True), runner=_shape_runner(("nothing", "matches")))
+    assert "{input}" in str(exc.value)
+    assert "$.choices[0].message.content" in str(exc.value)
+
+
+def test_detect_shape_rejects_a_callable_target():
+    with pytest.raises(ShapeUnknown, match="http targets"):
+        detect_shape(_target(), runner=_shape_runner(("x", "y")))
+
+
+def test_shape_probe_requires_the_token_back_not_merely_a_reply():
+    """`response_nonempty` would pass for an agent POSTed an empty body."""
+    probe = shape_probe()
+    assert [a.name for a in probe.assertions] == ["contains_any"]
+    assert probe.assertions[0].args == {"values": [SHAPE_PHRASE]}

@@ -22,8 +22,14 @@ import uuid
 
 from agentaudit.core import llm
 from agentaudit.core.audit import execute as execute_audit
-from agentaudit.core.config import ConfigError, HTTPSpec, TargetConfig, load_target_dict
-from agentaudit.core.discovery import discover
+from agentaudit.core.config import (
+    ConfigError,
+    HTTPSpec,
+    ResponseSpec,
+    TargetConfig,
+    load_target_dict,
+)
+from agentaudit.core.discovery import ShapeUnknown, detect_shape, discover, shape_label
 from agentaudit.core.egress import EgressError, EgressPolicy, validate_endpoint
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
 from agentaudit.core.redaction import Redactor
@@ -210,9 +216,63 @@ def execute_discovery(store: Store, job: JobRow) -> None:
     def bound_run(cfg: TargetConfig, cases: list) -> RunResult:
         return run_tests(cfg, cases, redactor=redactor, endpoint=endpoint)
 
+    target = _confirm_request_shape(store, job, target, bound_run)
     profile = discover(target, runner=bound_run)
     store.save_target_profile(job.org_id, job.target_id, profile)
     log.info("job %s: profiled target %s", job.id, job.target_id)
+
+
+def _confirm_request_shape(
+    store: Store, job: JobRow, target: TargetConfig, bound_run
+) -> TargetConfig:
+    """Prove the prompt reaches the agent, and persist the shape that got it there.
+
+    A target registered through the dashboard carries a guessed request shape:
+    the form asks for an endpoint, not a body schema. A wrong guess does not
+    error -- the agent answers a prompt it never received and the run scores
+    that reply -- so the shape is confirmed here, against the live endpoint,
+    before any pack is ever run against it.
+
+    Failure is permanent on purpose. A target whose prompt does not arrive
+    cannot produce evidence, and reporting that as a profile with a note would
+    leave a registered agent that silently scores nothing.
+    """
+    if not isinstance(target.agent, HTTPSpec):
+        return target
+    try:
+        request, text_path = detect_shape(target, runner=bound_run)
+    except ShapeUnknown as exc:
+        raise PermanentJobError(str(exc)) from exc
+
+    confirmed = target.model_copy(
+        update={
+            "agent": target.agent.model_copy(
+                update={"request": request, "response": ResponseSpec(text_path=text_path)}
+            )
+        },
+        deep=True,
+    )
+    if (request, text_path) == (target.agent.request, target.agent.response.text_path):
+        return confirmed
+
+    # Persist onto the *stored* config, which is un-interpolated: re-saving the
+    # resolved `target` would write a secret back into the row that T15 keeps
+    # literal. Only the two shape keys are replaced.
+    raw = store.get_target(job.org_id, job.target_id)
+    raw["agent"]["request"] = request
+    raw["agent"].setdefault("response", {})["text_path"] = text_path
+    store.save_target(
+        job.org_id,
+        job.target_id,
+        job.target_id,
+        raw,
+        secret_ref=store.get_target_secret_ref(job.org_id, job.target_id),
+        allowed_hosts=store.get_target_allowed_hosts(job.org_id, job.target_id),
+    )
+    log.info(
+        "job %s: target %s answers on %s", job.id, job.target_id, shape_label(request, text_path)
+    )
+    return confirmed
 
 
 def _apply_selection(job: JobRow, tests: list) -> list:

@@ -134,6 +134,7 @@ def register_http_target(
     sandbox: str = "",
     method: str = "POST",
     text_path: str = "$.text",
+    input_path: str = "input",
 ) -> str:
     """Persist a tenant-authored HTTP target; returns its id.
 
@@ -156,6 +157,10 @@ def register_http_target(
             "type": "http",
             "endpoint": endpoint,
             "method": method,
+            # Without a request body the agent is POSTed nothing; the shipped
+            # YAML configs all carry this. One JSON key is the whole shape a
+            # form can ask for -- nested bodies need a YAML config.
+            "request": {"json": {input_path or "input": "{{ input }}"}},
             "response": {"text_path": text_path or "$.text"},
         },
     }

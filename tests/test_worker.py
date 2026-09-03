@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 
@@ -112,6 +113,7 @@ def test_execute_job_raises_permanent_for_a_foreign_orgs_target(tmp_path):
 
 def test_infrastructure_faults_are_left_for_lease_expiry(tmp_path, monkeypatch):
     store, job_id = _store_with_job(tmp_path)
+
     def _explode(*a, **k):
         raise OSError("disk gone")
 
@@ -606,9 +608,7 @@ def test_a_job_inside_its_time_limit_finishes_normally(tmp_path):
     assert job.error is None
 
 
-def test_a_job_that_ran_every_test_is_done_even_if_the_budget_lapses_after(
-    tmp_path, monkeypatch
-):
+def test_a_job_that_ran_every_test_is_done_even_if_the_budget_lapses_after(tmp_path, monkeypatch):
     """The deadline landing between the final test and the post-audit check is
     not a timeout: every test ran, so the evidence is complete and the job is
     `done`, not `expired`."""
@@ -756,3 +756,112 @@ def test_a_non_positive_time_limit_is_rejected(tmp_path):
     for bad in (0, -1):
         with pytest.raises(ValueError, match="timeout_seconds"):
             store.jobs.enqueue("org-a", "worker-target", "pack-1", timeout_seconds=bad)
+
+
+# --- request shape confirmation ---------------------------------------------
+
+_HTTP_TARGET_CONFIG = {
+    "id": "shape-target",
+    "agent": {
+        "type": "http",
+        "endpoint": "https://agent.example/chat",
+        "request": {"json": {"input": "{{ input }}"}},
+        "response": {"text_path": "$.text"},
+    },
+}
+
+
+def _stub_shape(monkeypatch, result):
+    """Replace shape detection; the dial itself is covered in test_discovery.
+
+    Egress is stubbed too: `agent.example` does not resolve, so without this the
+    job fails on DNS before shape confirmation is ever reached.
+    """
+    import agentaudit.worker as worker_module
+    from agentaudit.core.egress import ValidatedEndpoint
+
+    def fake(config, **kwargs):
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(worker_module, "detect_shape", fake)
+    monkeypatch.setattr(
+        worker_module,
+        "validate_endpoint",
+        lambda url, policy, **kwargs: ValidatedEndpoint(
+            url=url, host="agent.example", port=443, address="203.0.113.7"
+        ),
+    )
+    return worker_module
+
+
+def test_discovery_persists_a_corrected_request_shape(tmp_path, monkeypatch):
+    """The guess made at registration is replaced by what the agent answers."""
+    detected = ({"json": {"prompt": "{{ input }}"}}, "$.completion")
+    _stub_shape(monkeypatch, detected)
+    store = Store(str(tmp_path / "shape.db"))
+    store.save_target(
+        "org-a",
+        "shape-target",
+        "Shape Target",
+        _HTTP_TARGET_CONFIG,
+        allowed_hosts=["agent.example"],
+    )
+    store.jobs.enqueue_discovery("org-a", "shape-target")
+
+    work_once(store, "w1")
+
+    agent = store.get_target("org-a", "shape-target")["agent"]
+    assert agent["request"] == {"json": {"prompt": "{{ input }}"}}
+    assert agent["response"]["text_path"] == "$.completion"
+
+
+def test_discovery_keeps_the_secret_ref_and_allowlist_when_rewriting_the_shape(
+    tmp_path, monkeypatch
+):
+    """save_target overwrites the row, so the shape write must carry both forward."""
+    _stub_shape(monkeypatch, ({"json": {"prompt": "{{ input }}"}}, "$.completion"))
+    config = json.loads(json.dumps(_HTTP_TARGET_CONFIG))
+    config["agent"]["headers"] = {"Authorization": "Bearer ${AGENT_TOKEN}"}
+    store = Store(str(tmp_path / "shape-secret.db"))
+    store.save_target(
+        "org-a",
+        "shape-target",
+        "Shape Target",
+        config,
+        secret_ref="env://AGENT_TOKEN",
+        allowed_hosts=["agent.example"],
+    )
+    store.jobs.enqueue_discovery("org-a", "shape-target")
+
+    work_once(store, "w1")
+
+    assert store.get_target_secret_ref("org-a", "shape-target") == "env://AGENT_TOKEN"
+    assert store.get_target_allowed_hosts("org-a", "shape-target") == ["agent.example"]
+    # The credential stays a literal reference in the row it was rewritten into.
+    stored = store.get_target("org-a", "shape-target")
+    assert stored["agent"]["headers"]["Authorization"] == "Bearer ${AGENT_TOKEN}"
+
+
+def test_discovery_fails_permanently_when_no_shape_gets_the_prompt_through(tmp_path, monkeypatch):
+    """A target that never receives the prompt must not end up registered as usable."""
+    from agentaudit.core.discovery import ShapeUnknown
+
+    _stub_shape(monkeypatch, ShapeUnknown("the endpoint did not answer a trivial probe"))
+    store = Store(str(tmp_path / "shape-fail.db"))
+    store.save_target(
+        "org-a",
+        "shape-target",
+        "Shape Target",
+        _HTTP_TARGET_CONFIG,
+        allowed_hosts=["agent.example"],
+    )
+    job_id = store.jobs.enqueue_discovery("org-a", "shape-target")
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "failed"
+    assert "did not answer" in (job.error or "")
+    assert store.get_target_profile("org-a", "shape-target") is None
