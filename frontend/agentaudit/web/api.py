@@ -33,8 +33,6 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agentaudit.core import llm, runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
-from agentaudit.core.config import ConfigError, known_sandboxes, load_target_dict
-from agentaudit.core.attacks import split_variant
 from agentaudit.core.config import known_sandboxes
 from agentaudit.core.evolve import (
     GENERATED_PREFIX,
@@ -42,7 +40,6 @@ from agentaudit.core.evolve import (
     promotable,
     promoted_id,
 )
-from agentaudit.core.findings import order_by_failure
 from agentaudit.core.intake import is_offerable_target, is_pack_dir, register_http_target
 from agentaudit.core.intake import queue_run as intake_queue_run
 from agentaudit.core.loader import LoaderError, discover
@@ -178,33 +175,16 @@ def analytics(principal: Principal = Depends(current_principal)) -> dict:
     # `runview` derives; `reports.charts` turns the derived rows into geometry.
     # The split follows the dependency direction: charts may import core, not
     # the other way round.
-    view = runview.analytics(store.score_trend(org, limit=30), store.list_runs(org, limit=100))
+    view = runview.analytics(
+        store.analytics.score_trend(org, limit=30), store.list_runs(org, limit=100)
+    )
     return {
         "trend": _serialize(view["trend"]),
         "sparkline": sparkline_points([p["score"] for p in view["trend"]]),
-        "categories": _serialize(bar_rows(store.category_failure_rates(org))),
-        "flaky": _serialize(store.flakiest_tests(org, limit=8)),
-        "risks": _serialize(donut_segments(store.risk_breakdown(org))),
-        "totals": view["totals"],
-    trend = store.analytics.score_trend(org, limit=30)
-    rows = store.list_runs(org, limit=100)
-    gates = sum(1 for r in rows if r.status not in BAD_STATUSES)
-    latest = trend[-1]["score"] if trend else 0
-    previous = trend[-2]["score"] if len(trend) > 1 else latest
-    return {
-        "trend": _serialize(trend),
-        "sparkline": sparkline_points([p["score"] for p in trend]),
         "categories": _serialize(bar_rows(store.analytics.category_failure_rates(org))),
         "flaky": _serialize(store.analytics.flakiest_tests(org, limit=8)),
         "risks": _serialize(donut_segments(store.analytics.risk_breakdown(org))),
-        "totals": {
-            "runs": len(rows),
-            "agents": len({r.agent_id for r in rows}),
-            "gate_rate": round(gates / len(rows) * 100) if rows else 0,
-            "critical": sum(r.score.get("critical_failures", 0) for r in rows),
-            "latest_score": latest,
-            "delta": latest - previous,
-        },
+        "totals": view["totals"],
     }
 
 
@@ -277,48 +257,14 @@ def test_detail(
     if result is None:
         raise HTTPException(status_code=404, detail=f"test '{test_id}' not found in run '{run_id}'")
     store = get_store()
-    ordered = order_by_failure(rr.results)
-    idx = next(i for i, r in enumerate(ordered) if r.test_id == test_id)
-    # Attack variants keep their base test's rationale: the transform did not
-    # change why the test was worth running.
-    base_id = split_variant(test_id)[0]
-    plan = get_store().get_run_plan(principal.org_id, run_id)
-    selection = next(
-        (s for s in (plan.selected if plan else []) if s.test_id in (test_id, base_id)),
-        None,
-    )
-    history = get_store().analytics.test_history(
-        principal.org_id, test_id, agent_id=rr.agent_name, limit=20
-    )
-    timeline = window_timeline(build_timeline(result))
-    artifact_states = [
-        {
-            "name": "Trace",
-            "state": "Unavailable",
-            "detail": "The current result model does not persist Playwright-style traces.",
-        },
-        {
-            "name": "Screenshots / video",
-            "state": "Unavailable",
-            "detail": "Artifact URLs are not captured for this run yet.",
-        },
-        {
-            "name": "Sandbox diff",
-            "state": "Available" if result.sandbox_diff else "Empty",
-            "detail": "Captured state changes around the test execution.",
-        },
-        {
-            "name": "Timeline",
-            "state": "Available" if len(timeline["turns"]) >= 2 else "Unavailable",
-            "detail": "Turn-by-turn requests and sandbox events for this test.",
-        },
-    ]
     return _serialize(
         runview.test_detail(
             rr,
             result,
             plan=store.get_run_plan(principal.org_id, run_id),
-            history=store.test_history(principal.org_id, test_id, agent_id=rr.agent_name, limit=20),
+            history=store.analytics.test_history(
+                principal.org_id, test_id, agent_id=rr.agent_name, limit=20
+            ),
         )
     )
 
