@@ -66,11 +66,39 @@ def test_run_requires_exactly_one_of_target_or_endpoint(tmp_path):
         assert result.exit_code == 2, result.output
 
 
-def test_run_endpoint_builds_a_target_named_after_the_host(tmp_path):
+def _stub_cli_egress(monkeypatch):
+    """Authorize whatever host the test names, without a DNS lookup.
+
+    `_load_target_or_exit` now makes an egress decision, and the example hosts
+    these tests use do not resolve. Only the resolver is stubbed -- the policy
+    itself still runs, so an allowlist or scheme rejection would still fail.
+    """
+    import agentaudit.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module, "validate_endpoint", lambda url, policy, **kw: _fake_validated(url, policy)
+    )
+
+
+def _fake_validated(url, policy):
+    from urllib.parse import urlparse
+
+    from agentaudit.core.egress import EgressError, ValidatedEndpoint
+
+    host = urlparse(url).hostname or ""
+    if host not in policy.allowed_hosts:
+        raise EgressError(f"host '{host}' is not in the target's allowlist")
+    return ValidatedEndpoint(url=url, host=host, port=443, address="203.0.113.9")
+
+
+def test_run_endpoint_builds_a_target_named_after_the_host(tmp_path, monkeypatch):
     """--endpoint stands in for a config file: default request/response shape."""
     from agentaudit.cli import _load_target_or_exit
 
-    cfg = _load_target_or_exit(None, "https://agent.example.com/chat")
+    _stub_cli_egress(monkeypatch)
+    cfg, validated = _load_target_or_exit(None, "https://agent.example.com/chat")
+    # The endpoint the CLI dials is authorized, not raw.
+    assert validated is not None and validated.host == "agent.example.com"
     assert cfg.id == "agent.example.com"
     assert cfg.agent.type == "http"
     assert cfg.agent.endpoint == "https://agent.example.com/chat"
@@ -697,3 +725,26 @@ def test_campaign_flag_runs_the_branching_loop_with_the_turn_budget(tmp_path, mo
     assert calls["budget"].max_candidates == 2
     # Seeded from the pack's own categories, same as a plain evolve run.
     assert calls["categories"]
+
+
+def test_cli_endpoint_must_be_https(monkeypatch):
+    """The CLI now owes the same egress checks the worker makes."""
+    import typer
+
+    from agentaudit.cli import _load_target_or_exit
+
+    monkeypatch.delenv("AGENTAUDIT_EGRESS_ALLOW_LOCAL", raising=False)
+    with pytest.raises(typer.Exit) as exc:
+        _load_target_or_exit(None, "http://agent.example.com/chat")
+    assert exc.value.exit_code == 2
+
+
+def test_cli_endpoint_may_not_carry_url_credentials(monkeypatch):
+    import typer
+
+    from agentaudit.cli import _load_target_or_exit
+
+    monkeypatch.delenv("AGENTAUDIT_EGRESS_ALLOW_LOCAL", raising=False)
+    with pytest.raises(typer.Exit) as exc:
+        _load_target_or_exit(None, "https://user:pw@agent.example.com/chat")
+    assert exc.value.exit_code == 2
