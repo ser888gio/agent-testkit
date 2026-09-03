@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from agentaudit.core.intake import IntakeError
 from agentaudit.web.api import router as api_router
 from agentaudit.web.auth import (
     LOGIN_STATE_COOKIE,
@@ -199,6 +200,16 @@ def spa_shell(full_path: str, principal: Principal = Depends(current_principal))
     were. Data itself flows through /api routes, which enforce the same rule.
     """
     return _spa_index()
+
+
+@app.exception_handler(IntakeError)
+async def intake_error(request: Request, exc: IntakeError) -> Response:  # noqa: ARG001
+    """`core.intake` refuses a run without knowing about status codes.
+
+    Every `IntakeError` is the caller's fault and safe to show them -- they
+    carry a target or pack name the caller supplied, never internal state.
+    """
+    return JSONResponse({"detail": str(exc)}, status_code=400)
 
 
 @app.exception_handler(HTTPException)
