@@ -22,8 +22,14 @@ from agentaudit.core.adapters import ADAPTERS
 from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.audit import execute as execute_audit
 from agentaudit.core.campaign import DEFAULT_MAX_TURNS, CampaignBudget, run_campaign
-from agentaudit.core.config import ConfigError, load_target, load_target_dict
+from agentaudit.core.config import ConfigError, HTTPSpec, load_target, load_target_dict
 from agentaudit.core.discovery import discover as discover_profile
+from agentaudit.core.egress import (
+    EgressError,
+    EgressPolicy,
+    ValidatedEndpoint,
+    validate_endpoint,
+)
 from agentaudit.core.evolve import (
     DEFAULT_KEEP_RUNS,
     GENERATED_PREFIX,
@@ -39,6 +45,7 @@ from agentaudit.core.planner import plan as build_plan
 from agentaudit.core.profile import HarnessPlan
 from agentaudit.core.redaction import Redactor
 from agentaudit.core.regressions import compare
+from agentaudit.core.runner import run as run_tests
 from agentaudit.core.schema import Category, Risk
 from agentaudit.core.store import DEFAULT_ORG, Store
 from agentaudit.reports import render as render_report
@@ -176,6 +183,12 @@ def _load_target_or_exit(target: str | None, endpoint: str | None = None):
 
     `--endpoint` covers the default shape: POST {"input": ...} -> {"text": ...}.
     Anything else (auth headers, different field names) needs a config file.
+
+    Returns `(config, validated_endpoint)`. The second half is the egress
+    decision: the worker makes one in `_prepare_target`, and until this made
+    one too the CLI was a second, weaker spelling of the same policy -- it
+    dialled the raw URL with no allowlist, no public-routability check and no
+    address pinning. Callers pass it to `execute_audit(endpoint=...)`.
     """
     if (target is None) == (endpoint is None):
         typer.echo("error: pass exactly one of --target or --endpoint", err=True)
@@ -183,7 +196,7 @@ def _load_target_or_exit(target: str | None, endpoint: str | None = None):
 
     if endpoint is not None:
         try:
-            return load_target_dict(
+            cfg = load_target_dict(
                 {
                     "id": urlparse(endpoint).hostname or "endpoint",
                     "agent": {
@@ -198,11 +211,39 @@ def _load_target_or_exit(target: str | None, endpoint: str | None = None):
         except ConfigError as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(2) from exc
+        return cfg, _validate_egress_or_exit(cfg)
 
     try:
-        return load_target(target)
+        cfg = load_target(target)
     except (ConfigError, FileNotFoundError) as exc:
         typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    return cfg, _validate_egress_or_exit(cfg)
+
+
+def _validate_egress_or_exit(cfg) -> ValidatedEndpoint | None:
+    """Authorize the endpoint a CLI target names, or exit.
+
+    The allowlist is seeded from the endpoint in the config, the same way
+    `intake.register_http_target` seeds it from the endpoint a tenant typed: a
+    CLI user naming a URL is authorizing that host and no other. That still
+    buys the checks the raw dial had none of -- https, no URL credentials, no
+    private/loopback address, and a pinned address the client cannot re-resolve.
+
+    `AGENTAUDIT_EGRESS_ALLOW_LOCAL=1` relaxes the scheme and address checks for
+    a local stub, exactly as it does in the worker.
+    """
+    if not isinstance(cfg.agent, HTTPSpec):
+        return None
+    host = urlparse(cfg.agent.endpoint).hostname
+    try:
+        return validate_endpoint(
+            cfg.agent.endpoint,
+            EgressPolicy.from_iterable([host] if host else []),
+            allow_private=os.environ.get("AGENTAUDIT_EGRESS_ALLOW_LOCAL") == "1",
+        )
+    except EgressError as exc:
+        typer.echo(f"error: endpoint rejected by egress policy: {exc}", err=True)
         raise typer.Exit(2) from exc
 
 
@@ -252,10 +293,13 @@ def plan_cmd(
 
     Probing calls the endpoint. Nothing is executed beyond two trivial probes.
     """
-    cfg = _load_target_or_exit(target, endpoint)
+    cfg, validated = _load_target_or_exit(target, endpoint)
     tests = _discover_tests_or_exit(packs_dir)
     harness = build_plan(
-        discover_profile(cfg),
+        discover_profile(
+            cfg,
+            runner=lambda c, cases: run_tests(c, cases, endpoint=validated),
+        ),
         tests,
         adapters=list(ADAPTERS.values()),
         max_tests=max_tests,
@@ -335,12 +379,12 @@ def evolve_cmd(
         )
         raise typer.Exit(2)
 
-    cfg = _load_target_or_exit(target, endpoint)
+    cfg, validated = _load_target_or_exit(target, endpoint)
     seed_tests = _discover_tests_or_exit(packs_dir)
     categories = sorted({t.category for t in seed_tests}, key=lambda c: c.value)
 
     def run_fn(tests):
-        return execute_audit(cfg, tests).result
+        return execute_audit(cfg, tests, endpoint=validated).result
 
     # `CampaignResult` mirrors `EvolveResult`'s fields and `as_pack_rows()`, so
     # everything below this branch is common to both.
@@ -428,7 +472,7 @@ def incident_import_cmd(
     review pack evolve.py already uses -- promotion happens through
     `agentaudit ui`'s existing review queue, not a second path.
     """
-    cfg = _load_target_or_exit(target, endpoint)
+    cfg, _ = _load_target_or_exit(target, endpoint)
     path = Path(transcript)
     if not path.is_file():
         typer.echo(f"error: transcript not found: {transcript}", err=True)
@@ -546,7 +590,7 @@ def run_cmd(
     ),
 ) -> None:
     db = _resolve_db_path(db)
-    cfg = _load_target_or_exit(target, endpoint)
+    cfg, validated = _load_target_or_exit(target, endpoint)
     tests = _discover_tests_or_exit(packs_dir)
 
     categories = [Category(c) for c in category] if category else None
@@ -587,6 +631,7 @@ def run_cmd(
     audit = execute_audit(
         cfg,
         tests,
+        endpoint=validated,
         plan=use_plan,
         max_tests=max_tests,
         attack_transforms=transforms,
