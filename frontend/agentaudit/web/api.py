@@ -12,9 +12,10 @@ Constraints carried over from the page routes, unchanged:
 - Every ``Store`` call is scoped with ``principal.org_id``.
 - Nothing here writes files or dials an agent; evidence was redacted before it
   reached the store and is served exactly as stored.
-- The run-enqueue endpoint resolves target/pack paths through
-  ``runtime.resolve_within_allowed``; a user-supplied path can never point
-  outside the shipped config/packs roots.
+- Run policy -- resolving target/pack paths, seeding a target's egress
+  allowlist, checking a client's test ids against the pack -- lives in
+  ``core.intake``, not in these handlers. ``IntakeError`` becomes a 400 via the
+  handler in ``app.py``.
 """
 
 from __future__ import annotations
@@ -33,12 +34,17 @@ from pydantic import BaseModel, Field, ValidationError
 from agentaudit.core import llm, runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.config import ConfigError, known_sandboxes, load_target_dict
+from agentaudit.core.attacks import split_variant
+from agentaudit.core.config import known_sandboxes
 from agentaudit.core.evolve import (
     GENERATED_PREFIX,
     PROMOTED_PREFIX,
     promotable,
     promoted_id,
 )
+from agentaudit.core.findings import order_by_failure
+from agentaudit.core.intake import is_offerable_target, is_pack_dir, register_http_target
+from agentaudit.core.intake import queue_run as intake_queue_run
 from agentaudit.core.loader import LoaderError, discover
 from agentaudit.core.profile import AgentProfile
 from agentaudit.core.regressions import compare
@@ -56,10 +62,6 @@ from agentaudit.web.runtime import (
     USER_PACK_ID,
     get_artifacts_dir,
     get_store,
-    import_first_party,
-    import_pack,
-    is_pack_dir,
-    resolve_within_allowed,
     shipped_tests,
 )
 
@@ -184,6 +186,25 @@ def analytics(principal: Principal = Depends(current_principal)) -> dict:
         "flaky": _serialize(store.flakiest_tests(org, limit=8)),
         "risks": _serialize(donut_segments(store.risk_breakdown(org))),
         "totals": view["totals"],
+    trend = store.analytics.score_trend(org, limit=30)
+    rows = store.list_runs(org, limit=100)
+    gates = sum(1 for r in rows if r.status not in BAD_STATUSES)
+    latest = trend[-1]["score"] if trend else 0
+    previous = trend[-2]["score"] if len(trend) > 1 else latest
+    return {
+        "trend": _serialize(trend),
+        "sparkline": sparkline_points([p["score"] for p in trend]),
+        "categories": _serialize(bar_rows(store.analytics.category_failure_rates(org))),
+        "flaky": _serialize(store.analytics.flakiest_tests(org, limit=8)),
+        "risks": _serialize(donut_segments(store.analytics.risk_breakdown(org))),
+        "totals": {
+            "runs": len(rows),
+            "agents": len({r.agent_id for r in rows}),
+            "gate_rate": round(gates / len(rows) * 100) if rows else 0,
+            "critical": sum(r.score.get("critical_failures", 0) for r in rows),
+            "latest_score": latest,
+            "delta": latest - previous,
+        },
     }
 
 
@@ -256,6 +277,42 @@ def test_detail(
     if result is None:
         raise HTTPException(status_code=404, detail=f"test '{test_id}' not found in run '{run_id}'")
     store = get_store()
+    ordered = order_by_failure(rr.results)
+    idx = next(i for i, r in enumerate(ordered) if r.test_id == test_id)
+    # Attack variants keep their base test's rationale: the transform did not
+    # change why the test was worth running.
+    base_id = split_variant(test_id)[0]
+    plan = get_store().get_run_plan(principal.org_id, run_id)
+    selection = next(
+        (s for s in (plan.selected if plan else []) if s.test_id in (test_id, base_id)),
+        None,
+    )
+    history = get_store().analytics.test_history(
+        principal.org_id, test_id, agent_id=rr.agent_name, limit=20
+    )
+    timeline = window_timeline(build_timeline(result))
+    artifact_states = [
+        {
+            "name": "Trace",
+            "state": "Unavailable",
+            "detail": "The current result model does not persist Playwright-style traces.",
+        },
+        {
+            "name": "Screenshots / video",
+            "state": "Unavailable",
+            "detail": "Artifact URLs are not captured for this run yet.",
+        },
+        {
+            "name": "Sandbox diff",
+            "state": "Available" if result.sandbox_diff else "Empty",
+            "detail": "Captured state changes around the test execution.",
+        },
+        {
+            "name": "Timeline",
+            "state": "Available" if len(timeline["turns"]) >= 2 else "Unavailable",
+            "detail": "Turn-by-turn requests and sandbox events for this test.",
+        },
+    ]
     return _serialize(
         runview.test_detail(
             rr,
@@ -347,47 +404,16 @@ class RegisterAgentBody(BaseModel):
 
 @router.post("/agents/register")
 def register_agent(body: RegisterAgentBody, principal: Principal = Depends(require_admin)) -> dict:
-    """Persist a tenant-authored HTTP target.
-
-    The endpoint host seeds the egress allowlist: a target the tenant typed is
-    only reachable at the host they typed. `load_target_dict` validates the
-    same shape a shipped YAML config would produce, so a bad endpoint is a 400
-    here rather than a worker crash later.
-    """
-    target_id = body.target_id.strip()
-    endpoint = body.endpoint.strip()
-    if not target_id:
-        raise HTTPException(status_code=400, detail="Target id is required.")
-    parts = urlsplit(endpoint)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise HTTPException(
-            status_code=400, detail="Endpoint must be an absolute http:// or https:// URL."
-        )
-    raw: dict = {
-        "id": target_id,
-        "agent": {
-            "type": "http",
-            "endpoint": endpoint,
-            "method": body.method,
-            "response": {"text_path": body.text_path or "$.text"},
-        },
-    }
-    if body.sandbox:
-        raw["sandbox"] = body.sandbox
-    try:
-        load_target_dict(raw, source=f"target '{target_id}'")
-    except ConfigError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    try:
-        get_store().save_target(
-            principal.org_id,
-            target_id,
-            target_id,
-            raw,
-            allowed_hosts=[parts.hostname],
-        )
-    except (LoaderError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    """Persist a tenant-authored HTTP target. Policy lives in `core.intake`."""
+    target_id = register_http_target(
+        get_store(),
+        principal.org_id,
+        target_id=body.target_id,
+        endpoint=body.endpoint,
+        sandbox=body.sandbox,
+        method=body.method,
+        text_path=body.text_path,
+    )
     return {"agent_id": quote(target_id)}
 
 
@@ -396,7 +422,7 @@ def agent_detail(agent_id: str, principal: Principal = Depends(current_principal
     store = get_store()
     org = principal.org_id
     runs = store.list_runs(org, agent_id)
-    matrix = store.pass_fail_matrix(org, agent_id)
+    matrix = store.analytics.pass_fail_matrix(org, agent_id)
     latest_run_id = runs[0].id if runs else None
     run_views = [_run_view(runview.run_row(r)) for r in runs]
     # An agent id is the target id it was run against, so the profile keys off
@@ -480,26 +506,6 @@ def discover_agent(agent_id: str, principal: Principal = Depends(require_admin))
 # Connect (run configuration)
 
 
-def _is_offerable_target(path: Path) -> bool:
-    """Hide targets a demo visitor cannot successfully run.
-
-    Under AGENTAUDIT_DEMO_MODE only in-process (`type: callable`) targets are
-    offered. The shipped HTTP configs point at hosts that do not exist, at
-    loopback (which the worker egress policy refuses), or at credential
-    templates -- each a dead end in the picker on a hosted instance.
-    """
-    if os.environ.get("AGENTAUDIT_DEMO_MODE", "").strip().lower() not in {"1", "true", "yes"}:
-        return True
-    try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
-        return False
-    if not isinstance(loaded, dict):
-        return False
-    agent = loaded.get("agent")
-    return isinstance(agent, dict) and agent.get("type") == "callable"
-
-
 def _pack_tests(root: Path, pack_roots: list[str]) -> dict[str, list[dict]]:
     """Test metadata for every discoverable pack, keyed by pack path."""
     pack_tests: dict[str, list[dict]] = {}
@@ -559,7 +565,7 @@ def connect_options(principal: Principal = Depends(current_principal)) -> dict: 
     targets = sorted(
         p.relative_to(root).as_posix()
         for p in (PACKAGE_DIR / "config").glob("*.yaml")
-        if _is_offerable_target(p)
+        if is_offerable_target(p)
     )
     pack_roots = sorted(
         p.relative_to(root).as_posix() for p in (PACKAGE_DIR / "packs").iterdir() if is_pack_dir(p)
@@ -598,51 +604,18 @@ class EnqueueRunBody(BaseModel):
 
 @router.post("/runs/enqueue")
 def enqueue_run(body: EnqueueRunBody, principal: Principal = Depends(require_admin)) -> dict:
-    """Queue a run. The worker executes it; this handler never blocks on an agent.
-
-    `target` is either a shipped config path under the allowed roots or the id
-    of a target the tenant registered by endpoint URL (its row already exists).
-    `test_ids` narrows the run to part of the pack. The ids are checked against
-    the pack that was just imported rather than trusted from the client.
-    """
-    store = get_store()
-    try:
-        store.get_target(principal.org_id, body.target)
-        # Registered target: its config row already exists, only the pack
-        # needs importing.
-        target_id = body.target
-        pack_id = import_pack(store, principal.org_id, body.packs)
-    except KeyError:
-        try:
-            resolve_within_allowed(body.target)
-        except HTTPException:
-            raise HTTPException(
-                status_code=400,
-                detail=f"unknown target '{body.target}'",
-            ) from None
-        target_id, pack_id = import_first_party(store, principal.org_id, body.target, body.packs)
-
-    selection: list[str] | None = None
-    if body.test_ids:
-        available = {row["id"] for row in store.get_pack_tests(principal.org_id, pack_id)}
-        unknown = sorted(set(body.test_ids) - available)
-        if unknown:
-            raise HTTPException(
-                status_code=400,
-                detail=f"unknown test(s) for this pack: {', '.join(unknown)}",
-            )
-        if set(body.test_ids) != available:
-            selection = sorted(set(body.test_ids))
-
-    job_id = store.jobs.enqueue(
-        principal.org_id,
-        target_id,
-        pack_id,
-        created_by=principal.subject,
-        test_ids=selection,
-        timeout_seconds=body.timeout_seconds,
-    )
-    return {"job_id": job_id}
+    """Queue a run. The worker executes it; this handler never blocks on an agent."""
+    return {
+        "job_id": intake_queue_run(
+            get_store(),
+            principal.org_id,
+            target=body.target,
+            packs=body.packs,
+            test_ids=body.test_ids,
+            timeout_seconds=body.timeout_seconds,
+            created_by=principal.subject,
+        )
+    }
 
 
 # ---------------------------------------------------------------------------

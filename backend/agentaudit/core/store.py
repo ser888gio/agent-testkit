@@ -686,6 +686,193 @@ class JobQueue:
         return [JobRow(**dict(row)) for row in rows]
 
 
+class Analytics:
+    """Read-only rollups over recorded evidence: trends, rates, history.
+
+    Split out of `Store` for the same reason `JobQueue` was: these six queries
+    answer questions *about* accumulated runs rather than storing one, they are
+    the only methods on `Store` that never write, and they had exactly one
+    consumer -- the dashboard -- sitting among forty row-mapping methods.
+
+    A caller handed `store.analytics` can read the rollups and cannot reach
+    `save_run`, so the interface now carries the intent.
+
+    It stays inside `store.py` on purpose, exactly as `JobQueue` does: SQLite is
+    reached only through this module, and moving the SQL out to buy a shorter
+    file would trade a rule that is enforced for one that is not.
+    `Store.analytics` is the whole seam.
+    """
+
+    def __init__(self, store: Store) -> None:
+        self._store = store
+
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        with self._store._connection() as conn:
+            yield conn
+
+    def score_trend(
+        self, org_id: str, *, agent_id: str | None = None, limit: int = 30
+    ) -> list[dict]:
+        """Score per run over time, oldest first, for a trend line.
+
+        `score_json` is a stored blob rather than a column, so the percentage is
+        computed here instead of in SQL. The row count is bounded by `limit`, so
+        this stays a small parse rather than a table scan into Python.
+        """
+        sql = "SELECT id, agent_id, started_at, status, score_json FROM runs WHERE org_id = ?"
+        params: list = [org_id]
+        if agent_id is not None:
+            sql += " AND agent_id = ?"
+            params.append(agent_id)
+        sql += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        points = []
+        for r in rows:
+            score = json.loads(r["score_json"])
+            points.append(
+                {
+                    "run_id": r["id"],
+                    "agent_id": r["agent_id"],
+                    "started_at": r["started_at"],
+                    "status": r["status"],
+                    "score": round(score.get("overall_score", 0.0) * 100),
+                    "critical_failures": score.get("critical_failures", 0),
+                }
+            )
+        points.reverse()
+        return points
+
+    def category_failure_rates(self, org_id: str, *, since: str | None = None) -> list[dict]:
+        """Failure rate per test category, worst first.
+
+        Aggregated in SQL rather than by loading runs, because "which category
+        breaks most often" is a question about every result this org ever
+        recorded, not about the last page of them.
+        """
+        sql = (
+            "SELECT category, "
+            "COUNT(*) AS total, "
+            "SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed "
+            "FROM test_results WHERE org_id = ?"
+        )
+        params: list = [org_id]
+        if since:
+            sql += " AND run_id IN (SELECT id FROM runs WHERE org_id = ? AND started_at >= ?)"
+            params += [org_id, since]
+        sql += " GROUP BY category ORDER BY failed * 1.0 / COUNT(*) DESC, category"
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "category": r["category"],
+                "total": r["total"],
+                "failed": r["failed"],
+                "rate": (r["failed"] / r["total"]) if r["total"] else 0.0,
+            }
+            for r in rows
+        ]
+
+    def flakiest_tests(self, org_id: str, *, limit: int = 10) -> list[dict]:
+        """Tests that fail most often across runs, worst first.
+
+        A test that has only ever run once is not flaky, it is untested, so
+        single-run tests are excluded rather than shown at a 100% failure rate.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT test_id, category, "
+                "COUNT(*) AS runs, "
+                "SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed "
+                "FROM test_results WHERE org_id = ? "
+                "GROUP BY test_id, category HAVING COUNT(*) > 1 AND failed > 0 "
+                "ORDER BY failed * 1.0 / COUNT(*) DESC, failed DESC, test_id LIMIT ?",
+                (org_id, limit),
+            ).fetchall()
+        return [
+            {
+                "test_id": r["test_id"],
+                "category": r["category"],
+                "runs": r["runs"],
+                "failed": r["failed"],
+                "rate": r["failed"] / r["runs"],
+            }
+            for r in rows
+        ]
+
+    def risk_breakdown(self, org_id: str) -> list[dict]:
+        """Result counts per risk level, most severe first."""
+        order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT risk, status, COUNT(*) AS n FROM test_results "
+                "WHERE org_id = ? GROUP BY risk, status",
+                (org_id,),
+            ).fetchall()
+        by_risk: dict[str, dict] = {}
+        for r in rows:
+            entry = by_risk.setdefault(r["risk"], {"risk": r["risk"], "total": 0, "failed": 0})
+            entry["total"] += r["n"]
+            if r["status"] in ("failed", "error"):
+                entry["failed"] += r["n"]
+        return sorted(by_risk.values(), key=lambda e: order.get(e["risk"], 9))
+
+    def test_history(
+        self, org_id: str, test_id: str, *, agent_id: str | None = None, limit: int = 20
+    ) -> list[dict]:
+        """Every recorded outcome for one test, newest first.
+
+        Answers the question a single run cannot: is this a new break or a
+        standing one. Joined against `runs` for the timestamp because
+        `test_results` carries no clock of its own.
+        """
+        sql = (
+            "SELECT tr.run_id, tr.status, tr.risk, r.agent_id, r.started_at "
+            "FROM test_results tr JOIN runs r ON r.id = tr.run_id AND r.org_id = tr.org_id "
+            "WHERE tr.org_id = ? AND tr.test_id = ?"
+        )
+        params: list = [org_id, test_id]
+        if agent_id is not None:
+            sql += " AND r.agent_id = ?"
+            params.append(agent_id)
+        sql += " ORDER BY r.started_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "run_id": r["run_id"],
+                "agent_id": r["agent_id"],
+                "started_at": r["started_at"],
+                "status": r["status"],
+                "risk": r["risk"],
+            }
+            for r in rows
+        ]
+
+    def pass_fail_matrix(self, org_id: str, agent_id: str) -> Matrix:
+        with self._connection() as conn:
+            latest = conn.execute(
+                "SELECT id FROM runs WHERE org_id = ? AND agent_id = ? "
+                "ORDER BY started_at DESC LIMIT 1",
+                (org_id, agent_id),
+            ).fetchone()
+            if latest is None:
+                return {}
+
+            rows = conn.execute(
+                "SELECT category, test_id, status FROM test_results "
+                "WHERE org_id = ? AND run_id = ? ORDER BY id",
+                (org_id, latest["id"]),
+            ).fetchall()
+        matrix: Matrix = {}
+        for row in rows:
+            matrix.setdefault(row["category"], {})[row["test_id"]] = row["status"]
+        return matrix
+
+
 class Store:
     """The only SQLite access point. Safe to share across threads."""
 
@@ -699,6 +886,7 @@ class Store:
         with self._connection():
             pass
         self.jobs = JobQueue(self)
+        self.analytics = Analytics(self)
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -1340,164 +1528,3 @@ class Store:
         if row is None:
             raise KeyError(run_id)
         return HarnessPlan.model_validate_json(row["plan_json"]) if row["plan_json"] else None
-
-    def score_trend(
-        self, org_id: str, *, agent_id: str | None = None, limit: int = 30
-    ) -> list[dict]:
-        """Score per run over time, oldest first, for a trend line.
-
-        `score_json` is a stored blob rather than a column, so the percentage is
-        computed here instead of in SQL. The row count is bounded by `limit`, so
-        this stays a small parse rather than a table scan into Python.
-        """
-        sql = "SELECT id, agent_id, started_at, status, score_json FROM runs WHERE org_id = ?"
-        params: list = [org_id]
-        if agent_id is not None:
-            sql += " AND agent_id = ?"
-            params.append(agent_id)
-        sql += " ORDER BY started_at DESC LIMIT ?"
-        params.append(limit)
-        with self._connection() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        points = []
-        for r in rows:
-            score = json.loads(r["score_json"])
-            points.append(
-                {
-                    "run_id": r["id"],
-                    "agent_id": r["agent_id"],
-                    "started_at": r["started_at"],
-                    "status": r["status"],
-                    "score": round(score.get("overall_score", 0.0) * 100),
-                    "critical_failures": score.get("critical_failures", 0),
-                }
-            )
-        points.reverse()
-        return points
-
-    def category_failure_rates(self, org_id: str, *, since: str | None = None) -> list[dict]:
-        """Failure rate per test category, worst first.
-
-        Aggregated in SQL rather than by loading runs, because "which category
-        breaks most often" is a question about every result this org ever
-        recorded, not about the last page of them.
-        """
-        sql = (
-            "SELECT category, "
-            "COUNT(*) AS total, "
-            "SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed "
-            "FROM test_results WHERE org_id = ?"
-        )
-        params: list = [org_id]
-        if since:
-            sql += " AND run_id IN (SELECT id FROM runs WHERE org_id = ? AND started_at >= ?)"
-            params += [org_id, since]
-        sql += " GROUP BY category ORDER BY failed * 1.0 / COUNT(*) DESC, category"
-        with self._connection() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [
-            {
-                "category": r["category"],
-                "total": r["total"],
-                "failed": r["failed"],
-                "rate": (r["failed"] / r["total"]) if r["total"] else 0.0,
-            }
-            for r in rows
-        ]
-
-    def flakiest_tests(self, org_id: str, *, limit: int = 10) -> list[dict]:
-        """Tests that fail most often across runs, worst first.
-
-        A test that has only ever run once is not flaky, it is untested, so
-        single-run tests are excluded rather than shown at a 100% failure rate.
-        """
-        with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT test_id, category, "
-                "COUNT(*) AS runs, "
-                "SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed "
-                "FROM test_results WHERE org_id = ? "
-                "GROUP BY test_id, category HAVING COUNT(*) > 1 AND failed > 0 "
-                "ORDER BY failed * 1.0 / COUNT(*) DESC, failed DESC, test_id LIMIT ?",
-                (org_id, limit),
-            ).fetchall()
-        return [
-            {
-                "test_id": r["test_id"],
-                "category": r["category"],
-                "runs": r["runs"],
-                "failed": r["failed"],
-                "rate": r["failed"] / r["runs"],
-            }
-            for r in rows
-        ]
-
-    def risk_breakdown(self, org_id: str) -> list[dict]:
-        """Result counts per risk level, most severe first."""
-        order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-        with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT risk, status, COUNT(*) AS n FROM test_results "
-                "WHERE org_id = ? GROUP BY risk, status",
-                (org_id,),
-            ).fetchall()
-        by_risk: dict[str, dict] = {}
-        for r in rows:
-            entry = by_risk.setdefault(r["risk"], {"risk": r["risk"], "total": 0, "failed": 0})
-            entry["total"] += r["n"]
-            if r["status"] in ("failed", "error"):
-                entry["failed"] += r["n"]
-        return sorted(by_risk.values(), key=lambda e: order.get(e["risk"], 9))
-
-    def test_history(
-        self, org_id: str, test_id: str, *, agent_id: str | None = None, limit: int = 20
-    ) -> list[dict]:
-        """Every recorded outcome for one test, newest first.
-
-        Answers the question a single run cannot: is this a new break or a
-        standing one. Joined against `runs` for the timestamp because
-        `test_results` carries no clock of its own.
-        """
-        sql = (
-            "SELECT tr.run_id, tr.status, tr.risk, r.agent_id, r.started_at "
-            "FROM test_results tr JOIN runs r ON r.id = tr.run_id AND r.org_id = tr.org_id "
-            "WHERE tr.org_id = ? AND tr.test_id = ?"
-        )
-        params: list = [org_id, test_id]
-        if agent_id is not None:
-            sql += " AND r.agent_id = ?"
-            params.append(agent_id)
-        sql += " ORDER BY r.started_at DESC LIMIT ?"
-        params.append(limit)
-        with self._connection() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [
-            {
-                "run_id": r["run_id"],
-                "agent_id": r["agent_id"],
-                "started_at": r["started_at"],
-                "status": r["status"],
-                "risk": r["risk"],
-            }
-            for r in rows
-        ]
-
-    def pass_fail_matrix(self, org_id: str, agent_id: str) -> Matrix:
-        with self._connection() as conn:
-            latest = conn.execute(
-                "SELECT id FROM runs WHERE org_id = ? AND agent_id = ? "
-                "ORDER BY started_at DESC LIMIT 1",
-                (org_id, agent_id),
-            ).fetchone()
-            if latest is None:
-                return {}
-
-            rows = conn.execute(
-                "SELECT category, test_id, status FROM test_results "
-                "WHERE org_id = ? AND run_id = ? ORDER BY id",
-                (org_id, latest["id"]),
-            ).fetchall()
-        matrix: Matrix = {}
-        for row in rows:
-            matrix.setdefault(row["category"], {})[row["test_id"]] = row["status"]
-        return matrix

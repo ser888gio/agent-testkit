@@ -13,7 +13,7 @@ from agentaudit.core.runner import run
 from agentaudit.core.schema import Assertion, Category
 from agentaudit.core.schema import TestCase as SchemaTestCase
 from agentaudit.core.scoring import score
-from agentaudit.core.store import DEFAULT_ORG, Store
+from agentaudit.core.store import DEFAULT_ORG, Analytics, Store
 
 MODULE = "tests.test_store"
 
@@ -133,7 +133,7 @@ def test_pass_fail_matrix_reflects_latest_run():
     )
     store.save_run(DEFAULT_ORG, cfg, rr2, report2)
 
-    matrix = store.pass_fail_matrix(DEFAULT_ORG, cfg.id)
+    matrix = store.analytics.pass_fail_matrix(DEFAULT_ORG, cfg.id)
     assert matrix == {"reliability": {"new.pass.case": "passed"}}
 
 
@@ -207,16 +207,16 @@ def test_reads_are_scoped_to_the_calling_org():
     assert [(a.org_id, a.id) for a in store.list_agents("org-b")] == [("org-b", "agent-b")]
     assert [t["test_id"] for t in store.list_tests("org-a")] == ["orga.pass.case"]
     assert [t["test_id"] for t in store.list_tests("org-b")] == ["orgb.fail.case"]
-    assert store.pass_fail_matrix("org-a", cfg_a.id) == {
+    assert store.analytics.pass_fail_matrix("org-a", cfg_a.id) == {
         "reliability": {"orga.pass.case": "passed"}
     }
-    assert store.pass_fail_matrix("org-b", cfg_b.id) == {
+    assert store.analytics.pass_fail_matrix("org-b", cfg_b.id) == {
         "reliability": {"orgb.fail.case": "failed"}
     }
     assert store.list_runs("org-c") == []
     assert store.list_agents("org-c") == []
     assert store.list_tests("org-c") == []
-    assert store.pass_fail_matrix("org-c", cfg_a.id) == {}
+    assert store.analytics.pass_fail_matrix("org-c", cfg_a.id) == {}
 
 
 def test_tenant_constraints_reject_mismatched_result_owner():
@@ -228,9 +228,7 @@ def test_tenant_constraints_reject_mismatched_result_owner():
 
     with pytest.raises(sqlite3.IntegrityError):
         with store._connection() as conn, conn:  # noqa: SLF001 - violate tenant lineage
-            conn.execute(
-                "UPDATE test_results SET org_id = 'org-b' WHERE run_id = ?", (rr.run_id,)
-            )
+            conn.execute("UPDATE test_results SET org_id = 'org-b' WHERE run_id = ?", (rr.run_id,))
 
 
 def test_reads_fail_closed_for_inconsistent_tenant_markers():
@@ -239,14 +237,12 @@ def test_reads_fail_closed_for_inconsistent_tenant_markers():
     store.save_run("org-a", cfg, rr, report)
     with store._connection() as conn:  # noqa: SLF001 - create legacy/corrupt data
         conn.execute("PRAGMA foreign_keys = OFF")
-        conn.execute(
-            "UPDATE test_results SET org_id = 'org-b' WHERE run_id = ?", (rr.run_id,)
-        )
+        conn.execute("UPDATE test_results SET org_id = 'org-b' WHERE run_id = ?", (rr.run_id,))
         conn.commit()
         conn.execute("PRAGMA foreign_keys = ON")
 
     assert store.list_tests("org-b") == []
-    assert store.pass_fail_matrix("org-a", cfg.id) == {}
+    assert store.analytics.pass_fail_matrix("org-a", cfg.id) == {}
 
 
 def test_get_run_of_another_org_raises_keyerror():
@@ -262,31 +258,37 @@ def test_get_run_of_another_org_raises_keyerror():
         pass
 
 
-def test_no_public_method_defaults_org_id():
-    for name in (
-        "save_run",
-        "list_agents",
-        "list_tests",
-        "list_runs",
-        "run_count",
-        "get_run",
-        "pass_fail_matrix",
-        "save_target",
-        "get_target",
-        "get_target_secret_ref",
-        "list_targets",
-        "delete_target",
-        "save_pack",
-        "save_pack_test",
-        "get_pack_tests",
-        "list_packs",
-        "delete_pack_test",
-        "delete_pack",
-    ):
-        parameters = list(inspect.signature(getattr(Store, name)).parameters.values())
+# Methods that legitimately take no `org_id`, with the reason. Anything else
+# public on `Store` or `Analytics` is checked, so a new method is guarded by
+# default and skipping it has to be a deliberate entry here.
+_NOT_ORG_SCOPED = {
+    "close": "process-level lifecycle, touches no rows",
+    "purge_runs": "deployment-wide retention, deliberately crosses orgs",
+}
+
+
+def _public_methods(cls) -> list[tuple[str, object]]:
+    return [
+        (name, fn)
+        for name, fn in inspect.getmembers(cls, inspect.isfunction)
+        if not name.startswith("_") and name not in _NOT_ORG_SCOPED
+    ]
+
+
+@pytest.mark.parametrize("cls", [Store, Analytics])
+def test_no_public_method_defaults_org_id(cls):
+    """Tenancy is `org_id`, so it must be required, positional and first.
+
+    The method list is derived rather than written down: a hand-maintained
+    inclusion list leaves every newly added method silently unchecked, which is
+    the wrong way round for the one parameter that separates tenants.
+    """
+    checked = _public_methods(cls)
+    assert checked, cls.__name__
+    for name, fn in checked:
+        parameters = list(inspect.signature(fn).parameters.values())
         assert [parameter.name for parameter in parameters[:2]] == ["self", "org_id"], name
-        param = parameters[1]
-        assert param.default is inspect.Parameter.empty, name
+        assert parameters[1].default is inspect.Parameter.empty, name
 
 
 _TARGET_CONFIG = {
@@ -329,9 +331,7 @@ def test_target_secret_reference_round_trips_without_entering_config_json(monkey
     assert load_target_dict(store.get_target("org-a", "stored-agent")).agent.headers == {
         "Authorization": "Bearer resolved-value"
     }
-    assert store.get_target_secret_ref("org-a", "stored-agent") == (
-        "vault://org-a/agent-token"
-    )
+    assert store.get_target_secret_ref("org-a", "stored-agent") == ("vault://org-a/agent-token")
     with store._connection() as conn:  # noqa: SLF001 - inspect raw secret boundary
         stored_json = conn.execute(
             "SELECT config_json FROM targets WHERE org_id = ? AND id = ?",
@@ -737,7 +737,7 @@ def test_category_failure_rates_group_in_sql():
     store = Store(":memory:")
     _seed_analytics(store)
 
-    rates = store.category_failure_rates(DEFAULT_ORG)
+    rates = store.analytics.category_failure_rates(DEFAULT_ORG)
 
     assert len(rates) == 1
     row = rates[0]
@@ -752,19 +752,17 @@ def test_category_failure_rates_respect_the_since_window():
     store = Store(":memory:")
     _seed_analytics(store)
 
-    recent = store.category_failure_rates(DEFAULT_ORG, since="2026-08-20")
+    recent = store.analytics.category_failure_rates(DEFAULT_ORG, since="2026-08-20")
 
     # Only the agent-b run falls inside the window, and it passed.
-    assert recent == [
-        {"category": "reliability", "total": 1, "failed": 0, "rate": 0.0}
-    ]
+    assert recent == [{"category": "reliability", "total": 1, "failed": 0, "rate": 0.0}]
 
 
 def test_flakiest_tests_ignores_single_run_tests():
     store = Store(":memory:")
     _seed_analytics(store)
 
-    flaky = store.flakiest_tests(DEFAULT_ORG)
+    flaky = store.analytics.flakiest_tests(DEFAULT_ORG)
 
     # steady.case ran once and passed; a test seen once is untested, not flaky.
     assert [f["test_id"] for f in flaky] == ["flaky.case"]
@@ -776,7 +774,7 @@ def test_score_trend_is_oldest_first_and_bounded():
     store = Store(":memory:")
     _seed_analytics(store)
 
-    trend = store.score_trend(DEFAULT_ORG)
+    trend = store.analytics.score_trend(DEFAULT_ORG)
 
     assert len(trend) == 4
     starts = [p["started_at"] for p in trend]
@@ -784,17 +782,16 @@ def test_score_trend_is_oldest_first_and_bounded():
     assert trend[0]["score"] == 100
     assert trend[-1]["agent_id"] == "agent-b"
 
-    assert len(store.score_trend(DEFAULT_ORG, limit=2)) == 2
-    assert {p["agent_id"] for p in store.score_trend(DEFAULT_ORG, agent_id="agent-b")} == {
-        "agent-b"
-    }
+    assert len(store.analytics.score_trend(DEFAULT_ORG, limit=2)) == 2
+    trend_b = store.analytics.score_trend(DEFAULT_ORG, agent_id="agent-b")
+    assert {p["agent_id"] for p in trend_b} == {"agent-b"}
 
 
 def test_risk_breakdown_orders_by_severity():
     store = Store(":memory:")
     _seed_analytics(store)
 
-    breakdown = store.risk_breakdown(DEFAULT_ORG)
+    breakdown = store.analytics.risk_breakdown(DEFAULT_ORG)
 
     assert [b["risk"] for b in breakdown] == ["medium"]
     assert breakdown[0]["total"] == 4
@@ -805,17 +802,17 @@ def test_analytics_aggregates_are_org_scoped():
     store = Store(":memory:")
     _seed_analytics(store)
 
-    assert store.category_failure_rates("other-org") == []
-    assert store.flakiest_tests("other-org") == []
-    assert store.score_trend("other-org") == []
-    assert store.risk_breakdown("other-org") == []
+    assert store.analytics.category_failure_rates("other-org") == []
+    assert store.analytics.flakiest_tests("other-org") == []
+    assert store.analytics.score_trend("other-org") == []
+    assert store.analytics.risk_breakdown("other-org") == []
 
 
 def test_test_history_is_newest_first_across_runs():
     store = Store(":memory:")
     _seed_analytics(store)
 
-    history = store.test_history(DEFAULT_ORG, "flaky.case")
+    history = store.analytics.test_history(DEFAULT_ORG, "flaky.case")
 
     assert len(history) == 3
     starts = [h["started_at"] for h in history]
@@ -836,8 +833,8 @@ def test_test_history_can_scope_to_one_agent():
     )
     store.save_run(DEFAULT_ORG, cfg, rr, report)
 
-    everywhere = store.test_history(DEFAULT_ORG, "flaky.case")
-    just_b = store.test_history(DEFAULT_ORG, "flaky.case", agent_id="agent-b")
+    everywhere = store.analytics.test_history(DEFAULT_ORG, "flaky.case")
+    just_b = store.analytics.test_history(DEFAULT_ORG, "flaky.case", agent_id="agent-b")
 
     assert len(everywhere) == 4
     assert [h["agent_id"] for h in just_b] == ["agent-b"]
@@ -847,5 +844,5 @@ def test_test_history_is_empty_for_an_unknown_test_and_org_scoped():
     store = Store(":memory:")
     _seed_analytics(store)
 
-    assert store.test_history(DEFAULT_ORG, "never.ran") == []
-    assert store.test_history("other-org", "flaky.case") == []
+    assert store.analytics.test_history(DEFAULT_ORG, "never.ran") == []
+    assert store.analytics.test_history("other-org", "flaky.case") == []
