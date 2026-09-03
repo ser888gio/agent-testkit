@@ -20,9 +20,6 @@ This `docs/` folder holds contributor and architecture material instead.
 - `plan.md` — the original MVP build plan and scope decisions.
 - `specs/` — branch-level implementation contracts and behavioral specs.
 - `diagrams/` — D2 sources, rendered SVGs, and diagram companion docs used by the README.
-- `research/` — supporting research packages and implementation writeups that inform product or UI work.
-- `notes/` — implementation notes, lessons learned, and follow-up observations.
-- `archive/plans/` — historical planning documents kept for context without crowding the repo root.
 
 ## Navigation
 

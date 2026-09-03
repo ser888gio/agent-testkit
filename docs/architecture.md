@@ -2,8 +2,7 @@
 
 This document covers the target architecture for agentaudit as a product, using the current
 MVP (this repo) as the reference implementation of its core ideas. See [`plan.md`](plan.md)
-for the MVP build plan and [`archive/plans/`](./archive/plans) for historical planning
-context.
+for the MVP build plan.
 
 ## Control plane vs runner
 

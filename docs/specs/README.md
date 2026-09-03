@@ -3,8 +3,7 @@
 One spec per feature branch. Each is a **self-contained contract** an implementer can pick
 up cold: public API, data models/formats, lifecycle, failure behavior, worked examples,
 required tests, and an observable definition of done. Read your branch's spec together with
-[`../plan.md`](../plan.md) and the historical planning notes in
-[`../archive/plans/`](../archive/plans/).
+[`../plan.md`](../plan.md).
 
 Every spec follows the same shape:
 
@@ -55,7 +54,6 @@ Every spec follows the same shape:
 | 17 | `feat/reports` | [reports.md](reports.md) |
 | 18 | `feat/web-ui` | [web-ui.md](web-ui.md) |
 | 19 | `feat/regressions` | [regressions.md](regressions.md) |
-| 20 | `feat/docs-demo` | [docs-demo.md](docs-demo.md) |
 | 21 | `feat/attacker` | [attacker.md](attacker.md) |
 | 22 | `feat/judge` | [judge.md](judge.md) |
 | 23 | `feat/evolve` | [evolve.md](evolve.md) |

@@ -67,8 +67,7 @@ The practical framing for contributors is:
 > This repo is the execution and evidence core of a larger adaptive agent assurance
 > platform.
 
-Suggested next product milestones (all shipped; see
-[`IMPLEMENTATION-TESTS-PLAN.md`](IMPLEMENTATION-TESTS-PLAN.md) for the full roadmap):
+Suggested next product milestones (all shipped):
 
 1. ~~`AgentProfile` model.~~ — `core/profile.py`, `core/discovery.py`
 2. ~~Test-library metadata tagged by domain, capability, risk, and preconditions.~~ — `core/catalog.py`
