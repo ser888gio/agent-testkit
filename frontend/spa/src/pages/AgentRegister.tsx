@@ -20,6 +20,7 @@ export function AgentRegisterPage() {
     endpoint: "",
     method: "POST",
     text_path: "$.text",
+    input_path: "input",
     sandbox: "",
   });
 
@@ -93,6 +94,19 @@ export function AgentRegisterPage() {
                 </option>
               ))}
             </select>
+          </label>
+
+          <label>
+            Request field
+            <input
+              name="input_path"
+              value={values.input_path}
+              onChange={(e) => setValues({ ...values, input_path: e.target.value })}
+            />
+            <span className="quiet">
+              The JSON key the prompt is sent as. Discovery corrects this if the agent
+              expects a different shape.
+            </span>
           </label>
 
           <label>

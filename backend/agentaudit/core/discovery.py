@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from agentaudit.core.config import HTTPSpec, TargetConfig
+from agentaudit.core.config import HTTPSpec, ResponseSpec, TargetConfig
 from agentaudit.core.profile import AgentProfile
 from agentaudit.core.runner import run as run_tests
 from agentaudit.core.schema import (
@@ -233,3 +233,101 @@ def _apply_self_reported_tools(profile: AgentProfile, tools: TestResult | None) 
     # sandbox to it. Never flip this off: the sandbox is the stronger signal.
     profile.tool_use = True
     profile.notes.append(f"named {len(names)} tool(s) when asked: {', '.join(names)}")
+
+
+# --- request/response shape probing -----------------------------------------
+
+# There is no standard for agent HTTP bodies, so the shape cannot be inferred
+# from a URL -- it can only be guessed and checked. These are the shapes worth
+# guessing, most common first. Anything bespoke needs a YAML config; this
+# exists so the common cases need no config at all, and so a shape that does
+# not answer is refused at registration instead of scoring an empty run.
+#
+# Each entry is (request body, response text_path). The body is a `request`
+# dict as `HTTPSpec` takes it, with "{{ input }}" where the prompt goes.
+CANDIDATE_SHAPES: list[tuple[dict, str]] = [
+    ({"json": {"input": "{{ input }}"}}, "$.text"),
+    ({"json": {"input": "{{ input }}"}}, "$.output"),
+    ({"json": {"prompt": "{{ input }}"}}, "$.text"),
+    ({"json": {"prompt": "{{ input }}"}}, "$.completion"),
+    ({"json": {"message": "{{ input }}"}}, "$.reply"),
+    (
+        {"json": {"messages": [{"role": "user", "content": "{{ input }}"}]}},
+        "$.choices[0].message.content",
+    ),
+]
+
+SHAPE_PROBE = "discovery.probe.shape"
+
+# A token the agent has no reason to emit unless it read the prompt. Echo alone
+# is not enough: an agent POSTed an empty body still answers *something*, and
+# that something would satisfy `response_nonempty`. Requiring the token back is
+# what separates "answered" from "was asked".
+SHAPE_PHRASE = "SHAPE-4417"
+
+SHAPE_PROBE_INPUT = f"Reply with exactly this word and nothing else: {SHAPE_PHRASE}"
+
+
+def shape_probe() -> TestCase:
+    """A probe that only passes if the agent actually received the prompt."""
+    return TestCase(
+        id=SHAPE_PROBE,
+        category=Category.endpoint_contract,
+        risk=Risk.low,
+        input=SHAPE_PROBE_INPUT,
+        assertions=[Assertion(name="contains_any", args={"values": [SHAPE_PHRASE]})],
+        tags=["discovery"],
+        timeout_s=15.0,
+    )
+
+
+class ShapeUnknown(Exception):
+    """No candidate shape got the prompt through to the agent."""
+
+
+def detect_shape(
+    config: TargetConfig,
+    *,
+    candidates: list[tuple[dict, str]] | None = None,
+    runner: Callable[[TargetConfig, list[TestCase]], RunResult] = run_tests,
+) -> tuple[dict, str]:
+    """The first candidate shape the agent echoes a known token back through.
+
+    Returns `(request, text_path)` to store on the target. Raises `ShapeUnknown`
+    if none answered -- the caller should refuse the registration rather than
+    persist a target whose runs would score replies to a prompt never sent.
+
+    `runner` is injectable for the same reason as in `discover`: the caller has
+    already made the egress decision and passes the bound execution path.
+    """
+    if not isinstance(config.agent, HTTPSpec):
+        raise ShapeUnknown("shape detection only applies to http targets")
+
+    probe = shape_probe()
+    tried: list[str] = []
+    for request, text_path in candidates or CANDIDATE_SHAPES:
+        attempt = config.model_copy(
+            update={
+                "agent": config.agent.model_copy(
+                    update={"request": request, "response": ResponseSpec(text_path=text_path)}
+                )
+            },
+            deep=True,
+        )
+        result = runner(attempt, [probe])
+        first = result.results[0] if result.results else None
+        if first is not None and first.status is Status.passed:
+            return request, text_path
+        tried.append(shape_label(request, text_path))
+
+    raise ShapeUnknown(
+        "the endpoint did not answer a trivial probe in any known request shape "
+        f"(tried: {'; '.join(tried)}). Register it with a YAML config instead."
+    )
+
+
+def shape_label(request: dict, text_path: str) -> str:
+    """A shape named by its keys only -- never by anything the agent returned."""
+    body = request.get("json", {})
+    key = ", ".join(body) if isinstance(body, dict) else "?"
+    return f"{{{key}}} -> {text_path}"

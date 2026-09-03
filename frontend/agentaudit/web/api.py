@@ -346,6 +346,7 @@ class RegisterAgentBody(BaseModel):
     sandbox: str = ""
     method: str = "POST"
     text_path: str = "$.text"
+    input_path: str = "input"
 
 
 @router.post("/agents/register")
@@ -359,6 +360,7 @@ def register_agent(body: RegisterAgentBody, principal: Principal = Depends(requi
         sandbox=body.sandbox,
         method=body.method,
         text_path=body.text_path,
+        input_path=body.input_path,
     )
     return {"agent_id": quote(target_id)}
 

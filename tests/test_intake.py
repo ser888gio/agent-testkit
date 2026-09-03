@@ -97,6 +97,23 @@ def test_register_trims_whitespace_around_the_id_and_endpoint(store):
     assert store.get_target_allowed_hosts(ORG, "spaced") == ["a.example.com"]
 
 
+def test_register_sends_the_prompt_as_a_json_body(store):
+    """Without a request template the agent gets POSTed an empty body."""
+    register_http_target(store, ORG, target_id="mine", endpoint="https://a.example.com")
+    assert store.get_target(ORG, "mine")["agent"]["request"] == {
+        "json": {"input": "{{ input }}"}
+    }
+
+
+def test_register_honours_a_custom_input_path(store):
+    register_http_target(
+        store, ORG, target_id="mine", endpoint="https://a.example.com", input_path="prompt"
+    )
+    assert store.get_target(ORG, "mine")["agent"]["request"] == {
+        "json": {"prompt": "{{ input }}"}
+    }
+
+
 def test_register_is_org_scoped(store):
     register_http_target(store, "org-a", target_id="mine", endpoint="https://a.example.com")
     with pytest.raises(KeyError):
