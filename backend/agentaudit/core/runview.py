@@ -29,8 +29,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from agentaudit.core.attacks import split_variant
 from agentaudit.core.findings import RANK, failed_assertions, order_by_failure
 from agentaudit.core.schema import Category, Status
+from agentaudit.core.timeline import build as build_timeline
+from agentaudit.core.timeline import window as window_timeline
 
 # Statuses that mean a reader should look at this run.
 BAD_STATUSES = frozenset({"failed", "error"})
@@ -357,4 +360,90 @@ def harness(run: Any, report: Any) -> dict:
         },
         "skills": skills,
         "findings": findings,
+    }
+
+
+def analytics(trend: list[dict], rows: Iterable[Any]) -> dict:
+    """The home page's rollup over this org's recent runs.
+
+    Takes the score trend and the run rows; returns the trend plus the totals
+    derived from them. Chart *geometry* is not here on purpose: `reports.charts`
+    lives above `core` in the dependency direction, so the caller maps
+    `sparkline_points`/`bar_rows`/`donut_segments` over what this returns.
+
+    `delta` compares the two most recent scores and is 0 when there is only one
+    run, which is the honest answer -- a single run has no trend to move.
+    """
+    rows = list(rows)
+    gates = sum(1 for r in rows if r.status not in BAD_STATUSES)
+    latest = trend[-1]["score"] if trend else 0
+    previous = trend[-2]["score"] if len(trend) > 1 else latest
+    return {
+        "trend": trend,
+        "totals": {
+            "runs": len(rows),
+            "agents": len({r.agent_id for r in rows}),
+            "gate_rate": round(gates / len(rows) * 100) if rows else 0,
+            "critical": sum(r.score.get("critical_failures", 0) for r in rows),
+            "latest_score": latest,
+            "delta": latest - previous,
+        },
+    }
+
+
+# What the evidence drawer shows for artifact kinds this result model does not
+# carry. Stated rather than omitted: "we did not capture this" and "there was
+# nothing to capture" are different answers to an auditor.
+_UNAVAILABLE_ARTIFACTS = (
+    ("Trace", "The current result model does not persist Playwright-style traces."),
+    ("Screenshots / video", "Artifact URLs are not captured for this run yet."),
+)
+
+
+def test_detail(run: Any, result: Any, *, plan: Any = None, history: list | None = None) -> dict:
+    """One test's evidence page: the result, its neighbours, and its provenance.
+
+    `result` must be one of `run.results`; the caller looks it up so a missing
+    test id is a 404 at the edge rather than an exception in here.
+
+    Neighbours follow the failure-first order the findings module owns, so
+    paging through results walks the same sequence the list showed. The
+    selection rationale is looked up by the test's *base* id as well as its own:
+    an attack variant keeps its base test's rationale, because the transform did
+    not change why the test was worth running.
+    """
+    ordered = order_by_failure(run.results)
+    idx = next(i for i, r in enumerate(ordered) if r.test_id == result.test_id)
+    base_id = split_variant(result.test_id)[0]
+    selection = next(
+        (s for s in (plan.selected if plan else []) if s.test_id in (result.test_id, base_id)),
+        None,
+    )
+    timeline = window_timeline(build_timeline(result))
+    # One turn is a request and a reply, not a sequence worth drawing.
+    has_timeline = len(timeline["turns"]) >= 2
+    return {
+        "run": run,
+        "result": result,
+        "selection": selection,
+        "previous_result": ordered[idx - 1] if idx > 0 else None,
+        "next_result": ordered[idx + 1] if idx + 1 < len(ordered) else None,
+        "history": history or [],
+        "timeline": timeline if has_timeline else None,
+        "artifact_states": [
+            *(
+                {"name": name, "state": "Unavailable", "detail": detail}
+                for name, detail in _UNAVAILABLE_ARTIFACTS
+            ),
+            {
+                "name": "Sandbox diff",
+                "state": "Available" if result.sandbox_diff else "Empty",
+                "detail": "Captured state changes around the test execution.",
+            },
+            {
+                "name": "Timeline",
+                "state": "Available" if has_timeline else "Unavailable",
+                "detail": "Turn-by-turn requests and sandbox events for this test.",
+            },
+        ],
     }

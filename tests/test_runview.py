@@ -226,3 +226,114 @@ def test_harness_summary_blocks_on_critical_failure():
     view = runview.harness(run, score(run))
     assert view["summary"]["gate"] == "BLOCK"
     assert view["summary"]["critical_failures"] == 1
+
+
+# --- analytics --------------------------------------------------------------
+
+
+def test_analytics_delta_is_zero_for_a_single_run():
+    """One run has no trend to move; a delta against itself is the honest answer."""
+    view = runview.analytics([{"score": 72}], [_run_row("r1")])
+    assert view["totals"]["latest_score"] == 72
+    assert view["totals"]["delta"] == 0
+
+
+def test_analytics_delta_compares_the_two_most_recent_scores():
+    trend = [{"score": 40}, {"score": 55}, {"score": 51}]
+    view = runview.analytics(trend, [_run_row("r1")])
+    assert view["totals"]["latest_score"] == 51
+    assert view["totals"]["delta"] == -4
+
+
+def test_analytics_on_an_empty_org_does_not_divide_by_zero():
+    view = runview.analytics([], [])
+    assert view["totals"] == {
+        "runs": 0,
+        "agents": 0,
+        "gate_rate": 0,
+        "critical": 0,
+        "latest_score": 0,
+        "delta": 0,
+    }
+
+
+def test_analytics_gate_rate_counts_runs_that_are_not_failed_or_error():
+    rows = [
+        _run_row("r1", status="passed"),
+        _run_row("r2", status="failed"),
+        _run_row("r3", status="error"),
+        _run_row("r4", status="passed"),
+    ]
+    view = runview.analytics([], rows)
+    assert view["totals"]["gate_rate"] == 50
+    assert view["totals"]["runs"] == 4
+
+
+def test_analytics_counts_distinct_agents_not_runs():
+    rows = [
+        _run_row("r1", agent="agent-a"),
+        _run_row("r2", agent="agent-a"),
+        _run_row("r3", agent="agent-b"),
+    ]
+    assert runview.analytics([], rows)["totals"]["agents"] == 2
+
+
+# --- test_detail ------------------------------------------------------------
+
+
+def test_test_detail_neighbours_follow_the_failure_first_order():
+    run = _run(
+        [
+            _result("t.pass", Status.passed),
+            _result("t.fail", Status.failed),
+            _result("t.error", Status.error),
+        ]
+    )
+    # Failure-first order is error, fail, pass -- so `t.fail` sits between them.
+    view = runview.test_detail(run, run.results[1])
+    assert view["previous_result"].test_id == "t.error"
+    assert view["next_result"].test_id == "t.pass"
+
+
+def test_test_detail_ends_have_no_neighbour_on_the_outside():
+    run = _run([_result("t.error", Status.error), _result("t.pass", Status.passed)])
+    first = runview.test_detail(run, run.results[0])
+    last = runview.test_detail(run, run.results[1])
+    assert first["previous_result"] is None
+    assert last["next_result"] is None
+
+
+def test_test_detail_of_a_lone_result_has_neither_neighbour():
+    run = _run([_result("t.only", Status.passed)])
+    view = runview.test_detail(run, run.results[0])
+    assert view["previous_result"] is None and view["next_result"] is None
+
+
+def test_test_detail_reports_no_timeline_for_a_single_turn():
+    """One request and one reply is not a sequence worth drawing."""
+    run = _run([_result("t.a", Status.passed)])
+    assert runview.test_detail(run, run.results[0])["timeline"] is None
+    states = {
+        a["name"]: a["state"] for a in runview.test_detail(run, run.results[0])["artifact_states"]
+    }
+    assert states["Timeline"] == "Unavailable"
+    assert states["Sandbox diff"] == "Empty"
+
+
+def test_test_detail_variant_inherits_its_base_test_rationale():
+    """A transform changed how the test asks, not why it was selected."""
+    from agentaudit.core.profile import AgentProfile, HarnessPlan, SelectedTest
+
+    run = _run([_result("t.base__rot13", Status.failed)])
+    plan = HarnessPlan(
+        profile=AgentProfile(id="agent-a"),
+        selected=[SelectedTest(test_id="t.base", source="pack", score=1.0, reasons=["seeded"])],
+    )
+    view = runview.test_detail(run, run.results[0], plan=plan)
+    assert view["selection"] is not None
+    assert view["selection"].test_id == "t.base"
+
+
+def test_test_detail_without_a_plan_has_no_selection():
+    run = _run([_result("t.a", Status.passed)])
+    assert runview.test_detail(run, run.results[0])["selection"] is None
