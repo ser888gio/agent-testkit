@@ -16,17 +16,35 @@ runner = CliRunner()
 
 # Bump when a new revision lands in infra/alembic/versions/.
 HEAD = "0016"
-APPLICATION_TABLES = (
-    "orgs",
-    "agents",
-    "runs",
-    "test_results",
-    "targets",
-    "packs",
-    "pack_tests",
-    "jobs",
-    "artifacts",
-)
+
+# Tables SQLite or Alembic own, which say nothing about the application schema.
+NON_APPLICATION_TABLES = frozenset({"alembic_version", "sqlite_sequence"})
+
+
+def _application_tables(db: str) -> set[str]:
+    """Every application table in a database, read from the database itself.
+
+    Deliberately not a hand-maintained list: the previous one had drifted --
+    `llm_settings` (revision 0016) was never added to it, so the newest table
+    was the one table the drift check did not cover. Deriving the set means a
+    new table is checked the day it lands, in both directions.
+    """
+    conn = sqlite3.connect(db)
+    try:
+        names = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+    finally:
+        conn.close()
+    return names - NON_APPLICATION_TABLES
+
+
+@pytest.fixture(scope="module")
+def application_tables(tmp_path_factory) -> set[str]:
+    """The application tables, taken from what `Store` creates rather than a list."""
+    db = str(tmp_path_factory.mktemp("schema-reference") / "reference.db")
+    Store(db).close()
+    return _application_tables(db)
 
 
 def _schema_signature(db: str, table: str) -> tuple:
@@ -55,7 +73,11 @@ def test_migrated_schema_matches_what_store_creates(tmp_path):
     direct = str(tmp_path / "direct.db")
     Store(direct).close()
 
-    for table in APPLICATION_TABLES:
+    # Compare the table *sets* first: a table only one side creates is drift the
+    # per-table loop below would never look at.
+    assert _application_tables(migrated) == _application_tables(direct)
+
+    for table in sorted(_application_tables(migrated)):
         assert _schema_signature(migrated, table) == _schema_signature(direct, table), table
 
     conn = sqlite3.connect(migrated)
@@ -204,7 +226,7 @@ def _current_revision(db: str) -> str | None:
     return row[0] if row else None
 
 
-def test_cli_migrate_applies_baseline_schema(tmp_path):
+def test_cli_migrate_applies_baseline_schema(tmp_path, application_tables):
     db = str(tmp_path / "a.db")
 
     result = runner.invoke(app, ["migrate", "--db", db])
@@ -215,7 +237,7 @@ def test_cli_migrate_applies_baseline_schema(tmp_path):
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
-    assert set(APPLICATION_TABLES) | {"alembic_version"} <= tables
+    assert application_tables | {"alembic_version"} <= tables
     assert _current_revision(db) == HEAD
 
 
@@ -230,7 +252,7 @@ def test_cli_migrate_is_idempotent(tmp_path):
     assert _current_revision(db) == HEAD
 
 
-def test_cli_migrate_resumes_partially_applied_migration(tmp_path):
+def test_cli_migrate_resumes_partially_applied_migration(tmp_path, application_tables):
     db = str(tmp_path / "a.db")
     conn = sqlite3.connect(db)
     conn.execute(
@@ -255,7 +277,7 @@ def test_cli_migrate_resumes_partially_applied_migration(tmp_path):
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
     conn.close()
-    assert set(APPLICATION_TABLES) | {"alembic_version"} <= tables
+    assert application_tables | {"alembic_version"} <= tables
     assert _current_revision(db) == HEAD
 
 
