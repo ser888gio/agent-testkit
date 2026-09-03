@@ -33,7 +33,6 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agentaudit.core import llm, runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
-from agentaudit.core.attacks import split_variant
 from agentaudit.core.config import known_sandboxes
 from agentaudit.core.evolve import (
     GENERATED_PREFIX,
@@ -41,7 +40,6 @@ from agentaudit.core.evolve import (
     promotable,
     promoted_id,
 )
-from agentaudit.core.findings import order_by_failure
 from agentaudit.core.intake import is_offerable_target, is_pack_dir, register_http_target
 from agentaudit.core.intake import queue_run as intake_queue_run
 from agentaudit.core.loader import LoaderError, discover
@@ -49,8 +47,6 @@ from agentaudit.core.profile import AgentProfile
 from agentaudit.core.regressions import compare
 from agentaudit.core.schema import Category, Risk, TestCase
 from agentaudit.core.store import DISCOVERY_PACK_ID
-from agentaudit.core.timeline import build as build_timeline
-from agentaudit.core.timeline import window as window_timeline
 from agentaudit.reports.charts import bar_rows, donut_segments, sparkline_points
 from agentaudit.reports.html import to_html
 from agentaudit.reports.json import to_json
@@ -75,8 +71,6 @@ STATUS_LABELS = {
     "passed": "Passed",
     "skipped": "Skipped",
 }
-
-BAD_STATUSES = runview.BAD_STATUSES
 
 
 # ---------------------------------------------------------------------------
@@ -178,25 +172,19 @@ def session_info(principal: Principal = Depends(current_principal)) -> dict:
 def analytics(principal: Principal = Depends(current_principal)) -> dict:
     store = get_store()
     org = principal.org_id
-    trend = store.analytics.score_trend(org, limit=30)
-    rows = store.list_runs(org, limit=100)
-    gates = sum(1 for r in rows if r.status not in BAD_STATUSES)
-    latest = trend[-1]["score"] if trend else 0
-    previous = trend[-2]["score"] if len(trend) > 1 else latest
+    # `runview` derives; `reports.charts` turns the derived rows into geometry.
+    # The split follows the dependency direction: charts may import core, not
+    # the other way round.
+    view = runview.analytics(
+        store.analytics.score_trend(org, limit=30), store.list_runs(org, limit=100)
+    )
     return {
-        "trend": _serialize(trend),
-        "sparkline": sparkline_points([p["score"] for p in trend]),
+        "trend": _serialize(view["trend"]),
+        "sparkline": sparkline_points([p["score"] for p in view["trend"]]),
         "categories": _serialize(bar_rows(store.analytics.category_failure_rates(org))),
         "flaky": _serialize(store.analytics.flakiest_tests(org, limit=8)),
         "risks": _serialize(donut_segments(store.analytics.risk_breakdown(org))),
-        "totals": {
-            "runs": len(rows),
-            "agents": len({r.agent_id for r in rows}),
-            "gate_rate": round(gates / len(rows) * 100) if rows else 0,
-            "critical": sum(r.score.get("critical_failures", 0) for r in rows),
-            "latest_score": latest,
-            "delta": latest - previous,
-        },
+        "totals": view["totals"],
     }
 
 
@@ -268,53 +256,16 @@ def test_detail(
     result = next((r for r in rr.results if r.test_id == test_id), None)
     if result is None:
         raise HTTPException(status_code=404, detail=f"test '{test_id}' not found in run '{run_id}'")
-    ordered = order_by_failure(rr.results)
-    idx = next(i for i, r in enumerate(ordered) if r.test_id == test_id)
-    # Attack variants keep their base test's rationale: the transform did not
-    # change why the test was worth running.
-    base_id = split_variant(test_id)[0]
-    plan = get_store().get_run_plan(principal.org_id, run_id)
-    selection = next(
-        (s for s in (plan.selected if plan else []) if s.test_id in (test_id, base_id)),
-        None,
-    )
-    history = get_store().analytics.test_history(
-        principal.org_id, test_id, agent_id=rr.agent_name, limit=20
-    )
-    timeline = window_timeline(build_timeline(result))
-    artifact_states = [
-        {
-            "name": "Trace",
-            "state": "Unavailable",
-            "detail": "The current result model does not persist Playwright-style traces.",
-        },
-        {
-            "name": "Screenshots / video",
-            "state": "Unavailable",
-            "detail": "Artifact URLs are not captured for this run yet.",
-        },
-        {
-            "name": "Sandbox diff",
-            "state": "Available" if result.sandbox_diff else "Empty",
-            "detail": "Captured state changes around the test execution.",
-        },
-        {
-            "name": "Timeline",
-            "state": "Available" if len(timeline["turns"]) >= 2 else "Unavailable",
-            "detail": "Turn-by-turn requests and sandbox events for this test.",
-        },
-    ]
+    store = get_store()
     return _serialize(
-        {
-            "run": rr,
-            "result": result,
-            "selection": selection,
-            "previous_result": ordered[idx - 1] if idx > 0 else None,
-            "next_result": ordered[idx + 1] if idx + 1 < len(ordered) else None,
-            "history": history,
-            "timeline": timeline if len(timeline["turns"]) >= 2 else None,
-            "artifact_states": artifact_states,
-        }
+        runview.test_detail(
+            rr,
+            result,
+            plan=store.get_run_plan(principal.org_id, run_id),
+            history=store.analytics.test_history(
+                principal.org_id, test_id, agent_id=rr.agent_name, limit=20
+            ),
+        )
     )
 
 
@@ -345,9 +296,7 @@ def export_run(
         content=render(run, report),
         media_type=media_type,
         headers={
-            "content-disposition": (
-                f'attachment; filename="agentaudit-{run_id[:8]}.{suffix}"'
-            )
+            "content-disposition": (f'attachment; filename="agentaudit-{run_id[:8]}.{suffix}"')
         },
     )
 
@@ -449,9 +398,7 @@ def agent_detail(agent_id: str, principal: Principal = Depends(current_principal
             "profiled_at": profiled_at,
             "capabilities": sorted(capabilities),
             "registered": registered,
-            "allowed_hosts": (
-                store.get_target_allowed_hosts(org, agent_id) if registered else []
-            ),
+            "allowed_hosts": (store.get_target_allowed_hosts(org, agent_id) if registered else []),
         }
     )
 
@@ -856,9 +803,7 @@ def settings_info(principal: Principal = Depends(current_principal)) -> dict:
 
 
 @router.put("/settings/llm")
-def save_llm_settings(
-    body: LLMSettingsBody, principal: Principal = Depends(require_admin)
-) -> dict:
+def save_llm_settings(body: LLMSettingsBody, principal: Principal = Depends(require_admin)) -> dict:
     """Replace this org's model configuration. A null role clears it."""
     store = get_store()
     for role, spec in (("attacker", body.attacker), ("judge", body.judge)):
