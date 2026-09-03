@@ -244,7 +244,9 @@ before declaring done.
   contract is `core/config.py`; the assertion contract is the `REGISTRY` in
   `core/assertions.py`. Changing any of these is a breaking change across every consumer.
 - **Persistence access:** only through `Store` (`core/store.py`). No other module opens
-  `agentaudit.db` or issues SQL.
+  `agentaudit.db` or issues SQL. Cohesive groups of queries become small classes *inside*
+  `store.py`, reached as attributes (`store.jobs`, `store.analytics`) — never sibling
+  modules. See [`docs/adr/0001-store-sub-namespaces.md`](docs/adr/0001-store-sub-namespaces.md).
 
 **Recommendations** (not enforced, follow unless there is a reason not to):
 
