@@ -1,39 +1,55 @@
 direction: down
 
-cli: CLI / Web (cli.py, web/app.py) {
+cli: "Entry points (cli.py, web/app.py, worker.py)" {
   class: server
 }
 
-runner: Runner + Redaction (runner.py, redaction.py) {
+audit: "audit.execute() — the assembled run" {
   class: golang
 }
 
-scoring: Scoring (scoring.py) {
+planner: "Discovery + planner (discovery.py, planner.py)\nopt-in: --plan" {
+  class: golang
+  style.stroke-dash: 3
+}
+
+runner: "Runner + Redaction (runner.py, redaction.py)" {
   class: golang
 }
 
-sandbox: Domain sandboxes (domains/) {
+isolation: "Isolation (isolation.py)\nsupervisor owns the sandbox,\nagent runs in a killable child" {
   class: container
 }
 
-packs: Test packs (packs/*.yaml) {
+sandbox: "Domain sandboxes (domains/)" {
+  class: container
+}
+
+scoring: "Scoring (scoring.py)" {
+  class: golang
+}
+
+packs: "Test packs (packs/*.yaml)" {
   shape: cylinder
 }
 
-reports: Reports (reports/) {
+reports: "Reports (reports/)" {
   class: server
 }
 
-store: Run store (store.py, SQLite) {
+store: "Run store (store.py, SQLite)" {
   shape: cylinder
 }
 
-cli -> runner: "run(target, pack)"
-packs -> runner: "test cases"
-runner -> sandbox: "assert side effects"
-runner -> runner: "redact before\nbuilding TestResult"
-runner -> scoring: "RunResult (redacted)"
-scoring -> store: "save_run\n(redact again)"
-scoring -> reports: "RunResult + ScoreReport"
+cli -> audit: "execute(target, tests)"
+packs -> audit: "test cases (loader.py)"
+audit -> planner: "rank + select" {style.stroke-dash: 5}
+audit -> runner: "run the selected tests"
+runner -> isolation: "one test per child"
+isolation -> sandbox: "assert side effects"
+isolation -> runner: "TestResult (redacted\nin the supervisor)" {style.stroke-dash: 3}
+audit -> scoring: "RunResult (redacted)"
+scoring -> cli: "AuditRun = RunResult + ScoreReport" {style.stroke-dash: 3}
+cli -> store: "save_run (redacts again)"
 store -> reports: "replay (agentaudit report --run)" {style.stroke-dash: 5}
 reports -> cli: "rendered report"
