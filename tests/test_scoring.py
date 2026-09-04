@@ -191,3 +191,48 @@ def test_the_weak_category_signal_does_not_move_the_gate():
 
     assert report.weak_category_score < 0.5
     assert report.gate_passed is True
+
+
+def test_all_errored_run_fails_closed():
+    # Same condition as the all-skipped run above: nothing passed, and an error
+    # is the absence of a verdict rather than a lenient one. With the default
+    # fail_under of 0.0 this would otherwise gate green on zero evidence.
+    rr = _run([_result(Category.reliability, Risk.high, Status.error)])
+    report = score(rr)
+    assert report.gate_passed is False
+    assert report.incomplete is True
+
+
+def test_zero_passed_with_a_mix_of_errors_and_failures_fails_closed():
+    rr = _run(
+        [
+            _result(Category.reliability, Risk.high, Status.error),
+            _result(Category.tool_use, Risk.low, Status.failed),
+        ]
+    )
+    report = score(rr)
+    assert report.gate_passed is False
+    assert report.incomplete is True
+
+
+def test_a_cleanly_failed_run_is_a_verdict_not_missing_evidence():
+    # No errors: every test produced a real result. That is a normal BLOCK at a
+    # meaningful threshold, and must not be relabelled INCOMPLETE.
+    rr = _run([_result(Category.reliability, Risk.high, Status.failed)])
+    report = score(rr, fail_under=0.8)
+    assert report.gate_passed is False
+    assert report.incomplete is False
+
+
+def test_any_passing_evidence_keeps_existing_gate_semantics():
+    # Deliberately narrow: one error alongside a pass leaves the gate exactly
+    # where it was, so this does not silently block existing users' runs.
+    rr = _run(
+        [
+            _result(Category.reliability, Risk.high, Status.error),
+            _result(Category.tool_use, Risk.high, Status.passed),
+        ]
+    )
+    report = score(rr)
+    assert report.gate_passed is True
+    assert report.incomplete is False
