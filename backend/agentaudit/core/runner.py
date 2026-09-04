@@ -7,7 +7,7 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -426,6 +426,33 @@ def _run_trial(
     return _fold_attempts(attempts, policy.threshold)
 
 
+def _with_target_timeout(
+    target: TargetConfig, tests: list[TestCase | PythonTestCase]
+) -> list[TestCase | PythonTestCase]:
+    """Raise each test's execution ceiling to at least the target's timeout.
+
+    A test's `timeout_s` is the wall-clock budget for one turn; the target's is
+    the per-call budget the transport was configured with. A target declaring a
+    60s call budget under tests carrying the 30s default would have every slow
+    but legitimate call killed by the runner and recorded as ERROR -- a phantom
+    timeout attributed to the agent. `max` rather than a plain override, so a
+    test that deliberately asks for a *longer* budget keeps it, and a fast
+    target cannot weaken a test's latency expectations.
+    """
+    ceiling = getattr(target.agent, "timeout_s", None)
+    if ceiling is None:
+        return tests
+    raised: list[TestCase | PythonTestCase] = []
+    for test in tests:
+        if test.timeout_s >= ceiling:
+            raised.append(test)
+        elif isinstance(test, TestCase):
+            raised.append(test.model_copy(update={"timeout_s": ceiling}))
+        else:
+            raised.append(replace(test, timeout_s=ceiling))
+    return raised
+
+
 def run(
     target: TargetConfig,
     tests: list[TestCase | PythonTestCase],
@@ -454,6 +481,7 @@ def run(
     deliberately never allowed to affect whether the run continues.
     """
     redactor = redactor or Redactor(target.evidence.redact)
+    tests = _with_target_timeout(target, tests)
     isolated = IsolatedRunner(target, redactor, endpoint, sandbox_modules())
 
     started = _now()

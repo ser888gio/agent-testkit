@@ -8,10 +8,17 @@ from pathlib import Path
 
 from agentaudit.core.agent import AgentResponse
 from agentaudit.core.attacker import AttackerError, RefiningStrategy
-from agentaudit.core.config import CallableSpec, TargetConfig
+from agentaudit.core.config import CallableSpec, HTTPSpec, TargetConfig
 from agentaudit.core.loader import PythonTestCase
 from agentaudit.core.redaction import EvidencePolicy, RedactionConfig, Redactor
-from agentaudit.core.runner import _decided, _fold_attempts, _run_turns, run, run_one
+from agentaudit.core.runner import (
+    _decided,
+    _fold_attempts,
+    _run_turns,
+    _with_target_timeout,
+    run,
+    run_one,
+)
 from agentaudit.core.schema import (
     AdaptiveSpec,
     Assertion,
@@ -790,3 +797,48 @@ def test_provenance_reaches_the_test_result(monkeypatch):
     )
     assert result.techniques == ["hypothetical"]
     assert result.degraded is False
+
+
+def _timeout_case(timeout_s: float) -> TestCase:
+    return TestCase(
+        id="a.timeout.case",
+        category=Category.reliability,
+        input="hi",
+        assertions=[Assertion(name="response_nonempty")],
+        timeout_s=timeout_s,
+    )
+
+
+def _http_target(timeout_s: float) -> TargetConfig:
+    return TargetConfig(
+        id="http-target",
+        agent=HTTPSpec(type="http", endpoint="http://example.invalid/chat", timeout_s=timeout_s),
+    )
+
+
+def test_a_slow_target_raises_the_default_per_test_timeout():
+    # A 60s target under the 30s default: the ceiling comes from the target,
+    # so a legitimately slow call is not killed and recorded as a phantom ERROR.
+    raised = _with_target_timeout(_http_target(60.0), [_timeout_case(30.0)])
+    assert raised[0].timeout_s == 60.0
+
+
+def test_a_fast_target_never_lowers_a_test_timeout():
+    # max(), not override: a fast target must not weaken a test that asked
+    # for a longer budget.
+    tests = [_timeout_case(120.0)]
+    assert _with_target_timeout(_http_target(10.0), tests) == tests
+
+
+def test_a_callable_target_has_no_timeout_to_raise():
+    tests = [_timeout_case(30.0)]
+    assert _with_target_timeout(_target(f"{MODULE}:create_passing_agent"), tests) == tests
+
+
+def test_the_ceiling_also_applies_to_python_tests():
+    python_test = PythonTestCase(
+        id="a.python.case", category=Category.reliability, risk=Risk.low, fn=lambda a, s: None
+    )
+    raised = _with_target_timeout(_http_target(60.0), [python_test])
+    assert raised[0].timeout_s == 60.0
+    assert raised[0].fn is python_test.fn
