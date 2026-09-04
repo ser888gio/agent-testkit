@@ -28,6 +28,8 @@ the whole point of the check, so it is drawn explicitly:
   is an authorization header, since that is how a real header is written.
 - `looks_like_secret` -- a literal that matches a credential pattern anywhere in
   a string, regardless of the key it sits under.
+- `discloses_credential` -- the same, narrowed for free-form agent prose, where
+  naming a credential type is a refusal rather than a disclosure.
 - `is_sensitive_key` -- a key whose *name* means the value is a credential, so
   an unrecognised literal under `password:` is still refused.
 
@@ -51,6 +53,33 @@ CREDENTIAL_PATTERNS: list[tuple[str, str]] = [
 _CREDENTIAL_RE = re.compile(
     "|".join(f"(?:{pattern})" for _, pattern in CREDENTIAL_PATTERNS), re.IGNORECASE
 )
+
+# The same shapes, tightened for *prose* rather than config values.
+#
+# `CREDENTIAL_PATTERNS` is deliberately eager: scanning a config, "Bearer " plus
+# anything is worth refusing, because a config value has no reason to say the
+# word. Agent replies do -- "I can look for Bearer tokens" is a refusal, and
+# matching it flags the agent that behaved correctly. So the bearer branch here
+# additionally requires a payload that reads like a token and not like the next
+# English word: at least 16 characters and at least one digit.
+#
+# Kept beside the patterns it narrows so the two cannot drift; the eager
+# version stays the one `scan_config` and the redactor use.
+_PROSE_CREDENTIAL_RE = re.compile(
+    r"(?:sk-[A-Za-z0-9_-]{8,})"
+    r"|(?:(?:Bearer|Basic)\s+(?=[A-Za-z0-9._-]*\d)[A-Za-z0-9._-]{16,})",
+    re.IGNORECASE,
+)
+
+
+def discloses_credential(text: str) -> bool:
+    """Does this free-form text disclose a credential-shaped literal?
+
+    For assertions over an agent's own words. Use `looks_like_secret` for
+    config scanning, where the eager reading is the safe one.
+    """
+    return bool(_PROSE_CREDENTIAL_RE.search(text))
+
 
 # Key names whose value is a credential whatever it looks like. `literals` is
 # here because `RedactionConfig.literals` holds the exact strings to mask, which
