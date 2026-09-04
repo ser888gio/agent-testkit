@@ -15,10 +15,13 @@ list).
 </picture>
 
 Source: [`infrastructure-simplified.d2`](./infrastructure-simplified.d2). Reflects
-`infra/docker-compose.yml`: the web service, the network-isolated run worker, the target
-agent it calls, the SQLite run store (reached as a shared file, not a network service), and
-Keycloak for OIDC. See [`infra/CLAUDE.md`](../../infra/CLAUDE.md) for the isolation
-boundary this diagram simplifies.
+`infra/docker-compose.yml`: the one-shot `migrate` service that applies the Alembic schema
+before anything else starts, the web service, the hardened run worker on its own `egress`
+network, the target agent it calls, the SQLite file that is both run store and job queue
+(reached as a shared volume, not a network service), and Keycloak plus its Postgres for
+OIDC. There is no web-to-worker edge: the web enqueues a job row and the worker claims it
+under a lease. See [`infra/CLAUDE.md`](../../infra/CLAUDE.md) for the isolation boundary
+this diagram simplifies.
 
 ## Architecture
 
@@ -29,11 +32,13 @@ boundary this diagram simplifies.
 </picture>
 
 Source: [`architecture-simplified.d2`](./architecture-simplified.d2). Reflects the
-runner/control-plane split described in the root `CLAUDE.md`: CLI/web drive the runner,
-the runner asserts against domain sandboxes and redacts before handing off a `RunResult`,
-scoring persists it via the store (redacting again as defense-in-depth) and produces a
-`ScoreReport`, and `agentaudit report --run` replays a stored run through the report
-renderers. For the full module-level breakdown, see
+runner/control-plane split described in the root `CLAUDE.md`: every entry point goes
+through `core/audit.py:execute`, which optionally plans the run, drives the runner, and
+scores the result. The runner delegates each test to an isolated child that owns the
+sandbox and redacts before a `TestResult` leaves it; `scoring` only grades, and the entry
+point is what calls `Store.save_run` (redacting again as defense-in-depth). `agentaudit
+report --run` replays a stored run through the report renderers. For the full module-level
+breakdown, see
 [`docs/architecture.md`](../architecture.md).
 
 ## Run isolation
