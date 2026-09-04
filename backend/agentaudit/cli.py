@@ -657,7 +657,7 @@ def run_cmd(
         typer.echo("warning: the plan selected no runnable local tests", err=True)
         raise typer.Exit(2)
 
-    store = Store(db)
+    store = Store(_resolve_db_path(db))
     store.save_run(DEFAULT_ORG, cfg, rr, report, plan=audit.plan)
 
     if format == "json":
