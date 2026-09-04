@@ -33,7 +33,7 @@ const config: Config = {
           // Docs are the whole site; no marketing splash to route around.
           routeBasePath: '/',
           editUrl:
-            'https://github.com/ser888gio/agent-testkit/tree/develop/website/',
+            'https://github.com/ser888gio/agent-testkit/tree/develop/docs-web/',
         },
         blog: false,
         theme: {

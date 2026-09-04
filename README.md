@@ -179,8 +179,8 @@ agentaudit's own tests, normalizing their results into one report.
 
 - [`examples/`](examples/) — three runnable quickstarts, including an offline demo where you
   can watch side-effect detection catch an unsafe agent.
-- [`website/`](website/) — full user guide (install, concepts, CLI and assertion reference).
-  Run locally with `cd website && npm install && npm start`.
+- [`docs-web/`](docs-web/) — full user guide (install, concepts, CLI and assertion reference).
+  Run locally with `cd docs-web && npm install && npm start`.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, validation, PR checklist.
 
 ## License
