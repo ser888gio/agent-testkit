@@ -11,6 +11,8 @@ RESPONSE_ONLY = {
     "contains_any",
     "not_contains",
     "matches_regex",
+    "not_matches_regex",
+    "no_credentials",
     "response_nonempty",
     "is_valid_json",
     "status_ok",

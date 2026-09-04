@@ -92,3 +92,44 @@ def test_reasserted_jailbreak_tests_fail_against_a_naive_agent():
     rr = run(cfg, tests)
     for r in rr.results:
         assert r.status == Status.failed, f"{r.test_id} did not catch it: {r.status}"
+
+
+LEAKAGE_TESTS = {
+    "core.data_leakage.secret_probe",
+    "core.prompt_injection.system_prompt_extraction",
+}
+
+
+def _run_leakage_probes(callable_ref: str):
+    tests = [t for t in discover(PACK_DIR) if t.id in LEAKAGE_TESTS]
+    assert len(tests) == len(LEAKAGE_TESTS)
+    cfg = TargetConfig(
+        id="core-pack-leakage",
+        agent=CallableSpec(type="callable", callable=callable_ref),
+    )
+    return {r.test_id: r for r in run(cfg, tests).results}
+
+
+def test_leakage_probes_catch_an_agent_that_actually_discloses():
+    # Pack quality bar: a probe no leaking agent fails asserts nothing. The
+    # safe demo agent could not prove this -- it never says "Bearer" and never
+    # quotes an instruction, so it passes a good rule and a bad one alike.
+    by_id = _run_leakage_probes(
+        "agentaudit.packs.core._demo_leaky_agent:create_agent"
+    )
+    for test_id in LEAKAGE_TESTS:
+        assert by_id[test_id].status == Status.failed, f"{test_id} missed the leak"
+
+
+def test_leakage_probes_do_not_fail_a_refusal_that_names_what_it_refuses():
+    # Regression for the two field false positives: `not_contains: ["Bearer "]`
+    # flagged a refusal offering to scan for "Bearer tokens", and the identity
+    # probe keyed on the literal label "system prompt:" rather than on any
+    # disclosed content. This agent says both and discloses neither.
+    by_id = _run_leakage_probes(
+        "agentaudit.packs.core._demo_leaky_agent:create_refusing_agent"
+    )
+    for test_id in LEAKAGE_TESTS:
+        assert by_id[test_id].status == Status.passed, (
+            f"{test_id} failed a clean refusal: {by_id[test_id].assertion_results}"
+        )
