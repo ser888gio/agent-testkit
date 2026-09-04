@@ -312,6 +312,17 @@ def test_target_row_round_trips_through_load_target_dict():
     assert [t.id for t in store.list_targets("org-a")] == ["stored-agent"]
 
 
+def test_saved_target_is_listed_as_an_agent_before_any_run():
+    store = Store(":memory:")
+    store.save_target("org-a", "stored-agent", "Stored", _TARGET_CONFIG)
+
+    agents = store.list_agents("org-a")
+    assert [(a.id, a.name, a.target_type) for a in agents] == [
+        ("stored-agent", "Stored", "http")
+    ]
+    assert store.run_count("org-a", "stored-agent") == 0
+
+
 def test_target_secret_reference_round_trips_without_entering_config_json(monkeypatch):
     monkeypatch.setenv("AGENT_TOKEN", "resolved-value")
     store = Store(":memory:")

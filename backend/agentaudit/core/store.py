@@ -942,6 +942,19 @@ class Store:
                 """,
                 (target_id, org_id, name, json.dumps(config), secret_ref, hosts_json, now),
             )
+            # A registered target is an agent the tenant can see on the agents
+            # page, whether or not it has ever been run. `save_run` upserts the
+            # same row for CLI-launched agents that were never registered.
+            conn.execute(
+                """
+                INSERT INTO agents (id, org_id, name, target_type, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(org_id, id) DO UPDATE SET
+                    name = excluded.name,
+                    target_type = excluded.target_type
+                """,
+                (target_id, org_id, name, str(config.get("agent", {}).get("type", "")), now),
+            )
 
     def get_target(self, org_id: str, target_id: str) -> dict:
         with self._connection() as conn:
