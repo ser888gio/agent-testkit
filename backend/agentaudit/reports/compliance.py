@@ -123,7 +123,8 @@ def to_compliance(run: RunResult, score: ScoreReport) -> str:
 
     if score.incomplete:
         lines += [
-            "**Run is INCOMPLETE** - no observed evidence (empty or all-skipped). "
+            "**Run is INCOMPLETE** - no observed evidence (empty, all-skipped, "
+            "or nothing passed and at least one test errored). "
             "This cannot satisfy any obligation.",
             "",
         ]
