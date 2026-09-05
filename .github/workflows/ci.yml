@@ -172,7 +172,7 @@ jobs:
       - name: Pull and redeploy over SSH
         env:
           DEPLOY_REF: ${{ github.ref_name }}
-        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
