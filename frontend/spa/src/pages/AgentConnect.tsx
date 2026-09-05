@@ -22,7 +22,14 @@ interface ConnectOptions {
   default_target: string | null;
   default_pack: string | null;
   pack_tests: Record<string, PackCase[]>;
-  attack_transforms: string[];
+  attack_transforms: AttackTransform[];
+}
+
+interface AttackTransform {
+  name: string;
+  family: string;
+  description: string;
+  recommended: boolean;
 }
 
 // Sentinel option that switches the form to endpoint-URL mode.
@@ -54,10 +61,33 @@ export function AgentConnectPage() {
           URL_OPTION,
       );
       setPack(data.default_pack ?? data.pack_roots[0] ?? "");
+      // Preselected so an unfamiliar user gets broad attack-class coverage
+      // without having to judge 20 names; every one stays unticked-able.
+      setTransforms(
+        new Set(data.attack_transforms.filter((t) => t.recommended).map((t) => t.name)),
+      );
     });
   }, []);
 
   const cases = useMemo(() => options?.pack_tests[pack] ?? [], [options, pack]);
+
+  // Transforms grouped into the families the API orders them by, so the form
+  // renders sections without hardcoding a family list of its own.
+  const families = useMemo(() => {
+    const groups = new Map<string, AttackTransform[]>();
+    for (const transform of options?.attack_transforms ?? []) {
+      const group = groups.get(transform.family) ?? [];
+      group.push(transform);
+      groups.set(transform.family, group);
+    }
+    return [...groups];
+  }, [options]);
+
+  // What the run will actually contain. A selection narrows the pack, so the
+  // base is the chosen tests when there are any -- the same arithmetic the
+  // worker's expansion does, not the whole-pack guess the old blurb made.
+  const baseCount = selected.size || cases.length;
+  const runCount = baseCount * (transforms.size + 1);
   const urlMode = target === URL_OPTION;
   const hasTargets = Boolean(
     options && (options.targets.length || options.registered_targets.length),
@@ -246,29 +276,61 @@ export function AgentConnectPage() {
           <details className="test-picker" data-testid="attack-picker">
             <summary>
               Generate attack variants{" "}
-              <span className="quiet">(optional — the pack runs as written by default)</span>
+              <span className="quiet">
+                {transforms.size
+                  ? `(${transforms.size} selected)`
+                  : "(optional — the pack runs as written)"}
+              </span>
             </summary>
-            <fieldset className="test-picker-group">
-              <legend>Attack transforms</legend>
-              <p className="quiet">
-                Each transform mutates every planned test into one extra variant, so the run
-                grows to about {transforms.size + 1}x its size.
+
+            {/* Cost first: selecting transforms multiplies the run, and that is
+                the thing a user most needs to see before ticking more. */}
+            <p className="attack-cost" data-testid="attack-cost">
+              {transforms.size ? (
+                <>
+                  <strong>
+                    {baseCount} test{baseCount === 1 ? "" : "s"} → {runCount} to run
+                  </strong>{" "}
+                  <span className="quiet">
+                    ({transforms.size} transform{transforms.size === 1 ? "" : "s"} adds one
+                    variant each)
+                  </span>
+                </>
+              ) : (
+                <span className="quiet">
+                  {baseCount} test{baseCount === 1 ? "" : "s"} run as written.
+                </span>
+              )}
+            </p>
+            {runCount > 100 ? (
+              <p className="attack-warning" data-testid="attack-warning">
+                A run this size takes a while. Consider setting a time limit above.
               </p>
-              <ul className="test-picker-list">
-                {(options.attack_transforms ?? []).map((name) => (
-                  <li key={name}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={transforms.has(name)}
-                        onChange={() => toggleTransform(name)}
-                      />
-                      <span className="mono">{name}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </fieldset>
+            ) : null}
+
+            {families.map(([family, items]) => (
+              <fieldset className="test-picker-group" key={family}>
+                <legend>{family}</legend>
+                <ul className="test-picker-list">
+                  {items.map((transform) => (
+                    <li key={transform.name}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={transforms.has(transform.name)}
+                          onChange={() => toggleTransform(transform.name)}
+                        />
+                        <span className="mono">{transform.name}</span>
+                        {transform.recommended ? (
+                          <span className="badge badge-passed">recommended</span>
+                        ) : null}
+                        <span className="quiet">{transform.description}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </fieldset>
+            ))}
           </details>
 
           <details className="test-picker" data-testid="test-picker">

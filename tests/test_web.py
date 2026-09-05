@@ -14,6 +14,7 @@ import pytest
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
+from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.config import CallableSpec, TargetConfig
 from agentaudit.core.profile import AgentProfile, ExcludedTest, HarnessPlan, SelectedTest
 from agentaudit.core.redaction import EvidencePolicy
@@ -1755,6 +1756,20 @@ def test_expanding_step_appears_for_a_job_with_transforms(tmp_path, monkeypatch)
 
     assert [s["name"] for s in steps] == [name for name, _ in JobQueue.PHASES]
     assert [s["state"] for s in steps] == ["done", "done", "active", "pending", "pending"]
+
+
+def test_connect_options_describe_the_attack_transforms(tmp_path, monkeypatch):
+    """The form groups and recommends off this payload, so it must carry the metadata."""
+    db = str(tmp_path / "connect-attacks.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    rows = client.get("/api/connect-options").json()["attack_transforms"]
+
+    assert {row["name"] for row in rows} == set(TRANSFORMS)
+    assert all(row["description"] and row["family"] for row in rows)
+    assert any(row["recommended"] for row in rows), "a default selection must exist"
+    assert not all(row["recommended"] for row in rows), "recommending all is no guidance"
 
 
 def test_enqueue_rejects_an_unknown_attack_transform(tmp_path, monkeypatch):

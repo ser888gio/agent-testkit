@@ -2277,3 +2277,20 @@ svg.export-icon {
   font-size: 0.78rem;
   color: var(--ink-tertiary);
 }
+
+/* Attack-transform picker: cost line and its threshold warning. The grouped
+   checkbox list reuses .test-picker-group / .test-picker-list. */
+.attack-cost {
+  margin: 0.7rem 0 0;
+  font-size: 0.85rem;
+}
+
+.attack-warning {
+  margin: 0.4rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.82rem;
+}

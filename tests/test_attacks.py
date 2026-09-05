@@ -4,7 +4,14 @@ import json
 
 import pytest
 
-from agentaudit.core.attacks import TRANSFORMS, apply_attack, expand, split_variant
+from agentaudit.core.attacks import (
+    TRANSFORM_FAMILIES,
+    TRANSFORMS,
+    apply_attack,
+    describe_transforms,
+    expand,
+    split_variant,
+)
 from agentaudit.core.loader import PythonTestCase
 from agentaudit.core.schema import AdaptiveSpec, Assertion, Category, Risk, TestCase
 
@@ -109,3 +116,36 @@ def test_expand_keeps_originals_and_passes_python_tests_through():
         "treasury.pay_unapproved__rot13",
         "mod.test_x",
     ]
+
+
+def test_every_transform_is_described():
+    """A new transform must arrive with a description, or the form shows a bare name."""
+    rows = describe_transforms()
+
+    assert {row["name"] for row in rows} == set(TRANSFORMS)
+    assert all(row["description"].strip() for row in rows)
+    assert all(row["family"] in TRANSFORM_FAMILIES for row in rows)
+
+
+def test_describe_transforms_raises_when_the_tables_drift(monkeypatch):
+    """The guard must fail loudly rather than silently dropping a transform."""
+    monkeypatch.setitem(TRANSFORMS, "ghost_transform", lambda prompt: prompt)
+
+    with pytest.raises(RuntimeError, match="ghost_transform"):
+        describe_transforms()
+
+
+def test_transforms_are_grouped_by_family_in_order():
+    """The form renders sections straight off this order, so it must be stable."""
+    families = [row["family"] for row in describe_transforms()]
+
+    assert families == sorted(families, key=TRANSFORM_FAMILIES.index)
+
+
+def test_the_recommended_set_spans_every_family():
+    """The default selection is meant to cover the attack classes, not one corner."""
+    recommended = [row for row in describe_transforms() if row["recommended"]]
+
+    assert {row["family"] for row in recommended} == set(TRANSFORM_FAMILIES)
+    # Small enough that the default run stays a few times the pack, not 20x.
+    assert len(recommended) <= 6

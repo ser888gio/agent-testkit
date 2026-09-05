@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agentaudit.core import llm, runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
-from agentaudit.core.attacks import TRANSFORMS
+from agentaudit.core.attacks import describe_transforms
 from agentaudit.core.config import known_sandboxes
 from agentaudit.core.evolve import (
     GENERATED_PREFIX,
@@ -577,7 +577,7 @@ def connect_options(principal: Principal = Depends(current_principal)) -> dict: 
         "default_target": default_target,
         "default_pack": default_pack,
         "pack_tests": pack_tests,
-        "attack_transforms": sorted(TRANSFORMS),
+        "attack_transforms": describe_transforms(),
     }
 
 
