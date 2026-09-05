@@ -58,6 +58,7 @@ export function JobPage() {
   const [rerunError, setRerunError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const followedRun = useRef<string | null>(null);
+  const cancelRequested = useRef(false);
 
   useEffect(() => {
     apiGet<JobView>(`/jobs/${encodeURIComponent(jobId)}`).then(setJob).catch((err: unknown) => {
@@ -66,6 +67,10 @@ export function JobPage() {
   }, [jobId]);
 
   useJobPolling(jobId, (status) => {
+    // Cancel is cooperative: the worker only notices between tests, so a poll
+    // already in flight can still report running:true after Abort is clicked.
+    // Keep showing "Cancelling..." rather than let it stomp the optimistic state.
+    if (cancelRequested.current && status.running) return;
     setJob((current) => (current ? { ...current, ...status } : status));
     // A queued job has no run until the worker finishes one; follow it.
     if (!status.running && status.run_id && followedRun.current !== status.run_id) {
@@ -82,7 +87,8 @@ export function JobPage() {
     setCancelError(null);
     try {
       await apiSend(`/jobs/${encodeURIComponent(jobId)}/cancel`, "POST", {});
-      setJob({ ...job, running: false, state: "cancelled", message: "Cancelled" });
+      cancelRequested.current = true;
+      setJob({ ...job, running: false, state: "cancelled", message: "Cancelling..." });
     } catch (err) {
       setCancelError(err instanceof ApiError ? err.detail : "Cancellation failed.");
     } finally {
