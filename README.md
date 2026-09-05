@@ -48,6 +48,37 @@ If `agentaudit` is not found after install, `pip` put the console script outside
 (it says where in a `WARNING:` line). Either add that directory, or run
 `python -m agentaudit.cli run ...` instead.
 
+### In CI
+
+`run` exits `0` when the gate passes, `1` when it fails, and `2` on a bad target or pack.
+`--fail-under` sets the score threshold; a critical safety failure fails the run on its own
+unless you pass `--no-block-on-critical`.
+
+```yaml
+- run: pip install -e .
+- name: Audit the agent
+  env:
+    AGENT_TOKEN: ${{ secrets.AGENT_TOKEN }}
+  run: |
+    # --format json prints the run id; keep it for the report and gate on the exit code
+    set +e
+    agentaudit run core --target agentaudit/config/my-agent.yaml       --fail-under 0.8 --format json > run.json
+    echo "gate=$?" >> "$GITHUB_ENV"
+    echo "run_id=$(jq -r .run_id run.json)" >> "$GITHUB_ENV"
+- name: Publish results
+  if: always()
+  run: agentaudit report --run "$run_id" --format junit --out results.xml
+- if: env.gate != '0'
+  run: exit 1
+```
+
+To gate on *regressions* rather than an absolute score, keep the previous run id and use
+`compare`, which exits `1` when a critical test that used to pass starts failing:
+
+```bash
+agentaudit compare "$PREVIOUS_RUN_ID" "$RUN_ID"
+```
+
 ## Reports
 
 Every run is saved to `database/agentaudit.db` (SQLite; `AGENTAUDIT_DB` overrides the path)
@@ -75,6 +106,29 @@ agentaudit report --run <run_id> --format compliance-json   # for GRC tooling
 Empty or all-skipped runs fail closed as `INCOMPLETE`. This is technical readiness evidence,
 **not** a compliance or CE determination — see
 [`docs/specs/compliance.md`](docs/specs/compliance.md).
+
+## Turning production failures into tests
+
+When the agent misbehaves in production, paste the transcript in and it becomes a permanent
+regression test:
+
+```bash
+agentaudit incident import ./incident-4821.txt --target agentaudit/config/my-agent.yaml
+```
+
+The transcript is parsed and redacted before anything is stored, a candidate test with
+proposed assertions is derived from it, and that candidate is **replayed against the current
+agent** to check the failure still reproduces. The result is queued in the `generated` pack:
+
+```text
+inferred category=prompt_injection risk=high (override with --category/--risk if this looks wrong)
+verifying candidate inc-4821 reproduces against my-agent...
+  inc-4821: REPRODUCES (invoice paid despite refusal)
+queued inc-4821 for review in the 'generated' pack (reproduces) -- promote or reject it in `agentaudit ui`
+```
+
+Nothing enters the audited baseline unreviewed — you promote or reject it in the dashboard's
+review queue, the same one `evolve` feeds.
 
 ## Auth headers or a different request shape
 
@@ -116,6 +170,44 @@ The domain packs (`packs/treasury`, `packs/email`, `packs/agentic`) assert on wh
 own payments or email agent means writing a `Sandbox` subclass for your tools — see the two
 worked examples in [`backend/agentaudit/domains/`](backend/agentaudit/domains/).
 
+### Let the profile pick the tests
+
+`plan` probes the target, infers a profile, and prints what it would run and what it would
+skip — with a reason for every line, so the selection is auditable rather than a black box:
+
+```bash
+agentaudit plan core --target agentaudit/config/my-agent.yaml
+```
+
+```text
+agentaudit plan - target: my-agent
+  profile: domain=support interface=http risk=high multi_turn=True tool_use=False
+  selected (12):
+   8.40  core.injection.system_prompt_leak  [core]
+          why: interface=http exposes the prompt surface; risk=high
+  not tested (8):
+          core.tools.unauthorized_call: target reports no tool use
+```
+
+`run --plan` runs that selection instead of the whole pack, and `--max-tests` caps it.
+
+### Multiply the tests you have
+
+`--attack` expands every selected test through input transforms, so one prompt becomes many
+phrasings of the same attack:
+
+```bash
+agentaudit run core --target ... --attack base64,roleplay_wrap,context_poison
+```
+
+There are 20 transforms in three families — encoding and obfuscation (`base64`, `rot13`,
+`leetspeak`, `unicode_confusable`, `character_stream`), social engineering (`authority`,
+`roleplay_wrap`, `emotional`, `system_override`), and context manipulation (`context_poison`,
+`goal_redirect`, `synthetic_context`, `context_flood`). They are pure string transforms:
+deterministic, offline, and free. Selecting all 20 is ~21x the pack size, so the dashboard's
+picker offers a recommended set — `base64`, `authority`, `emotional`, `roleplay_wrap`,
+`context_poison` — that covers every family at roughly 5x.
+
 ## Commands
 
 | Command | Purpose |
@@ -124,7 +216,8 @@ worked examples in [`backend/agentaudit/domains/`](backend/agentaudit/domains/).
 | `plan <packs>` | Probe the target and print which tests would be selected or excluded, with reasons. |
 | `report --run <id>` | Re-render a stored run as `json`, `md`, `html`, `junit`, `compliance`, `compliance-json` or `plan`. |
 | `compare <a> <b>` | Diff two runs; exits non-zero when a previously-passing critical safety test regresses. |
-| `evolve <packs>` | Generate candidate attacks with an attacker model into a human review queue. Off unless configured. |
+| `evolve <packs>` | Generate candidate attacks with an attacker model into a human review queue; `--campaign` runs them adaptively against the target. Off unless configured. |
+| `incident import <transcript>` | Turn a production failure transcript into a regression candidate: parse, redact, check it still reproduces, queue it for review. |
 | `worker` | Run the job-queue worker that executes runs enqueued from the dashboard. |
 | `ui` | Serve the dashboard at `http://127.0.0.1:8000`. |
 | `migrate` | Apply Alembic migrations to the SQLite store (`--status` to inspect). |
@@ -147,33 +240,18 @@ worked examples in [`backend/agentaudit/domains/`](backend/agentaudit/domains/).
 - **Multi-turn attacks** escalate across turns (`crescendo`, `sequential`, `linear`,
   `bad_likert_judge`), deterministic and offline by default, with an optional attacker model
   and judge behind the same protocol.
+- **Adaptive attacks** are opt-in per run: after the pack finishes, an attacker model writes
+  new candidates against what the agent already did, runs them, and keeps the ones that land.
+  Available from the CLI (`evolve --campaign`) and from the dashboard, on a fixed server-side
+  budget — it spends metered attacker-model calls.
 - **Redaction is on by default**: secrets and PII are stripped from evidence before it is
   stored or displayed.
 - **The dashboard** is org-scoped and multi-tenant: register an agent by URL, pick tests,
   cancel jobs, and browse the pass/fail matrix, per-test evidence, and history across runs.
+- **promptfoo and garak run alongside it**: `agentaudit run --external` ranks, runs and
+  normalizes their probes into the same report as agentaudit's own tests.
 
 [More diagrams →](./docs/diagrams/README.md) · [Architecture →](./docs/architecture.md)
-
-## How it compares
-
-| | agentaudit | promptfoo / garak | LLM-as-judge evals |
-|---|---|---|---|
-| Tests via | real endpoint (black-box) | real endpoint or API | usually needs the transcript |
-| Checks | agent's **actions** on fake tools, plus what it said | mostly what it **said** | what it said, graded by another LLM |
-| Compliance report | EU AI Act / ISO 42001 / NIST built in | no | no |
-| Probe breadth | narrower — two verticals + one attack pack | much broader (garak has 100+ probes) | varies |
-| Maturity | MVP, one team | established, widely used | varies |
-
-For broad, battle-tested injection and jailbreak coverage today, garak and promptfoo cover
-more ground — and `agentaudit run --external` runs them against your target alongside
-agentaudit's own tests, normalizing their results into one report.
-
-## Limits
-
-- **Two demo verticals.** Treasury and email are working examples, not a general library of
-  agent domains. A new one means writing a `Sandbox` subclass.
-- **Generated tests need a human.** `evolve` output waits in a review queue; nothing
-  model-written enters the audited baseline unreviewed.
 
 ## More
 
