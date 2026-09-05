@@ -48,6 +48,9 @@ export function AgentConnectPage() {
   // Each name adds one mutated variant per planned test, so the run grows by
   // roughly (1 + count) x. Empty means the pack runs as written.
   const [transforms, setTransforms] = useState<Set<string>>(new Set());
+  // Off by default: generation spends metered model calls, so it is a choice
+  // the operator makes per run rather than a default they discover on a bill.
+  const [adaptive, setAdaptive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -146,6 +149,7 @@ export function AgentConnectPage() {
         test_ids: [...selected],
         timeout_seconds: timeoutMinutes ? Number(timeoutMinutes) * 60 : null,
         attack_transforms: [...transforms],
+        adaptive,
       });
       navigate(`/jobs/${result.job_id}`);
     } catch (err) {
@@ -332,6 +336,27 @@ export function AgentConnectPage() {
               </fieldset>
             ))}
           </details>
+
+          {/* Distinct from attack transforms above: those mutate the pack's
+              tests before the run, this writes new ones from the agent's own
+              profile after it, and reruns them. It costs model calls, so it is
+              off by default and says so. */}
+          <label className="adaptive-toggle" data-testid="adaptive-toggle">
+            <input
+              type="checkbox"
+              checked={adaptive}
+              onChange={(event) => setAdaptive(event.target.checked)}
+              data-testid="adaptive-input"
+            />
+            <span>
+              Attack adaptively after the pack
+              <span className="quiet">
+                {" "}
+                — writes new attacks from what this agent is, runs them, and queues
+                what it finds for review. Costs model calls.
+              </span>
+            </span>
+          </label>
 
           <details className="test-picker" data-testid="test-picker">
             <summary>

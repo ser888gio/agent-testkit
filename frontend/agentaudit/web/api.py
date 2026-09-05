@@ -133,11 +133,12 @@ def _job_steps(job) -> list[dict]:
     if job.pack_id == DISCOVERY_PACK_ID:
         stages = list(JobQueue.DISCOVERY_PHASES)
     else:
-        stages = [
-            (name, label)
-            for name, label in JobQueue.PHASES
-            if name != "expanding" or job.attack_transforms_json
-        ]
+        skip = set()
+        if not job.attack_transforms_json:
+            skip.add("expanding")
+        if not job.adaptive:
+            skip.add("attacking")
+        stages = [(name, label) for name, label in JobQueue.PHASES if name not in skip]
     names = [name for name, _ in stages]
     current = job.phase if job.phase in names else None
     reached = names.index(current) if current else -1
@@ -599,6 +600,9 @@ class EnqueueRunBody(BaseModel):
     # Validated against the transform registry in `JobQueue.enqueue`, which
     # raises ValueError -> 400 for an unknown name.
     attack_transforms: list[str] = []
+    # Generation costs metered model calls, so it is opt-in per run. The budget
+    # is `worker.ADAPTIVE_BUDGET`, not anything the caller can set.
+    adaptive: bool = False
 
 
 @router.post("/runs/enqueue")
@@ -613,6 +617,7 @@ def enqueue_run(body: EnqueueRunBody, principal: Principal = Depends(require_adm
             test_ids=body.test_ids,
             timeout_seconds=body.timeout_seconds,
             attack_transforms=body.attack_transforms,
+            adaptive=body.adaptive,
             created_by=principal.subject,
         )
     }
@@ -656,6 +661,7 @@ def rerun_job(job_id: str, principal: Principal = Depends(require_admin)) -> dic
         attack_transforms=(
             json.loads(job.attack_transforms_json) if job.attack_transforms_json else None
         ),
+        adaptive=bool(job.adaptive),
     )
     return {"job_id": new_id}
 
