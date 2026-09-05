@@ -70,6 +70,36 @@ def test_falls_back_to_legacy_env(monkeypatch, tmp_path):
     assert config.judge is None
 
 
+def test_env_timeout_is_overridable_for_slow_shared_hosts(monkeypatch, tmp_path):
+    # A free-tier host stalls under load, and a timeout degrades silently to the
+    # scripted ladder -- so the deployment has to be able to raise it.
+    isolate_llm_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTAUDIT_ATTACKER_ENDPOINT", "http://a/v1/chat/completions")
+    monkeypatch.setenv("AGENTAUDIT_ATTACKER_MODEL", "m")
+    monkeypatch.setenv("AGENTAUDIT_ATTACKER_TIMEOUT_S", "60")
+
+    assert llm.load_llm_config().attacker.timeout_s == 60.0
+
+
+def test_env_timeout_defaults_when_unset(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTAUDIT_ATTACKER_ENDPOINT", "http://a/v1/chat/completions")
+    monkeypatch.setenv("AGENTAUDIT_ATTACKER_MODEL", "m")
+
+    assert llm.load_llm_config().attacker.timeout_s == 30.0
+
+
+def test_a_non_numeric_env_timeout_is_refused_not_ignored(monkeypatch, tmp_path):
+    # Silently falling back to 30s would hide a typo in a deployment variable.
+    isolate_llm_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENTAUDIT_ATTACKER_ENDPOINT", "http://a/v1/chat/completions")
+    monkeypatch.setenv("AGENTAUDIT_ATTACKER_MODEL", "m")
+    monkeypatch.setenv("AGENTAUDIT_ATTACKER_TIMEOUT_S", "sixty")
+
+    with pytest.raises(llm.LLMConfigError, match="TIMEOUT_S must be a number"):
+        llm.load_llm_config()
+
+
 def test_no_config_means_both_roles_off(monkeypatch, tmp_path):
     isolate_llm_config(monkeypatch, tmp_path)
     config = llm.load_llm_config()
