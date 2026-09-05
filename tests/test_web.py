@@ -1744,6 +1744,20 @@ def test_job_steps_are_all_pending_before_a_worker_claims_it(tmp_path, monkeypat
     assert [s["state"] for s in steps] == ["pending"] * 4
 
 
+def test_claimed_job_shows_the_first_stage_active_before_any_phase(tmp_path, monkeypatch):
+    """A worker sets the phase from inside a stage, so a just-claimed job has
+    none. The pipeline must still show it working, not four pending stages."""
+    db = str(tmp_path / "phase-claimed.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    store.jobs.claim("w")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert [s["state"] for s in steps] == ["active", "pending", "pending", "pending"]
+
+
 def test_expanding_step_is_hidden_without_attack_transforms(tmp_path, monkeypatch):
     """A job that expands nothing must not show a stage that can never light up."""
     db = str(tmp_path / "no-attack.db")

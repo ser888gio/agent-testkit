@@ -2315,3 +2315,61 @@ svg.export-icon {
   color: var(--warn-text);
   font-size: 0.82rem;
 }
+
+/* Excluded-test groups: one collapsed row per reason, since the same handful
+   of reasons repeat across every test the planner skipped. */
+.excluded-group {
+  border-top: 1px solid var(--hairline);
+  padding: 0.5rem 0;
+}
+
+.excluded-group summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.excluded-group ul {
+  margin: 0.5rem 0 0;
+}
+
+/* Job page: pipeline and live results side by side. The stepper is narrow, so
+   a single column left ~700px of the panel empty while tests were running. */
+.job-live {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.job-live .run-progress {
+  margin-top: 0;
+}
+
+/* Elapsed time, so a slow job is visibly slow rather than seemingly hung. */
+.job-elapsed {
+  margin-left: 0.5rem;
+  color: var(--ink-subtle);
+  font-size: 0.85rem;
+}
+
+/* Before the first test lands the fill is 0%-wide and the rail reads as dead.
+   The global prefers-reduced-motion reset stops this animation. */
+.progress-meter-waiting {
+  background-image: linear-gradient(
+    90deg,
+    var(--surface-3) 0%,
+    var(--accent-hover) 50%,
+    var(--surface-3) 100%
+  );
+  background-size: 200% 100%;
+  animation: progress-waiting 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-waiting {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (max-width: 920px) {
+  .job-live { grid-template-columns: minmax(0, 1fr); }
+}
