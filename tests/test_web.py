@@ -840,6 +840,31 @@ def test_browser_request_starts_code_pkce_login(tmp_path, monkeypatch):
     assert "agentaudit_login_state=" in login.headers["set-cookie"]
 
 
+def test_callback_clears_login_state_with_matching_attributes(tmp_path, monkeypatch):
+    """A `none` cookie deleted without Secure is refused, so the stale state survives."""
+    monkeypatch.setenv("AGENTAUDIT_DB", str(tmp_path / "web.db"))
+    _oidc_env(monkeypatch)
+    from agentaudit.web import app as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "complete_browser_login",
+        lambda code, state, browser_state: ("sid", None, "/"),
+    )
+    client = TestClient(app_module.app)
+    response = client.get(
+        "/auth/callback", params={"code": "c", "state": "s"}, follow_redirects=False
+    )
+
+    cleared = next(
+        value
+        for key, value in response.headers.raw
+        if key.lower() == b"set-cookie" and b"agentaudit_login_state=" in value
+    ).decode()
+    assert "SameSite=none" in cleared
+    assert "Secure" in cleared
+
+
 # --- frame protection headers -------------------------------------------
 
 
