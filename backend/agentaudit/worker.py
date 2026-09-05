@@ -224,8 +224,11 @@ def execute_discovery(store: Store, job: JobRow) -> None:
     def bound_run(cfg: TargetConfig, cases: list) -> RunResult:
         return run_tests(cfg, cases, redactor=redactor, endpoint=endpoint)
 
+    store.jobs.set_phase(job.id, "shaping")
     target = _confirm_request_shape(store, job, target, bound_run)
+    store.jobs.set_phase(job.id, "probing")
     profile = discover(target, runner=bound_run)
+    store.jobs.set_phase(job.id, "profiling")
     store.save_target_profile(job.org_id, job.target_id, profile)
     log.info("job %s: profiled target %s", job.id, job.target_id)
 

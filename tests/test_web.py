@@ -1784,6 +1784,36 @@ def test_expanding_step_appears_for_a_job_with_transforms(tmp_path, monkeypatch)
     assert [s["state"] for s in steps] == ["done", "done", "active", "pending", "pending"]
 
 
+def test_discovery_job_shows_the_discovery_pipeline(tmp_path, monkeypatch):
+    """Discovery never plans, runs or scores tests: showing it the audit stages
+    left a finished profile stuck on step 1 with three stages it never runs."""
+    db = str(tmp_path / "discovery-steps.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue_discovery(DEFAULT_ORG, "t")
+    store.jobs.set_phase(job_id, "probing")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert [s["name"] for s in steps] == [name for name, _ in JobQueue.DISCOVERY_PHASES]
+    assert "testing" not in [s["name"] for s in steps]
+
+
+def test_finished_discovery_job_marks_every_stage_done(tmp_path, monkeypatch):
+    """A finished job must not leave stages looking pending."""
+    db = str(tmp_path / "discovery-done.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue_discovery(DEFAULT_ORG, "t")
+    store.jobs.claim("w")
+    store.jobs.set_phase(job_id, "profiling")
+    store.jobs.release(job_id, "w", state="done")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert all(s["state"] == "done" for s in steps)
+
+
 def test_connect_options_describe_the_attack_transforms(tmp_path, monkeypatch):
     """The form groups and recommends off this payload, so it must carry the metadata."""
     db = str(tmp_path / "connect-attacks.db")

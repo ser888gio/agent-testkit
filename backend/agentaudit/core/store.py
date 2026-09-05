@@ -575,6 +575,16 @@ class JobQueue:
         ("scoring", "Scoring and saving"),
     )
 
+    # Discovery runs a different pipeline: it probes an endpoint and writes a
+    # profile, never planning, running or scoring tests. Showing it the audit
+    # stages left it stuck on step 1 for the whole job.
+    DISCOVERY_PHASES = (
+        ("connecting", "Connecting to agent"),
+        ("shaping", "Confirming request shape"),
+        ("probing", "Probing capabilities"),
+        ("profiling", "Saving the profile"),
+    )
+
     def set_phase(self, job_id: str, phase: str) -> None:
         """Record which pipeline stage the job entered."""
         with self._store._connection() as conn, conn:

@@ -19,6 +19,7 @@ interface JobView {
   discovery: boolean;
   created_at: string | null;
   started_at: string | null;
+  finished_at: string | null;
 }
 
 // Polls /jobs/{id}/status every 2s while the job is live; the same cadence the
@@ -52,20 +53,33 @@ function useJobPolling(jobId: string, onStatus: (status: JobView) => void) {
   }, [jobId]);
 }
 
-/** m:ss elapsed since `since`, or null when there is no usable timestamp. */
-function useElapsed(since: string | null | undefined, live: boolean): string | null {
+// Job timestamps carry an offset, but older rows may not; without a marker a
+// browser reads them as local time and the counter starts hours out.
+function parseStamp(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(/[Zz]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * m:ss between `since` and `until`, or null when there is no usable timestamp.
+ *
+ * A finished job measures to its own `finished_at`, not to whenever the last
+ * 1s tick happened to fire -- the ticker stops on the same render the job ends,
+ * so a live counter froze up to a second short of the real duration.
+ */
+function useElapsed(since: string | null | undefined, until: string | null | undefined): string | null {
+  const live = !until;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!live) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [live]);
-  if (!since) return null;
-  // Job timestamps carry an offset, but older rows may not; without a marker a
-  // browser reads them as local time and the counter starts hours out.
-  const started = Date.parse(/[Zz]|[+-]\d\d:?\d\d$/.test(since) ? since : `${since}Z`);
-  if (Number.isNaN(started)) return null;
-  const seconds = Math.max(0, Math.floor((now - started) / 1000));
+  const started = parseStamp(since);
+  if (started === null) return null;
+  const ended = parseStamp(until) ?? now;
+  const seconds = Math.max(0, Math.floor((ended - started) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
@@ -101,7 +115,7 @@ export function JobPage() {
 
   // Before the early returns below: hooks may not sit behind a conditional.
   // Queued jobs have no started_at yet, so fall back to when it was enqueued.
-  const elapsed = useElapsed(job?.started_at ?? job?.created_at, job?.running ?? false);
+  const elapsed = useElapsed(job?.started_at ?? job?.created_at, job?.finished_at);
 
   if (error) return <EmptyState title="Job not available" body={error} />;
   if (!job) return <EmptyState title="Loading" body="Fetching job..." />;
@@ -159,7 +173,13 @@ export function JobPage() {
       />
 
       <Panel titleId="job-status-title" title="Current Status">
-        <p id="run-status" aria-live="polite">
+        {/* A finished job is the one moment the page has news, so it gets a
+            banner rather than the same body line the live state used. */}
+        <p
+          id="run-status"
+          aria-live="polite"
+          className={job.running ? undefined : `job-outcome job-outcome-${job.state}`}
+        >
           {job.running ? <Spinner /> : null} {job.message || job.state}
           {/* A live job with no visible movement reads as a hung one. */}
           {elapsed ? <span className="job-elapsed mono">{elapsed}</span> : null}
