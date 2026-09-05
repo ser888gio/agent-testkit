@@ -144,13 +144,22 @@ def auth_callback(code: str, state: str, request: Request) -> RedirectResponse:
         request.cookies.get(LOGIN_STATE_COOKIE, ""),
     )
     response = RedirectResponse(destination, status_code=303)
-    response.delete_cookie(LOGIN_STATE_COOKIE)
+    secure = cookie_secure()
+    # Deletion only lands when the attributes match what /login set, and Chrome
+    # drops a `none` cookie that is not also Secure -- a mismatch here leaves the
+    # old state cookie in place to be replayed against the next login's state.
+    response.delete_cookie(
+        LOGIN_STATE_COOKIE,
+        httponly=True,
+        secure=secure,
+        samesite="none" if secure else "lax",
+    )
     response.set_cookie(
         SESSION_COOKIE,
         session_id,
         max_age=3600,
         httponly=True,
-        secure=cookie_secure(),
+        secure=secure,
         samesite="lax",
     )
     return response
@@ -160,7 +169,12 @@ def auth_callback(code: str, state: str, request: Request) -> RedirectResponse:
 def logout(request: Request) -> RedirectResponse:
     destination = end_browser_session(request.cookies.get(SESSION_COOKIE))
     response = RedirectResponse(destination, status_code=302)
-    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie(
+        SESSION_COOKIE,
+        httponly=True,
+        secure=cookie_secure(),
+        samesite="lax",
+    )
     return response
 
 
