@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- and 0018; tests/test_migrate.py compares the schemas position by position.
     phase TEXT,
     attack_transforms_json TEXT,
+    adaptive INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
 CREATE TABLE IF NOT EXISTS llm_settings (
@@ -260,6 +261,10 @@ class JobRow:
     phase: str | None = None
     # JSON list of attack transform names, or None for "run the pack as written".
     attack_transforms_json: str | None = None
+    # Whether to generate and run new attacks after the pack. The budget is a
+    # server-side constant, so this is a switch rather than a number: a browser
+    # must not be able to raise how many metered model calls a run makes.
+    adaptive: int = 0
     cancel_requested: int = 0
     timeout_seconds: int | None = None
 
@@ -443,6 +448,7 @@ class JobQueue:
         test_ids: Sequence[str] | None = None,
         timeout_seconds: int | None = None,
         attack_transforms: Sequence[str] | None = None,
+        adaptive: bool = False,
     ) -> str:
         """Queue a run.
 
@@ -461,6 +467,11 @@ class JobQueue:
         written. Names are validated here rather than in the worker: an unknown
         transform must fail while a human is still watching the form, not two
         minutes into a claimed job.
+
+        `adaptive` asks the worker to generate and run new attacks after the
+        pack, using the agent's profile. It is a switch, not a budget: the
+        ceiling lives in `worker.ADAPTIVE_BUDGET` so a caller cannot raise how
+        many metered model calls one run makes.
         """
         if test_ids is not None and not test_ids:
             raise ValueError("test_ids must name at least one test, or be None for the whole pack")
@@ -480,8 +491,8 @@ class JobQueue:
             conn.execute(
                 "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
                 "priority, created_at, test_ids_json, timeout_seconds, "
-                "attack_transforms_json) "
-                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
+                "attack_transforms_json, adaptive) "
+                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job_id,
                     org_id,
@@ -493,6 +504,7 @@ class JobQueue:
                     json.dumps(list(test_ids)) if test_ids is not None else None,
                     timeout_seconds,
                     json.dumps(transforms) if transforms else None,
+                    1 if adaptive else 0,
                 ),
             )
         return job_id
@@ -572,6 +584,9 @@ class JobQueue:
         # them skips straight to "testing" and never renders this stage.
         ("expanding", "Generating attack variants"),
         ("testing", "Running tests"),
+        # Only reached when the job asked to attack adaptively; a job that did
+        # not skips straight to "scoring" and never renders this stage.
+        ("attacking", "Generating new attacks"),
         ("scoring", "Scoring and saving"),
     )
 

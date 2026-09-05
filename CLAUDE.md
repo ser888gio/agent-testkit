@@ -58,6 +58,8 @@ Keep the story honest when describing this codebase:
   each test was selected and what was left untested, and adapters that rank, run and
   normalize promptfoo and garak. External execution is opt-in (`agentaudit run --external`)
   because a spawned tool dials the endpoint itself and is not bound by the pinned address.
+  Adaptive attack generation is also opt-in, per run, because it spends metered
+  attacker-model calls -- not for a safety reason like `--external`'s.
 - **Target product** - automated agent discovery, generated harnesses, dynamic test
   planning, adaptive iterative attacks, risk-aware coverage, and a stronger assurance
   narrative.
@@ -73,7 +75,10 @@ Suggested next product milestones (all shipped):
 2. ~~Test-library metadata tagged by domain, capability, risk, and preconditions.~~ — `core/catalog.py`
 3. ~~Planner that ranks tests from profile plus risk.~~ — `core/planner.py`
 4. ~~Iterative attack loop with branching and retries.~~ — `core/campaign.py`,
-   reachable as `agentaudit evolve --campaign`
+   reachable as `agentaudit evolve --campaign` and, since the job carries an
+   `adaptive` flag, from a dashboard run (`worker._attack_adaptively`). Its
+   budget is the server-side constant `worker.ADAPTIVE_BUDGET`, never a
+   caller-supplied number: every candidate costs attacker-model calls.
 5. ~~Reporting that explains why a test was selected for a given agent.~~ — `reports/plan.py`
 6. ~~Adapter *execution*: run the external tools the planner selected and merge their
    evidence into the run.~~ — `ExternalEvalAdapter.execute`, `core/audit.py:run_external`

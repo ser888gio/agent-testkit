@@ -19,9 +19,11 @@ import socket
 import threading
 import time
 import uuid
+from collections.abc import Callable
 
 from agentaudit.core import llm
 from agentaudit.core.audit import execute as execute_audit
+from agentaudit.core.campaign import CampaignBudget, run_campaign
 from agentaudit.core.config import (
     ConfigError,
     HTTPSpec,
@@ -30,11 +32,19 @@ from agentaudit.core.config import (
     load_target_dict,
 )
 from agentaudit.core.discovery import ShapeUnknown, detect_shape, discover, shape_label
-from agentaudit.core.egress import EgressError, EgressPolicy, validate_endpoint
+from agentaudit.core.egress import (
+    EgressError,
+    EgressPolicy,
+    ValidatedEndpoint,
+    validate_endpoint,
+)
+from agentaudit.core.evolve import GENERATED_PREFIX, build_generator
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
+from agentaudit.core.profile import AgentProfile
 from agentaudit.core.redaction import Redactor
 from agentaudit.core.runner import run as run_tests
-from agentaudit.core.schema import RunResult
+from agentaudit.core.schema import RunResult, TestCase, TestResult
+from agentaudit.core.scoring import ScoreReport, score
 from agentaudit.core.store import (
     CANCELLED_ERROR,
     DISCOVERY_PACK_ID,
@@ -49,6 +59,14 @@ DEFAULT_LEASE_SECONDS = 120
 DEFAULT_POLL_SECONDS = 1.0
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_MAX_PER_ORG = 2
+
+# What one adaptive run may spend. Deliberately a server-side constant and not a
+# job column: every candidate costs attacker-model calls plus a real run against
+# the agent, so a number a browser could raise is a bill a browser could raise.
+# Small on purpose -- this rides on top of a full pack run that already happened.
+ADAPTIVE_BUDGET = CampaignBudget(
+    max_candidates=5, max_kept=3, wall_clock_s=120.0, max_turns=3
+)
 
 
 class PermanentJobError(Exception):
@@ -465,9 +483,121 @@ def _execute_job(
             job.id,
             len(audit.unexecuted),
         )
+
+    if job.adaptive:
+        store.jobs.set_phase(job.id, "attacking")
+        result, report = _attack_adaptively(
+            store,
+            job,
+            target,
+            result,
+            profile=profile,
+            redactor=redactor,
+            endpoint=endpoint,
+            should_stop=should_stop,
+        )
+
     store.jobs.set_phase(job.id, "scoring")
     store.save_run(job.org_id, target, result, report, job.created_by, plan=audit.plan)
     return result.run_id
+
+
+def _attack_adaptively(
+    store: Store,
+    job: JobRow,
+    target: TargetConfig,
+    result: RunResult,
+    *,
+    profile: AgentProfile | None,
+    redactor: Redactor,
+    endpoint: ValidatedEndpoint | None,
+    should_stop: Callable[[], bool],
+) -> tuple[RunResult, ScoreReport]:
+    """Generate new attacks against this agent and fold them into the run.
+
+    The campaign runs every candidate it keeps, so the results already exist by
+    the time it returns -- capturing them through `run_fn` costs no extra agent
+    calls, and appending them mirrors how `audit.execute` already folds in
+    external-tool results.
+
+    Failing to generate is not a failed run. An unconfigured or unreachable
+    model, a rate limit, a budget that produced nothing: the pack's evidence
+    stands on its own, so this logs and returns it unchanged rather than
+    turning a green run red on an LLM outage.
+
+    Generated tests also go to the `generated` pack, the same review queue
+    `agentaudit evolve` feeds -- a candidate that landed is a finding a human
+    should decide to keep, not something this run silently discards.
+    """
+    captured: list[TestResult] = []
+
+    class _Stopped(Exception):
+        """Abort the campaign between candidates."""
+
+    def run_fn(tests: list[TestCase]) -> RunResult:
+        # Cancel and timeout must reach this stage too: the campaign holds the
+        # job for its whole wall clock, and `evolve` has no stop hook of its
+        # own. Raising here is the seam -- the guard below catches it, and the
+        # candidates that already ran are kept.
+        if should_stop():
+            raise _Stopped
+        run = run_tests(target, tests, redactor=redactor, endpoint=endpoint)
+        captured.extend(run.results)
+        return run
+
+    # One guard around the whole stage, building the generator included: a
+    # malformed llm.yaml raises here just as readily as a rate limit does, and
+    # both mean the same thing -- no generation this run, evidence unaffected.
+    try:
+        generator = build_generator()
+        if generator is None:
+            log.info("job %s: adaptive requested but no attacker model is configured", job.id)
+            return result, score(result)
+        campaign = run_campaign(
+            generator,
+            run_fn,
+            budget=ADAPTIVE_BUDGET,
+            profile=profile,
+        )
+    except _Stopped:
+        log.info("job %s: adaptive attack stopped early; keeping what ran", job.id)
+        if captured:
+            merged = result.model_copy(update={"results": [*result.results, *captured]})
+            return merged, score(merged)
+        return result, score(result)
+    except Exception:  # noqa: BLE001 - a generator is a network call
+        log.exception("job %s: adaptive attack failed; keeping the pack's evidence", job.id)
+        # Candidates that ran before the failure are still evidence.
+        if captured:
+            merged = result.model_copy(update={"results": [*result.results, *captured]})
+            return merged, score(merged)
+        return result, score(result)
+
+    if campaign.kept:
+        store.ensure_pack(job.org_id, GENERATED_PREFIX, "Generated tests (provisional)")
+        for row in campaign.as_pack_rows():
+            # A generated id is a hash of its probe, so regenerating the same
+            # attack in a later run collides by design -- that is the id being
+            # stable, not an error. The candidate is already in the pack; keep
+            # its run evidence and move on rather than failing the job.
+            try:
+                store.save_pack_test(job.org_id, GENERATED_PREFIX, row, created_by="adaptive")
+            except LoaderError:
+                log.debug("job %s: %s already queued for review", job.id, row.get("id"))
+
+    log.info(
+        "job %s: adaptive generated %d candidate(s), kept %d, %d landed (%s)",
+        job.id,
+        campaign.candidates_generated,
+        len(campaign.kept),
+        sum(1 for c in campaign.kept if c.landed),
+        campaign.stopped_because,
+    )
+    if not captured:
+        return result, score(result)
+
+    merged = result.model_copy(update={"results": [*result.results, *captured]})
+    return merged, score(merged)
 
 
 def work_once(

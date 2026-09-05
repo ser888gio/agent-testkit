@@ -2420,3 +2420,37 @@ svg.export-icon {
 @media (max-width: 920px) {
   .job-live { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Adaptive generation is a spend decision, so it sits inline with the run form
+   rather than inside a collapsed <details> a user can tick without reading. */
+.adaptive-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0.9rem 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.adaptive-toggle input {
+  margin-top: 0.15rem;
+  flex: none;
+}
+
+/* Marks a result written during the run instead of coming from the pack. Small
+   on purpose: it labels a row, it does not re-rank it. */
+.origin-tag {
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--ink-tertiary);
+  font-size: 0.68rem;
+  vertical-align: middle;
+  white-space: nowrap;
+}

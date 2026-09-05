@@ -274,6 +274,7 @@ def queue_run(
     test_ids: list[str] | None = None,
     timeout_seconds: int | None = None,
     attack_transforms: list[str] | None = None,
+    adaptive: bool = False,
     created_by: str | None = None,
 ) -> str:
     """Assemble the rows a run needs and enqueue it; returns the job id.
@@ -299,4 +300,5 @@ def queue_run(
         test_ids=selection,
         timeout_seconds=timeout_seconds,
         attack_transforms=attack_transforms,
+        adaptive=adaptive,
     )

@@ -296,10 +296,21 @@ export function RunDetailPage() {
               key: "test",
               header: "Test",
               sort: (r) => r.test_id,
+              // Generated tests stay in the one list rather than a section of
+              // their own: they are results like any other, and splitting them
+              // out buries a finding under a heading nobody opens. The tag is
+              // enough to say where the test came from.
               cell: (r) => (
-                <Link to={`/runs/${runId}/tests/${encodeURIComponent(r.test_id)}`}>
-                  {r.test_id}
-                </Link>
+                <>
+                  <Link to={`/runs/${runId}/tests/${encodeURIComponent(r.test_id)}`}>
+                    {r.test_id}
+                  </Link>
+                  {r.test_id.startsWith("generated.") ? (
+                    <span className="origin-tag" title="Written during this run from the agent's profile">
+                      generated
+                    </span>
+                  ) : null}
+                </>
               ),
             },
             { key: "category", header: "Category", sort: (r) => r.category, cell: (r) => r.category },

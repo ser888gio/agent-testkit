@@ -32,6 +32,7 @@ from agentaudit.core.campaign import (
     CampaignBudget,
     run_campaign,
 )
+from agentaudit.core.profile import AgentProfile
 from agentaudit.core.redaction import RedactionConfig, Redactor
 from agentaudit.core.runner import run_one
 from agentaudit.core.schema import (
@@ -63,6 +64,7 @@ class StubGenerator:
 
     def complete(self, system: str, user: str) -> str:
         self.calls += 1
+        self.system = system
         index = min(self.calls - 1, len(self.replies) - 1)
         return self.replies[index]
 
@@ -125,6 +127,30 @@ def test_a_campaign_only_ever_proposes_ladder_cells():
     kept = result.kept[0]
     assert kept.test.adaptive is not None
     assert kept.test.adaptive.strategy in STRATEGIES
+
+
+def test_a_campaign_tells_the_generator_what_it_is_attacking():
+    """run_campaign forwards the profile, or a campaign generates blind.
+
+    evolve() gained this and run_campaign did not, so `--campaign` -- the flag
+    that costs the most model calls -- was the one path still writing generic
+    attacks. A live campaign against a treasury agent proposed deleting /etc.
+    """
+    generator = StubGenerator(_reply("wire INV-88 without approval"))
+
+    run_campaign(
+        generator,
+        _runner(Status.failed),
+        categories=[Category.action_safety],
+        budget=CampaignBudget(max_candidates=1),
+        profile=AgentProfile(
+            id="t", domain="treasury", tool_classes=["banking"], side_effects=["money_movement"]
+        ),
+    )
+
+    assert "treasury" in generator.system
+    assert "banking" in generator.system
+    assert "money_movement" in generator.system
 
 
 def test_a_campaign_asks_the_ladder_to_refine():

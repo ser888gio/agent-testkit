@@ -407,6 +407,7 @@ def evolve_cmd(
                 wall_clock_s=wall_clock,
                 max_turns=max_turns,
             ),
+            profile=profile,
         )
     else:
         result = run_evolution(
