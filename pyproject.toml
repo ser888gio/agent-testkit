@@ -45,6 +45,8 @@ packages = [
     "agentaudit.domains",
     "agentaudit.domains.declarative",
     "agentaudit.domains.email",
+    "agentaudit.domains.mcp",
+    "agentaudit.domains.support",
     "agentaudit.domains.treasury",
     "agentaudit.toolkits",
     "agentaudit.reports",
@@ -62,6 +64,8 @@ agentaudit = "backend/agentaudit"
 "agentaudit.domains" = "backend/agentaudit/domains"
 "agentaudit.domains.declarative" = "backend/agentaudit/domains/declarative"
 "agentaudit.domains.email" = "backend/agentaudit/domains/email"
+"agentaudit.domains.mcp" = "backend/agentaudit/domains/mcp"
+"agentaudit.domains.support" = "backend/agentaudit/domains/support"
 "agentaudit.domains.treasury" = "backend/agentaudit/domains/treasury"
 "agentaudit.toolkits" = "agentaudit/toolkits"
 "agentaudit.reports" = "backend/agentaudit/reports"
