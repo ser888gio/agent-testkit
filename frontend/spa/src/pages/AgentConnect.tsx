@@ -22,6 +22,7 @@ interface ConnectOptions {
   default_target: string | null;
   default_pack: string | null;
   pack_tests: Record<string, PackCase[]>;
+  attack_transforms: string[];
 }
 
 // Sentinel option that switches the form to endpoint-URL mode.
@@ -37,6 +38,9 @@ export function AgentConnectPage() {
   // Only the selected pack's tests are offered: the form submits one pack.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [timeoutMinutes, setTimeoutMinutes] = useState("");
+  // Each name adds one mutated variant per planned test, so the run grows by
+  // roughly (1 + count) x. Empty means the pack runs as written.
+  const [transforms, setTransforms] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -73,6 +77,15 @@ export function AgentConnectPage() {
     );
   }
 
+  const toggleTransform = (name: string) => {
+    setTransforms((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
   const toggle = (id: string) => {
     setSelected((current) => {
       const next = new Set(current);
@@ -102,6 +115,7 @@ export function AgentConnectPage() {
         packs: pack,
         test_ids: [...selected],
         timeout_seconds: timeoutMinutes ? Number(timeoutMinutes) * 60 : null,
+        attack_transforms: [...transforms],
       });
       navigate(`/jobs/${result.job_id}`);
     } catch (err) {
@@ -228,6 +242,34 @@ export function AgentConnectPage() {
               still finish, and whatever ran is kept as partial evidence.
             </small>
           </label>
+
+          <details className="test-picker" data-testid="attack-picker">
+            <summary>
+              Generate attack variants{" "}
+              <span className="quiet">(optional — the pack runs as written by default)</span>
+            </summary>
+            <fieldset className="test-picker-group">
+              <legend>Attack transforms</legend>
+              <p className="quiet">
+                Each transform mutates every planned test into one extra variant, so the run
+                grows to about {transforms.size + 1}x its size.
+              </p>
+              <ul className="test-picker-list">
+                {(options.attack_transforms ?? []).map((name) => (
+                  <li key={name}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={transforms.has(name)}
+                        onChange={() => toggleTransform(name)}
+                      />
+                      <span className="mono">{name}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </fieldset>
+          </details>
 
           <details className="test-picker" data-testid="test-picker">
             <summary>

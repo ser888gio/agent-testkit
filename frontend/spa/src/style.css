@@ -2189,3 +2189,91 @@ svg.export-icon {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Job pipeline stepper. A vertical rail drawn with a pseudo-element on each
+   step but the last, so the list stays one <ol> with no spacer markup. */
+.stepper {
+  display: grid;
+  gap: 0;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding-bottom: 1.1rem;
+}
+
+.step:last-child {
+  padding-bottom: 0;
+}
+
+.step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 0.68rem;
+  top: 1.4rem;
+  bottom: 0.15rem;
+  width: 2px;
+  background: var(--hairline-strong);
+}
+
+.step-done:not(:last-child)::before {
+  background: var(--pass-border);
+}
+
+.step-marker {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--hairline-strong);
+  background: var(--surface-2);
+  color: var(--ink-subtle);
+  font-size: 0.72rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-done .step-marker {
+  border-color: var(--pass-border);
+  background: var(--pass-border);
+  color: var(--on-accent);
+}
+
+.step-active .step-marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.step-body {
+  display: grid;
+  gap: 0.15rem;
+  padding-top: 0.1rem;
+}
+
+.step-label {
+  font-size: 0.9rem;
+  color: var(--ink-subtle);
+}
+
+.step-active .step-label {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.step-done .step-label {
+  color: var(--ink-muted);
+}
+
+.step-detail {
+  font-size: 0.78rem;
+  color: var(--ink-tertiary);
+}

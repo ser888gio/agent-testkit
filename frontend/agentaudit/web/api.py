@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agentaudit.core import llm, runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
+from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.config import known_sandboxes
 from agentaudit.core.evolve import (
     GENERATED_PREFIX,
@@ -46,7 +47,7 @@ from agentaudit.core.loader import LoaderError, discover
 from agentaudit.core.profile import AgentProfile
 from agentaudit.core.regressions import compare
 from agentaudit.core.schema import Category, Risk, TestCase
-from agentaudit.core.store import DISCOVERY_PACK_ID
+from agentaudit.core.store import DISCOVERY_PACK_ID, JobQueue
 from agentaudit.reports.charts import bar_rows, donut_segments, sparkline_points
 from agentaudit.reports.html import to_html
 from agentaudit.reports.json import to_json
@@ -117,6 +118,41 @@ _JOB_MESSAGES = {
 }
 
 
+def _job_steps(job) -> list[dict]:
+    """The pipeline stages, each marked done / active / pending.
+
+    Derived, not stored: the phase column names only where the worker *is*, and
+    the stages are ordered, so everything before it is done. A terminal job has
+    no active step -- a finished job shows every stage it reached as done.
+
+    Stages the job will not reach are dropped rather than shown as permanently
+    pending: a job with no attack transforms never expands anything, and a step
+    that can never light up misreports the pipeline.
+    """
+    stages = [
+        (name, label)
+        for name, label in JobQueue.PHASES
+        if name != "expanding" or job.attack_transforms_json
+    ]
+    names = [name for name, _ in stages]
+    current = job.phase if job.phase in names else None
+    reached = names.index(current) if current else -1
+    terminal = job.state not in ("queued", "running")
+    steps = []
+    for index, (name, label) in enumerate(stages):
+        if index < reached or (terminal and index <= reached):
+            state = "done"
+        elif index == reached:
+            state = "active"
+        else:
+            state = "pending"
+        detail = ""
+        if name == "testing" and job.tests_total:
+            detail = f"{job.tests_done} of {job.tests_total} tests"
+        steps.append({"name": name, "label": label, "state": state, "detail": detail})
+    return steps
+
+
 def _job_payload(job) -> dict:
     message = _JOB_MESSAGES.get(job.state, job.state)
     if job.state == "failed" and job.error:
@@ -133,6 +169,7 @@ def _job_payload(job) -> dict:
             "tests_total": job.tests_total or 0,
             # Test ids and status words only -- progress carries no agent output.
             "recent_test_ids": [entry.get("test_id") for entry in recent],
+            "steps": _job_steps(job),
         }
     )
     return _serialize(row)
@@ -540,6 +577,7 @@ def connect_options(principal: Principal = Depends(current_principal)) -> dict: 
         "default_target": default_target,
         "default_pack": default_pack,
         "pack_tests": pack_tests,
+        "attack_transforms": sorted(TRANSFORMS),
     }
 
 
@@ -548,6 +586,9 @@ class EnqueueRunBody(BaseModel):
     packs: str
     test_ids: list[str] = []
     timeout_seconds: int | None = Field(default=None, gt=0, le=MAX_JOB_TIMEOUT_SECONDS)
+    # Validated against the transform registry in `JobQueue.enqueue`, which
+    # raises ValueError -> 400 for an unknown name.
+    attack_transforms: list[str] = []
 
 
 @router.post("/runs/enqueue")
@@ -561,6 +602,7 @@ def enqueue_run(body: EnqueueRunBody, principal: Principal = Depends(require_adm
             packs=body.packs,
             test_ids=body.test_ids,
             timeout_seconds=body.timeout_seconds,
+            attack_transforms=body.attack_transforms,
             created_by=principal.subject,
         )
     }
@@ -601,6 +643,9 @@ def rerun_job(job_id: str, principal: Principal = Depends(require_admin)) -> dic
         created_by=principal.subject,
         test_ids=test_ids,
         timeout_seconds=job.timeout_seconds,
+        attack_transforms=(
+            json.loads(job.attack_transforms_json) if job.attack_transforms_json else None
+        ),
     )
     return {"job_id": new_id}
 

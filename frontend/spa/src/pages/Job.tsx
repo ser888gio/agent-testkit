@@ -14,6 +14,7 @@ interface JobView {
   tests_total: number;
   running: boolean;
   recent: { test_id: string; status: string }[];
+  steps: { name: string; label: string; state: string; detail: string }[];
   message: string;
   discovery: boolean;
 }
@@ -138,6 +139,23 @@ export function JobPage() {
         <p id="run-status" aria-live="polite">
           {job.running ? <Spinner /> : null} {job.message || job.state}
         </p>
+
+        {/* The stages before the first test result -- resolving the target,
+            confirming the request shape, planning -- used to be one spinner.
+            The worker names the stage it is in; ordering makes the rest. */}
+        <ol className="stepper" data-testid="job-steps">
+          {(job.steps ?? []).map((step, index) => (
+            <li key={step.name} className={`step step-${step.state}`}>
+              <span className="step-marker" aria-hidden="true">
+                {step.state === "done" ? "✓" : index + 1}
+              </span>
+              <span className="step-body">
+                <span className="step-label">{step.label}</span>
+                {step.detail ? <span className="step-detail">{step.detail}</span> : null}
+              </span>
+            </li>
+          ))}
+        </ol>
 
         {job.running ? (
           <button type="button" onClick={cancel} disabled={busy} data-testid="job-cancel-submit">

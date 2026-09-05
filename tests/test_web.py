@@ -21,7 +21,7 @@ from agentaudit.core.runner import run
 from agentaudit.core.schema import Assertion, Category
 from agentaudit.core.schema import TestCase as SchemaTestCase
 from agentaudit.core.scoring import score
-from agentaudit.core.store import DEFAULT_ORG, DISCOVERY_PACK_ID, Store
+from agentaudit.core.store import DEFAULT_ORG, DISCOVERY_PACK_ID, JobQueue, Store
 
 MODULE = "tests.test_web"
 SPA_SRC = Path("frontend/spa/src")
@@ -1685,6 +1685,103 @@ def test_job_detail_reports_progress_fields(tmp_path, monkeypatch):
     assert payload["tests_done"] == 1
     assert payload["tests_total"] == 2
     assert payload["running"] is True
+
+
+def test_job_status_reports_pipeline_steps(tmp_path, monkeypatch):
+    """The stage the worker is in becomes done/active/pending across the list."""
+    db = str(tmp_path / "phase.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    store.jobs.set_phase(job_id, "testing")
+    store.jobs.start_progress(job_id, 3)
+    store.jobs.record_progress(job_id, "a.case", "passed")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert [s["name"] for s in steps] == ["connecting", "planning", "testing", "scoring"]
+    assert [s["state"] for s in steps] == ["done", "done", "active", "pending"]
+    assert steps[2]["detail"] == "1 of 3 tests"
+
+
+def test_job_steps_have_no_active_stage_once_terminal(tmp_path, monkeypatch):
+    """A finished job shows every stage it reached as done, not one still spinning."""
+    db = str(tmp_path / "phase-done.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    store.jobs.set_phase(job_id, "scoring")
+    store.jobs.claim("w")
+    store.jobs.release(job_id, "w", state="done", run_id="r1")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert [s["state"] for s in steps] == ["done"] * 4
+
+
+def test_job_steps_are_all_pending_before_a_worker_claims_it(tmp_path, monkeypatch):
+    """A queued job has no phase yet; nothing may render as reached."""
+    db = str(tmp_path / "phase-queued.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert [s["state"] for s in steps] == ["pending"] * 4
+
+
+def test_expanding_step_is_hidden_without_attack_transforms(tmp_path, monkeypatch):
+    """A job that expands nothing must not show a stage that can never light up."""
+    db = str(tmp_path / "no-attack.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert "expanding" not in [s["name"] for s in steps]
+
+
+def test_expanding_step_appears_for_a_job_with_transforms(tmp_path, monkeypatch):
+    """With transforms the stage is real, and sits between planning and testing."""
+    db = str(tmp_path / "attack.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p", attack_transforms=["base64"])
+    store.jobs.set_phase(job_id, "expanding")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert [s["name"] for s in steps] == [name for name, _ in JobQueue.PHASES]
+    assert [s["state"] for s in steps] == ["done", "done", "active", "pending", "pending"]
+
+
+def test_enqueue_rejects_an_unknown_attack_transform(tmp_path, monkeypatch):
+    """An unknown name is the caller's mistake: 400 while the form is still open."""
+    client = _client(str(tmp_path / "bad-attack.db"), monkeypatch)
+
+    response = client.post(
+        "/api/runs/enqueue",
+        json={**_TREASURY, "attack_transforms": ["not-a-transform"]},
+    )
+
+    assert response.status_code == 400
+    assert "not-a-transform" in response.json()["detail"]
+
+
+def test_enqueue_stores_attack_transforms_on_the_job(tmp_path, monkeypatch):
+    """The worker reads the choice off the job row, so it must survive enqueue."""
+    db = str(tmp_path / "attack-enqueue.db")
+    client = _client(db, monkeypatch)
+
+    job_id = client.post(
+        "/api/runs/enqueue",
+        json={**_TREASURY, "attack_transforms": ["base64", "leetspeak"]},
+    ).json()["job_id"]
+
+    job = Store(db).jobs.get(DEFAULT_ORG, job_id)
+    assert json.loads(job.attack_transforms_json) == ["base64", "leetspeak"]
 
 
 # --- plans -------------------------------------------------------------------

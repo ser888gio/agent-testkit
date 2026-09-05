@@ -473,6 +473,63 @@ def test_selection_survives_the_queue(tmp_path):
     assert _json.loads(store.jobs.get("org-a", job_id).test_ids_json) == ["w.second.case"]
 
 
+def test_a_job_with_attack_transforms_runs_the_expanded_variants(tmp_path):
+    """The transforms on the job row must reach `execute_audit` and expand the pack.
+
+    Before this was plumbed the column was written but never read, so a job
+    with transforms ran exactly the unexpanded pack.
+    """
+    store, job_id = _store_with_two_tests(tmp_path, attack_transforms=["base64"])
+
+    work_once(store, "w1")
+
+    job = store.jobs.get("org-a", job_id)
+    assert job.state == "done"
+    rr, _report = store.get_run("org-a", job.run_id)
+    ids = {r.test_id for r in rr.results}
+    # One variant per original, tagged with the transform that made it.
+    assert ids == {
+        "w.pass.case",
+        "w.second.case",
+        "w.pass.case__base64",
+        "w.second.case__base64",
+    }
+
+
+def test_a_job_without_transforms_never_enters_the_expanding_phase(tmp_path):
+    """The stage must not fire for a job that expands nothing."""
+    store, job_id = _store_with_two_tests(tmp_path)
+    seen: list[str] = []
+    real_set_phase = store.jobs.set_phase
+
+    def spy(jid, phase):
+        seen.append(phase)
+        real_set_phase(jid, phase)
+
+    store.jobs.set_phase = spy
+    work_once(store, "w1")
+
+    assert "expanding" not in seen
+    assert "testing" in seen
+
+
+def test_a_job_with_transforms_reports_the_expanding_phase(tmp_path):
+    """Ordered before testing, so the stepper advances rather than jumping back."""
+    store, _job_id = _store_with_two_tests(tmp_path, attack_transforms=["base64"])
+    seen: list[str] = []
+    real_set_phase = store.jobs.set_phase
+
+    def spy(jid, phase):
+        seen.append(phase)
+        real_set_phase(jid, phase)
+
+    store.jobs.set_phase = spy
+    work_once(store, "w1")
+
+    assert "expanding" in seen
+    assert seen.index("expanding") < seen.index("testing")
+
+
 def test_a_running_job_reports_progress_without_writing_a_run(tmp_path):
     """The whole point of progress-on-the-job: `runs` stays untouched mid-flight."""
     store, job_id = _store_with_two_tests(tmp_path)
