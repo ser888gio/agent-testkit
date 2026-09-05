@@ -1780,8 +1780,36 @@ def test_expanding_step_appears_for_a_job_with_transforms(tmp_path, monkeypatch)
 
     steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
 
-    assert [s["name"] for s in steps] == [name for name, _ in JobQueue.PHASES]
+    # Every audit stage except "attacking", which this job did not ask for.
+    assert [s["name"] for s in steps] == [
+        name for name, _ in JobQueue.PHASES if name != "attacking"
+    ]
     assert [s["state"] for s in steps] == ["done", "done", "active", "pending", "pending"]
+
+
+def test_the_attacking_stage_is_hidden_unless_the_job_asked_for_it(tmp_path, monkeypatch):
+    """A stage that can never light up misreports the pipeline."""
+    db = str(tmp_path / "no-adaptive.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p")
+    client = _client(db, monkeypatch)
+
+    steps = client.get(f"/api/jobs/{job_id}/status").json()["steps"]
+
+    assert "attacking" not in [s["name"] for s in steps]
+
+
+def test_the_attacking_stage_appears_for_an_adaptive_job(tmp_path, monkeypatch):
+    """With generation on the stage is real, and sits before scoring."""
+    db = str(tmp_path / "adaptive.db")
+    store = Store(db)
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "t", "p", adaptive=True)
+    client = _client(db, monkeypatch)
+
+    names = [s["name"] for s in client.get(f"/api/jobs/{job_id}/status").json()["steps"]]
+
+    assert "attacking" in names
+    assert names.index("attacking") < names.index("scoring")
 
 
 def test_discovery_job_shows_the_discovery_pipeline(tmp_path, monkeypatch):

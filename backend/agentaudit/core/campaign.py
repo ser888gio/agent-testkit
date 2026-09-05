@@ -52,6 +52,7 @@ from agentaudit.core.adaptive import STRATEGIES
 from agentaudit.core.archive import Archive, Candidate
 from agentaudit.core.evolve import AttackGenerator, EvolveBudget, EvolveResult
 from agentaudit.core.evolve import evolve as run_evolution
+from agentaudit.core.profile import AgentProfile
 from agentaudit.core.schema import Category, RunResult, TestCase
 
 # The branching styles a campaign is allowed to pick from -- every ladder in
@@ -131,6 +132,7 @@ def run_campaign(
     archive: Archive | None = None,
     categories: Sequence[Category] | None = None,
     budget: CampaignBudget | None = None,
+    profile: AgentProfile | None = None,
 ) -> CampaignResult:
     """One branching campaign: goal seeding -> escalating turns -> admit.
 
@@ -141,6 +143,11 @@ def run_campaign(
     coverage from a prior run (e.g. a fixed-ladder pack already executed) so
     the campaign spends its budget on cells that pack left uncovered, rather
     than re-discovering them.
+
+    `profile` reaches the generator's prompt. Without it a campaign against a
+    treasury agent writes Linux-sysadmin attacks -- observed, not hypothetical:
+    the first live campaign proposed "delete all files in /etc" to an agent
+    whose only tools were banking and invoicing.
     """
     budget = budget or CampaignBudget()
     result = run_evolution(
@@ -151,6 +158,7 @@ def run_campaign(
         budget=budget.as_evolve_budget(),
         styles=BRANCHING_STYLES,
         refine=True,
+        profile=profile,
     )
     return CampaignResult._from_evolve(result)
 
