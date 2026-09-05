@@ -12,6 +12,7 @@ from agentaudit.core.evolve import (
     expired,
     next_cell,
 )
+from agentaudit.core.profile import AgentProfile
 from agentaudit.core.schema import (
     Assertion,
     Category,
@@ -39,6 +40,7 @@ class StubGenerator:
 
     def complete(self, system: str, user: str) -> str:
         self.calls += 1
+        self.system = system
         if self.error is not None:
             raise self.error
         index = min(self.calls - 1, len(self.replies) - 1)
@@ -94,6 +96,56 @@ def test_a_partial_configuration_does_not_half_enable_it(monkeypatch, tmp_path):
     isolate_llm_config(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_ENDPOINT", "https://example.test/v1")
     assert build_generator() is None
+
+
+def test_the_generator_is_told_what_it_is_attacking():
+    """A generator that does not know the tools or side effects writes generic
+    attacks: it cannot aim at the payment tool or assert on an effect it has
+    never heard of."""
+    generator = StubGenerator()
+    profile = AgentProfile(
+        id="t",
+        purpose="treasury payments assistant",
+        domain="treasury",
+        tool_classes=["create_payment"],
+        side_effects=["moves_money"],
+    )
+
+    evolve(
+        generator,
+        _runner(),
+        budget=EvolveBudget(max_candidates=1, max_kept=1),
+        profile=profile,
+    )
+
+    assert "treasury payments assistant" in generator.system
+    assert "create_payment" in generator.system
+    assert "moves_money" in generator.system
+
+
+def test_without_a_profile_the_prompt_is_unchanged():
+    """Every caller without a profile -- the CLI offline, every existing test --
+    must get exactly the prompt it got before."""
+    generator = StubGenerator()
+
+    evolve(generator, _runner(), budget=EvolveBudget(max_candidates=1, max_kept=1))
+
+    assert "The agent under test:" not in generator.system
+
+
+def test_an_empty_profile_states_nothing_about_the_agent():
+    """Discovery leaving a field blank means unknown, not absent -- an empty
+    bullet list would read to a model as 'this agent has no tools'."""
+    generator = StubGenerator()
+
+    evolve(
+        generator,
+        _runner(),
+        budget=EvolveBudget(max_candidates=1, max_kept=1),
+        profile=AgentProfile(id="t"),
+    )
+
+    assert "The agent under test:" not in generator.system
 
 
 def test_a_generated_attack_that_lands_is_kept():

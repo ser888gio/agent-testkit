@@ -386,6 +386,14 @@ def evolve_cmd(
     def run_fn(tests):
         return execute_audit(cfg, tests, endpoint=validated).result
 
+    # Probe once so the generator knows what it is attacking: the domain, the
+    # tools and the side effects worth asserting on are most of what makes a
+    # candidate land, and without them it writes attacks for a generic agent.
+    # Two trivial probes, on the same bound endpoint the run uses.
+    profile = discover_profile(
+        cfg, runner=lambda c, cases: run_tests(c, cases, endpoint=validated)
+    )
+
     # `CampaignResult` mirrors `EvolveResult`'s fields and `as_pack_rows()`, so
     # everything below this branch is common to both.
     if campaign:
@@ -408,6 +416,7 @@ def evolve_cmd(
             budget=EvolveBudget(
                 max_candidates=max_candidates, max_kept=max_kept, wall_clock_s=wall_clock
             ),
+            profile=profile,
         )
 
     for candidate in result.kept:
