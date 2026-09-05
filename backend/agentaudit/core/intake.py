@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 import yaml
 
 import agentaudit
+from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.config import ConfigError, load_target_dict
 from agentaudit.core.loader import LoaderError, discover
 from agentaudit.core.schema import TestCase
@@ -272,6 +273,7 @@ def queue_run(
     packs: str,
     test_ids: list[str] | None = None,
     timeout_seconds: int | None = None,
+    attack_transforms: list[str] | None = None,
     created_by: str | None = None,
 ) -> str:
     """Assemble the rows a run needs and enqueue it; returns the job id.
@@ -281,6 +283,14 @@ def queue_run(
     """
     target_id, pack_id = resolve_target_and_pack(store, org_id, target, packs)
     selection = narrow_selection(store, org_id, pack_id, test_ids or [])
+    # `JobQueue.enqueue` rejects an unknown transform too; raising here as well
+    # is what turns it into a 400 rather than a 500 on the web path.
+    unknown = sorted(set(attack_transforms or []) - set(TRANSFORMS))
+    if unknown:
+        raise IntakeError(
+            f"unknown attack transform(s): {', '.join(unknown)}. "
+            f"Available: {', '.join(sorted(TRANSFORMS))}."
+        )
     return store.jobs.enqueue(
         org_id,
         target_id,
@@ -288,4 +298,5 @@ def queue_run(
         created_by=created_by,
         test_ids=selection,
         timeout_seconds=timeout_seconds,
+        attack_transforms=attack_transforms,
     )

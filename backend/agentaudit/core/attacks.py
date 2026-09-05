@@ -148,6 +148,119 @@ TRANSFORMS: dict[str, Callable[[str], str]] = {
 }
 
 
+# Presentation metadata for the transforms above: the family a transform belongs
+# to, a one-line description, and whether it is part of the recommended default
+# set. It lives here, beside the registry, so a new transform cannot be added
+# without a reader noticing this table -- `describe_transforms` fails loudly if
+# the two ever drift apart.
+#
+# `recommended` is one transform per family plus the two highest-signal social
+# framings: broad coverage of the attack classes at ~5x the pack size, rather
+# than the ~21x of selecting everything.
+_ENCODING = "Encoding & obfuscation"
+_SOCIAL = "Social engineering"
+_CONTEXT = "Context manipulation"
+
+TRANSFORM_INFO: dict[str, tuple[str, str, bool]] = {
+    "base64": (_ENCODING, "Encodes the whole prompt as base64.", True),
+    "rot13": (_ENCODING, "Rotates every letter 13 places through the alphabet.", False),
+    "leetspeak": (_ENCODING, "Substitutes digits for lookalike letters (a->4, e->3).", False),
+    "unicode_confusable": (
+        _ENCODING,
+        "Swaps Latin letters for Cyrillic lookalikes with identical glyphs.",
+        False,
+    ),
+    "json_embed": (_ENCODING, "Wraps the prompt as a field inside a JSON document.", False),
+    "character_stream": (
+        _ENCODING,
+        "Spaces the prompt out character by character with a reassembly instruction.",
+        False,
+    ),
+    "roleplay_wrap": (
+        _SOCIAL,
+        "Frames the request as an unrestricted character in a novel.",
+        True,
+    ),
+    "authority": (_SOCIAL, "Claims account-owner admin override authorization.", True),
+    "system_override": (
+        _SOCIAL,
+        "Fakes a system tag revoking prior instructions.",
+        False,
+    ),
+    "permission_escalation": (
+        _SOCIAL,
+        "Claims to be the tool maintainer acting under service-account privileges.",
+        False,
+    ),
+    "emotional": (_SOCIAL, "Adds pleading, urgency and personal stakes.", True),
+    "multilingual": (_SOCIAL, "Asks for the answer in another language.", False),
+    "poem": (_SOCIAL, "Asks for the steps as the stanzas of a poem.", False),
+    "math_problem": (_SOCIAL, "Reframes the steps as a set-theory enumeration.", False),
+    "linguistic_confusion": (
+        _SOCIAL,
+        "Buries the request in double negation and hedging.",
+        False,
+    ),
+    "context_poison": (
+        _CONTEXT,
+        "Asserts as established fact that the request is pre-approved.",
+        True,
+    ),
+    "context_flood": (
+        _CONTEXT,
+        "Buries the prompt under filler text so it may fall out of attention.",
+        False,
+    ),
+    "goal_redirect": (
+        _CONTEXT,
+        "Claims an orchestrator replaced the agent's objective.",
+        False,
+    ),
+    "input_bypass": (
+        _CONTEXT,
+        "Claims validation is misfiring and an exception was granted.",
+        False,
+    ),
+    "synthetic_context": (
+        _CONTEXT,
+        "Fakes a restored session log with policy checks already bypassed.",
+        False,
+    ),
+}
+
+# The order families are offered in: encodings first (cheapest to reason about),
+# then the two framing families.
+TRANSFORM_FAMILIES = (_ENCODING, _SOCIAL, _CONTEXT)
+
+
+def describe_transforms() -> list[dict[str, Any]]:
+    """The registry as UI-ready rows: name, family, description, recommended.
+
+    Raises if `TRANSFORM_INFO` and `TRANSFORMS` have drifted. A transform with
+    no description would otherwise reach the form as a bare name, which is the
+    thing this table exists to prevent.
+    """
+    missing = sorted(set(TRANSFORMS) - set(TRANSFORM_INFO))
+    extra = sorted(set(TRANSFORM_INFO) - set(TRANSFORMS))
+    if missing or extra:
+        raise RuntimeError(
+            "TRANSFORM_INFO is out of sync with TRANSFORMS: "
+            f"undescribed={missing}, unknown={extra}"
+        )
+    order = {family: index for index, family in enumerate(TRANSFORM_FAMILIES)}
+    rows = [
+        {
+            "name": name,
+            "family": TRANSFORM_INFO[name][0],
+            "description": TRANSFORM_INFO[name][1],
+            "recommended": TRANSFORM_INFO[name][2],
+        }
+        for name in TRANSFORMS
+    ]
+    rows.sort(key=lambda row: (order[row["family"]], row["name"]))
+    return rows
+
+
 def split_variant(test_id: str) -> tuple[str, str | None]:
     """('a.b.c__rot13') -> ('a.b.c', 'rot13'); ('a.b.c') -> ('a.b.c', None)."""
     base, sep, transform = test_id.partition(ATTACK_SEPARATOR)

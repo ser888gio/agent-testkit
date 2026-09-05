@@ -218,6 +218,7 @@ def execute_discovery(store: Store, job: JobRow) -> None:
     to the same egress decision and redactor as an audit would use -- discovery
     reaches a live partner endpoint and gets no shortcut around that.
     """
+    store.jobs.set_phase(job.id, "connecting")
     target, redactor, endpoint = _prepare_target(store, job)
 
     def bound_run(cfg: TargetConfig, cases: list) -> RunResult:
@@ -349,6 +350,10 @@ def _execute_job(
         execute_discovery(store, job)
         return None
 
+    # Phase transitions bracket the stages that happen before the first test
+    # result, which is the window the dashboard used to render as a bare
+    # spinner. Each is one UPDATE on the job row; the run is unaffected.
+    store.jobs.set_phase(job.id, "connecting")
     target, redactor, endpoint = _prepare_target(store, job)
 
     # A target registered through the form carries a *guessed* request shape
@@ -374,6 +379,8 @@ def _execute_job(
         raise PermanentJobError(str(exc)) from exc
 
     tests = _apply_selection(job, tests)
+    store.jobs.set_phase(job.id, "planning")
+    transforms = json.loads(job.attack_transforms_json) if job.attack_transforms_json else []
 
     # Live progress so the dashboard can show a run moving. It lands on the
     # job row, never in `runs`: a half-written run is not evidence, and every
@@ -384,6 +391,10 @@ def _execute_job(
     # that runs.
     def count(planned, _harness, _unexecuted) -> None:
         store.jobs.start_progress(job.id, len(planned))
+        store.jobs.set_phase(job.id, "testing")
+
+    def expanding(_names) -> None:
+        store.jobs.set_phase(job.id, "expanding")
 
     def note(_index: int, result) -> None:
         store.jobs.record_progress(job.id, result.test_id, result.status.value)
@@ -415,7 +426,9 @@ def _execute_job(
         redactor=redactor,
         endpoint=endpoint,
         plan=True,
+        attack_transforms=transforms,
         on_plan=count,
+        on_expand=expanding,
         on_result=note,
         should_stop=should_stop,
     )
@@ -442,6 +455,7 @@ def _execute_job(
             job.id,
             len(audit.unexecuted),
         )
+    store.jobs.set_phase(job.id, "scoring")
     store.save_run(job.org_id, target, result, report, job.created_by, plan=audit.plan)
     return result.run_id
 

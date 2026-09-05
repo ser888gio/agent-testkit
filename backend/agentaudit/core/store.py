@@ -16,6 +16,7 @@ from pathlib import Path
 
 from agentaudit.core import credentials
 from agentaudit.core.artifacts import artifact_key
+from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.config import TargetConfig, load_target_dict
 from agentaudit.core.egress import EgressPolicy
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
@@ -136,6 +137,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     progress_json TEXT,
     cancel_requested INTEGER NOT NULL DEFAULT 0,
     timeout_seconds INTEGER,
+    -- Appended last to match the column order ALTER TABLE produces in 0017
+    -- and 0018; tests/test_migrate.py compares the schemas position by position.
+    phase TEXT,
+    attack_transforms_json TEXT,
     FOREIGN KEY (org_id) REFERENCES orgs(id)
 );
 CREATE TABLE IF NOT EXISTS llm_settings (
@@ -251,6 +256,10 @@ class JobRow:
     tests_total: int | None = None
     tests_done: int = 0
     progress_json: str | None = None
+    # Which stage of the pipeline the worker is in -- see JobQueue.PHASES.
+    phase: str | None = None
+    # JSON list of attack transform names, or None for "run the pack as written".
+    attack_transforms_json: str | None = None
     cancel_requested: int = 0
     timeout_seconds: int | None = None
 
@@ -433,6 +442,7 @@ class JobQueue:
         priority: int = 0,
         test_ids: Sequence[str] | None = None,
         timeout_seconds: int | None = None,
+        attack_transforms: Sequence[str] | None = None,
     ) -> str:
         """Queue a run.
 
@@ -445,19 +455,33 @@ class JobQueue:
         `timeout_seconds` caps how long the job may run before the worker stops
         it; None means no limit. Zero or negative is rejected rather than
         treated as "no limit".
+
+        `attack_transforms` names the mutations that expand each planned test
+        into extra adversarial variants. None or empty means the pack runs as
+        written. Names are validated here rather than in the worker: an unknown
+        transform must fail while a human is still watching the form, not two
+        minutes into a claimed job.
         """
         if test_ids is not None and not test_ids:
             raise ValueError("test_ids must name at least one test, or be None for the whole pack")
         if timeout_seconds is not None and timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive, or None for no limit")
+        transforms = list(attack_transforms or [])
+        unknown = [name for name in transforms if name not in TRANSFORMS]
+        if unknown:
+            raise ValueError(
+                f"unknown attack transform(s): {', '.join(sorted(unknown))}. "
+                f"Available: {', '.join(sorted(TRANSFORMS))}."
+            )
         job_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
         with self._store._connection() as conn, conn:
             self._store._ensure_org(conn, org_id, now)
             conn.execute(
                 "INSERT INTO jobs (id, org_id, target_id, pack_id, state, created_by, "
-                "priority, created_at, test_ids_json, timeout_seconds) "
-                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
+                "priority, created_at, test_ids_json, timeout_seconds, "
+                "attack_transforms_json) "
+                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
                 (
                     job_id,
                     org_id,
@@ -468,6 +492,7 @@ class JobQueue:
                     now,
                     json.dumps(list(test_ids)) if test_ids is not None else None,
                     timeout_seconds,
+                    json.dumps(transforms) if transforms else None,
                 ),
             )
         return job_id
@@ -536,6 +561,24 @@ class JobQueue:
     # How many recent outcomes a job carries. Enough to see the run moving
     # without turning an operational row into a second copy of the evidence.
     PROGRESS_WINDOW = 12
+
+    # Worker pipeline stages, in order, with the label the dashboard shows.
+    # Operational state like the rest of this row: a stage name, never agent
+    # output, so it needs no redaction pass.
+    PHASES = (
+        ("connecting", "Connecting to agent"),
+        ("planning", "Selecting tests"),
+        # Only reached when the job carries attack transforms; a job without
+        # them skips straight to "testing" and never renders this stage.
+        ("expanding", "Generating attack variants"),
+        ("testing", "Running tests"),
+        ("scoring", "Scoring and saving"),
+    )
+
+    def set_phase(self, job_id: str, phase: str) -> None:
+        """Record which pipeline stage the job entered."""
+        with self._store._connection() as conn, conn:
+            conn.execute("UPDATE jobs SET phase = ? WHERE id = ?", (phase, job_id))
 
     def start_progress(self, job_id: str, total: int) -> None:
         """Record how many tests the job is about to run."""

@@ -92,6 +92,7 @@ def execute(
     fail_under: float = 0.0,
     block_on_critical: bool = True,
     on_plan: Callable[[list[Any], HarnessPlan | None, list[SelectedTest]], None] | None = None,
+    on_expand: Callable[[Sequence[str]], None] | None = None,
     on_test: Callable[[int, Any], None] | None = None,
     on_result: Callable[[int, Any], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
@@ -106,6 +107,11 @@ def execute(
 
     `on_plan` fires once with the tests that are about to run, so a caller can
     print or log the plan before evidence starts arriving.
+
+    `on_expand` fires before the attack transforms mutate the planned tests into
+    extra variants, and only when there are transforms to apply. Expansion
+    happens between planning and `on_plan`, so without this seam a caller has no
+    way to observe a stage that can take a visible moment on a large pack.
 
     `external` spawns the third-party tools the plan selected. Off by default,
     and a hosted caller must leave it off: a spawned tool re-resolves the
@@ -130,6 +136,8 @@ def execute(
         tests, unexecuted = apply_plan(harness, tests)
 
     if transforms:
+        if on_expand is not None:
+            on_expand(transforms)
         tests = expand(tests, transforms)
 
     if on_plan is not None:
