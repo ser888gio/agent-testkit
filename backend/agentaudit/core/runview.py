@@ -291,6 +291,28 @@ def detail(run: Any, *, q: str = "", status: str = "all", category: str = "all")
     }
 
 
+def _step_evidence(result: Any) -> dict:
+    """Which evidence artifacts this result carries, for the harness step link.
+
+    Names only -- never the evidence itself. The harness page is a transcript
+    overview; dumping a full request/response into every step would bury the
+    failure the reader came for, and the evidence page already renders them.
+    Turn count comes from `timeline.build` rather than a second walk over
+    `request`, so there stays exactly one construction of "what is a turn".
+    """
+    turns = len(build_timeline(result)["turns"])
+    return {
+        "request": result.request is not None,
+        "response": result.response is not None,
+        "sandbox_diff": bool(result.sandbox_diff),
+        "events": len(result.events),
+        # A single turn is a request and a reply, not a sequence worth drawing.
+        # Same bar `test_detail` applies, so the badge never promises a
+        # timeline the evidence page then declines to render.
+        "timeline": turns >= 2,
+    }
+
+
 def harness(run: Any, report: Any) -> dict:
     """The harness page: what was exercised, per category, in run order.
 
@@ -335,6 +357,12 @@ def harness(run: Any, report: Any) -> dict:
                 # non-skipped results, so without this the page shows N steps
                 # over a smaller denominator and reads as an arithmetic bug.
                 "scored": result.status.value != "skipped",
+                # What evidence sits behind this step's link, so a reader knows
+                # whether following it is worth a click. `EvidencePolicy` can
+                # drop request/response entirely even after a successful run,
+                # so absence here is a policy fact, not a capture failure --
+                # the evidence page states which, this only says what exists.
+                "evidence": _step_evidence(result),
             }
         )
 

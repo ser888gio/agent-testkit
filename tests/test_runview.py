@@ -371,3 +371,54 @@ def test_harness_counts_errored_steps_separately():
 
     assert view["summary"]["errored"] == 1
     assert view["summary"]["gate"] == "BLOCK"
+
+
+def test_harness_step_reports_only_the_evidence_it_has():
+    """A timed-out step must not advertise evidence behind its link."""
+    from agentaudit.core.scoring import score
+
+    run = _run([_result("t.err", Status.error)])
+    (finding,) = runview.harness(run, score(run))["findings"]
+
+    assert finding["evidence"] == {
+        "request": False,
+        "response": False,
+        "sandbox_diff": False,
+        "events": 0,
+        "timeline": False,
+    }
+
+
+def test_harness_step_evidence_matches_what_the_evidence_page_renders():
+    """The badge must not promise a timeline `test_detail` then declines to draw.
+
+    Both apply the same >= 2 turn bar; asserting them together is what stops
+    the two from drifting apart.
+    """
+    from agentaudit.core.scoring import score
+
+    result = _result("t.multi", Status.failed)
+    result.request = ["turn one", "turn two"]
+    result.response = "final reply"
+    result.sandbox_diff = {"bank": {"payments": 1}}
+    run = _run([result])
+
+    (finding,) = runview.harness(run, score(run))["findings"]
+    assert finding["evidence"]["request"] is True
+    assert finding["evidence"]["response"] is True
+    assert finding["evidence"]["sandbox_diff"] is True
+    assert finding["evidence"]["timeline"] is True
+    assert runview.test_detail(run, result)["timeline"] is not None
+
+
+def test_harness_step_hides_timeline_badge_for_a_single_turn():
+    """One turn is a request and a reply, not a sequence worth drawing."""
+    from agentaudit.core.scoring import score
+
+    result = _result("t.single", Status.failed)
+    result.request = "just the one turn"
+    run = _run([result])
+
+    (finding,) = runview.harness(run, score(run))["findings"]
+    assert finding["evidence"]["timeline"] is False
+    assert runview.test_detail(run, result)["timeline"] is None

@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useView, Loading } from "../components/useView";
 import { Breadcrumb, EmptyState, formatMs, PageHeader, Panel, ScoreBar, StatCard, StatusBadge } from "../components/ui";
 import { ExportMenu } from "../components/ExportMenu";
@@ -20,6 +20,13 @@ interface Finding {
   assertions: AssertionJson[];
   summary: string;
   scored: boolean;
+  evidence: {
+    request: boolean;
+    response: boolean;
+    sandbox_diff: boolean;
+    events: number;
+    timeline: boolean;
+  };
 }
 
 interface HarnessView {
@@ -215,8 +222,13 @@ export function RunHarnessPage() {
                 <span className="mono">
                   Step {finding.step} · {finding.started}
                 </span>
-                <h3>{finding.test_id}</h3>
+                <h3>
+                  <Link to={`/runs/${encodeURIComponent(runId)}/tests/${encodeURIComponent(finding.test_id)}`}>
+                    {finding.test_id}
+                  </Link>
+                </h3>
                 <p>{finding.summary}</p>
+                <EvidenceTags evidence={finding.evidence} />
               </div>
               <div className="finding-side">
                 <StatusBadge status={finding.status} />
@@ -249,4 +261,29 @@ export function RunHarnessPage() {
 
 function titleCase(value: string): string {
   return value.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** What evidence sits behind a step's link, so following it is an informed click.
+ *
+ * Silent when a step carries nothing: a row of "no request, no response, no
+ * diff" is noise on a timed-out step, where the summary already says why.
+ */
+function EvidenceTags({ evidence }: { evidence: Finding["evidence"] }) {
+  const tags = [
+    evidence.request && "request",
+    evidence.response && "response",
+    evidence.sandbox_diff && "sandbox diff",
+    evidence.events > 0 && `${evidence.events} sandbox event${evidence.events === 1 ? "" : "s"}`,
+    evidence.timeline && "timeline",
+  ].filter((t): t is string => Boolean(t));
+
+  if (!tags.length) return null;
+
+  return (
+    <ul className="evidence-tags" aria-label="Captured evidence">
+      {tags.map((tag) => (
+        <li key={tag}>{tag}</li>
+      ))}
+    </ul>
+  );
 }
