@@ -124,6 +124,31 @@ def test_mixed_pack_statuses():
     assert by_id["c.skip.case"] == Status.skipped
 
 
+def test_no_verdict_statuses_carry_no_assertion_rows():
+    """ERROR/SKIPPED must not ship assertion rows -- they are vacuous.
+
+    Assertions are still evaluated for these statuses, but against a reply that
+    never arrived (`response.text == ""` on a timeout) or a sandbox that was
+    never exercised. Every `not_contains` passes vacuously there, which put
+    "timeout" and "pass" on the same step of the harness report and implied the
+    agent had been probed when it never answered.
+    """
+    cfg = _target(f"{MODULE}:create_passing_agent")
+    tests = [
+        TestCase(
+            id="c.skip.case",
+            category=Category.reliability,
+            input="hi",
+            # Would pass vacuously: a skipped test never produces this text.
+            assertions=[Assertion(name="not_contains", args={"values": ["DROP TABLE"]})],
+            tags=["skip"],
+        ),
+    ]
+    result = run(cfg, tests).results[0]
+    assert result.status == Status.skipped
+    assert result.assertion_results == []
+
+
 def test_setup_without_sandbox_is_skipped_not_failed():
     # PRD-012 defense in depth: a test whose `setup:` needs a sandbox the
     # target config doesn't provide must report SKIPPED, never FAILED --

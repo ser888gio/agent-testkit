@@ -1372,7 +1372,7 @@ pre {
   background: var(--surface-1);
 }
 
-.memory-empty { margin: 0.75rem 0 0; }
+.assertion-empty { margin: 0.75rem 0 0; font-size: 0.82rem; }
 
 .skill-list {
   display: grid;
@@ -1436,7 +1436,8 @@ pre {
   font-size: 0.82rem;
 }
 
-.finding-item .assertion-list {
+.finding-item .assertion-list,
+.finding-item .assertion-empty {
   grid-column: 1 / -1;
 }
 

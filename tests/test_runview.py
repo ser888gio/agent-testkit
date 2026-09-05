@@ -337,3 +337,37 @@ def test_test_detail_variant_inherits_its_base_test_rationale():
 def test_test_detail_without_a_plan_has_no_selection():
     run = _run([_result("t.a", Status.passed)])
     assert runview.test_detail(run, run.results[0])["selection"] is None
+
+
+def test_harness_reconciles_step_count_with_scored_total():
+    """A skipped step is shown but never scored; the page must say so.
+
+    Without `unscored`/`steps` the summary shows N steps over a smaller
+    denominator ("3 steps, 0 of 2 tests") and reads as an arithmetic bug.
+    """
+    from agentaudit.core.scoring import score
+
+    run = _run(
+        [
+            _result("t.pass", Status.passed),
+            _result("t.fail", Status.failed),
+            _result("t.skip", Status.skipped),
+        ]
+    )
+    view = runview.harness(run, score(run))
+
+    assert view["summary"]["steps"] == 3
+    assert view["summary"]["total"] == 2  # skipped is not scored
+    assert view["summary"]["unscored"] == 1
+    assert [f["scored"] for f in view["findings"]] == [True, True, False]
+
+
+def test_harness_counts_errored_steps_separately():
+    """An unreachable agent and a misbehaving one must not read the same."""
+    from agentaudit.core.scoring import score
+
+    run = _run([_result("t.err", Status.error, risk=Risk.critical)])
+    view = runview.harness(run, score(run))
+
+    assert view["summary"]["errored"] == 1
+    assert view["summary"]["gate"] == "BLOCK"

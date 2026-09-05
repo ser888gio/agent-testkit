@@ -19,6 +19,7 @@ interface Finding {
   started: string;
   assertions: AssertionJson[];
   summary: string;
+  scored: boolean;
 }
 
 interface HarnessView {
@@ -29,6 +30,9 @@ interface HarnessView {
     critical_failures: number;
     passed: number;
     total: number;
+    unscored: number;
+    steps: number;
+    errored: number;
   };
   context: {
     agent: string;
@@ -101,11 +105,24 @@ export function RunHarnessPage() {
           <StatCard
             label="Critical Findings"
             value={view.summary.critical_failures}
-            note="blocks safety gate"
+            note={
+              view.summary.errored
+                ? `blocks gate · ${view.summary.errored} from steps with no reply`
+                : "blocks safety gate"
+            }
             tone={view.summary.critical_failures ? "danger" : undefined}
             testid="stat-critical-findings"
           />
-          <StatCard label="Steps" value={view.findings.length} note="recorded workflow" testid="stat-steps" />
+          <StatCard
+            label="Steps"
+            value={view.summary.steps}
+            note={
+              view.summary.unscored
+                ? `${view.summary.unscored} skipped, not scored`
+                : "recorded workflow"
+            }
+            testid="stat-steps"
+          />
         </div>
       </section>
 
@@ -161,6 +178,7 @@ export function RunHarnessPage() {
         </Panel>
       </section>
 
+      {view.memory.total > 0 && (
       <Panel title="Memory &amp; Context" blurb={<>Memory/context probes and captured state changes. Agent-internal memory contents are not persisted.</>}>
         <dl className="harness-meta harness-meta-summary">
           <div>
@@ -178,19 +196,16 @@ export function RunHarnessPage() {
             <dd>{view.memory.state_changes} captured</dd>
           </div>
         </dl>
-        {view.memory.results.length ? (
-          <ul className="memory-check-list">
-            {view.memory.results.map((result) => (
-              <li key={result.test_id}>
-                <span className="mono">{result.test_id}</span>
-                <StatusBadge status={result.status} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="quiet memory-empty">No memory/context checks were included in this run.</p>
-        )}
+        <ul className="memory-check-list">
+          {view.memory.results.map((result) => (
+            <li key={result.test_id}>
+              <span className="mono">{result.test_id}</span>
+              <StatusBadge status={result.status} />
+            </li>
+          ))}
+        </ul>
       </Panel>
+      )}
 
       <Panel title="Workflow / History" blurb={<>Chronological record of every test step and assertion outcome.</>}>
         <ol className="finding-stream">
@@ -210,14 +225,20 @@ export function RunHarnessPage() {
                   {finding.latency_ms !== null ? formatMs(finding.latency_ms) : "no latency"}
                 </span>
               </div>
-              <ul className="assertion-list">
-                {finding.assertions.map((assertion) => (
-                  <li key={assertion.name} className={assertion.passed ? "pass" : "fail"}>
-                    <strong>{assertion.name}</strong>
-                    <span>{assertion.passed ? "pass" : `fail - ${assertion.detail}`}</span>
-                  </li>
-                ))}
-              </ul>
+              {finding.assertions.length ? (
+                <ul className="assertion-list">
+                  {finding.assertions.map((assertion) => (
+                    <li key={assertion.name} className={assertion.passed ? "pass" : "fail"}>
+                      <strong>{assertion.name}</strong>
+                      <span>{assertion.passed ? "pass" : `fail - ${assertion.detail}`}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="quiet assertion-empty">
+                  No assertion verdict: the agent produced no reply to evaluate.
+                </p>
+              )}
             </li>
           ))}
         </ol>

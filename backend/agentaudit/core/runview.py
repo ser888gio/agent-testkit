@@ -331,8 +331,14 @@ def harness(run: Any, report: Any) -> dict:
                 "started": str(result.started_at)[:19].replace("T", " "),
                 "assertions": result.assertion_results,
                 "summary": result.error or "; ".join(details) or "All assertions passed.",
+                # A step the score never saw. `report.total` counts only
+                # non-skipped results, so without this the page shows N steps
+                # over a smaller denominator and reads as an arithmetic bug.
+                "scored": result.status.value != "skipped",
             }
         )
+
+    unscored = sum(1 for f in findings if not f["scored"])
 
     return {
         "summary": {
@@ -342,6 +348,13 @@ def harness(run: Any, report: Any) -> dict:
             "critical_failures": report.critical_failures,
             "passed": report.passed,
             "total": report.total,
+            # Steps that ran but were never scored (skipped). Reported so the
+            # step count and the test denominator reconcile on the page.
+            "unscored": unscored,
+            "steps": len(findings),
+            # No verdict was reached for these, so the page must not imply the
+            # agent was observed behaving well or badly.
+            "errored": sum(1 for f in findings if f["status"] == "error"),
         },
         "context": {
             "agent": run.agent_name,
