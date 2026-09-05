@@ -2,14 +2,14 @@
 
 ## Project Structure & Module Organization
 
-`agentaudit` is a Python 3.10+ package with multiple source roots. Core execution code lives in `backend/agentaudit/core/`; domain adapters are under `backend/agentaudit/domains/`; reporting and CLI code live in `backend/agentaudit/reports/` and `backend/agentaudit/cli.py`. The dashboard is a FastAPI JSON API in `frontend/agentaudit/web/` serving a React SPA built from `frontend/spa/`. YAML configurations and reusable product test packs belong in `agentaudit/config/` and `agentaudit/packs/`. Keep Alembic migrations in `infra/alembic/`, documentation in `docs/`, and repository tests in `tests/`.
+`agentaudit` is a Python 3.10+ package with multiple source roots. Core execution code lives in `backend/agentaudit/core/`; domain adapters are under `backend/agentaudit/domains/`; reporting and CLI code live in `backend/agentaudit/reports/` and `backend/agentaudit/cli.py`. The dashboard is a FastAPI JSON API in `frontend/agentaudit/web/` (`app.py`, `api.py`, `auth.py`, `runtime.py`) serving a React SPA built from `frontend/spa/` into the gitignored `web/spa_dist/`; there is no server-side template layer. The job execution engine is `backend/agentaudit/worker.py`. YAML configurations and reusable product test packs belong in `agentaudit/config/` and `agentaudit/packs/`. Keep Alembic migrations in `infra/alembic/`, documentation in `docs/`, runnable quickstarts in `examples/`, and repository tests in `tests/`.
 
 Import package modules as `agentaudit.*`, never `backend.agentaudit.*`. Observe any more specific guidance in the nearest `CLAUDE.md` when editing a subsystem.
 
 ## Build, Test, and Development Commands
 
 - `uv sync --extra dev` installs locked runtime and development dependencies.
-- `uv run --extra dev pytest` runs the complete pytest suite.
+- `uv run --extra dev python -m pytest` runs the complete pytest suite (~1.1k tests, ~10 min). On Windows, always call pytest and ruff as modules — the console-script form fails with a `uv` trampoline error.
 - `bash tools/validate.sh --affected` lints changed Python files and runs mapped tests for quick iteration.
 - `bash tools/validate.sh` runs changed-file linting plus the full suite; use this before submitting.
 - `uv build` produces wheel and source distributions in `dist/`.

@@ -149,8 +149,13 @@ components:
     owns:
       - FastAPI dashboard: run history, pass/fail matrix, test detail, run comparison
       - Run harness (re-run) endpoints
+      - Multi-tenant boundary: OIDC login, Principal/org_id scoping every route
+      - Process-wide runtime: Store handle, packs dir, artifacts dir
     entry_points:
-      - frontend/agentaudit/web/app.py
+      - frontend/agentaudit/web/app.py        # app factory, middleware, SPA mount
+      - frontend/agentaudit/web/api.py        # the JSON API routes
+      - frontend/agentaudit/web/auth.py       # principal/org model, OIDC browser login
+      - frontend/agentaudit/web/runtime.py    # get_store / get_artifacts_dir / get_packs_dir
       - infra/dev.sh                          # launches it locally
     depends_on: [core, reports, domains]
     used_by: []
