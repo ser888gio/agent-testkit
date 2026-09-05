@@ -43,9 +43,27 @@ interface RunDetailView {
       notes: string[];
     } | null;
     selected: PlanSelection[];
-    excluded: { test_id: string; source: string; reason: string }[];
+    excluded: Excluded[];
   } | null;
   status_labels: Record<string, string>;
+}
+
+type Excluded = { test_id: string; source: string; reason: string };
+
+/** Excluded tests keyed by reason, in the order the planner emitted them. */
+function groupByReason(excluded: Excluded[]): Map<string, Excluded[]> {
+  const groups = new Map<string, Excluded[]>();
+  for (const item of excluded) {
+    const group = groups.get(item.reason);
+    if (group) group.push(item);
+    else groups.set(item.reason, [item]);
+  }
+  return groups;
+}
+
+/** Latency is only meaningful for a test that actually ran to completion. */
+function ranToCompletion(status: string): boolean {
+  return status !== "skipped" && status !== "error";
 }
 
 export function RunDetailPage() {
@@ -171,30 +189,42 @@ export function RunDetailPage() {
           {plan.excluded.length ? (
             <>
               <h3>Not tested ({plan.excluded.length})</h3>
-              <ul className="quiet">
-                {plan.excluded.map((item) => (
-                  <li key={item.test_id}>
-                    {item.test_id} ({item.source}): {item.reason}
-                  </li>
-                ))}
-              </ul>
+              {/* Grouped by reason: the same few reasons repeat across every
+                  excluded test, so listing them flat buries the signal. */}
+              {[...groupByReason(plan.excluded)].map(([reason, items]) => (
+                <details key={reason} className="excluded-group">
+                  <summary>
+                    {reason} <span className="quiet">&mdash; {items.length} test(s)</span>
+                  </summary>
+                  <ul className="quiet">
+                    {items.map((item) => (
+                      <li key={item.test_id}>
+                        {item.test_id} ({item.source})
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ))}
             </>
           ) : null}
         </Panel>
       ) : null}
 
-      <Panel title="Evidence map" blurb={<>Category by test status, with direct links into each result.</>}>
-        {Object.entries(view.matrix).map(([cat, tests]) => (
-          <div key={cat} className="matrix-row">
-            <span className="cat">{cat}</span>
-            {Object.entries(tests).map(([tid, status]) => (
-              <Link key={tid} to={`/runs/${runId}/tests/${encodeURIComponent(tid)}`}>
-                <StatusBadge status={status} label={tid} />
-              </Link>
-            ))}
-          </div>
-        ))}
-      </Panel>
+      {/* On a small run the matrix just restates the results table below it. */}
+      {view.results.length > 10 ? (
+        <Panel title="Evidence map" blurb={<>Category by test status, with direct links into each result.</>}>
+          {Object.entries(view.matrix).map(([cat, tests]) => (
+            <div key={cat} className="matrix-row">
+              <span className="cat">{cat}</span>
+              {Object.entries(tests).map(([tid, status]) => (
+                <Link key={tid} to={`/runs/${runId}/tests/${encodeURIComponent(tid)}`}>
+                  <StatusBadge status={status} label={tid} />
+                </Link>
+              ))}
+            </div>
+          ))}
+        </Panel>
+      ) : null}
 
       <Panel title="Failures for review" blurb={<>Prioritized queue before the full result list.</>}>
         {!failures.length ? (
@@ -206,7 +236,7 @@ export function RunDetailPage() {
                 <span>{r.test_id}</span>
                 <StatusBadge status={r.status} />
                 <RiskBadge risk={r.risk} />
-                <span>{r.latency_ms !== null ? `${formatMs(r.latency_ms)}` : "no latency"}</span>
+                <span>{ranToCompletion(r.status) && r.latency_ms !== null ? formatMs(r.latency_ms) : "no latency"}</span>
               </Link>
             ))}
           </div>
@@ -275,7 +305,12 @@ export function RunDetailPage() {
             { key: "category", header: "Category", sort: (r) => r.category, cell: (r) => r.category },
             { key: "risk", header: "Risk", sort: (r) => r.risk, cell: (r) => <RiskBadge risk={r.risk} /> },
             { key: "status", header: "Status", sort: (r) => r.status, cell: (r) => <StatusBadge status={r.status} /> },
-            { key: "latency", header: "Latency", sort: (r) => r.latency_ms ?? -1, cell: (r) => formatMs(r.latency_ms) },
+            {
+              key: "latency",
+              header: "Latency",
+              sort: (r) => (ranToCompletion(r.status) ? r.latency_ms ?? -1 : -1),
+              cell: (r) => (ranToCompletion(r.status) ? formatMs(r.latency_ms) : "-"),
+            },
           ]}
         />
       </Panel>

@@ -137,6 +137,12 @@ def _job_steps(job) -> list[dict]:
     names = [name for name, _ in stages]
     current = job.phase if job.phase in names else None
     reached = names.index(current) if current else -1
+    # A worker sets the phase only once it is inside a stage, so a job that has
+    # just been claimed is 'running' with phase NULL. Without this the whole
+    # pipeline renders pending and the page looks like nothing is happening.
+    # A still-queued job keeps reached = -1: no worker has it yet.
+    if reached < 0 and job.state == "running":
+        reached = 0
     terminal = job.state not in ("queued", "running")
     steps = []
     for index, (name, label) in enumerate(stages):

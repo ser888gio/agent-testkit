@@ -17,6 +17,8 @@ interface JobView {
   steps: { name: string; label: string; state: string; detail: string }[];
   message: string;
   discovery: boolean;
+  created_at: string | null;
+  started_at: string | null;
 }
 
 // Polls /jobs/{id}/status every 2s while the job is live; the same cadence the
@@ -50,6 +52,23 @@ function useJobPolling(jobId: string, onStatus: (status: JobView) => void) {
   }, [jobId]);
 }
 
+/** m:ss elapsed since `since`, or null when there is no usable timestamp. */
+function useElapsed(since: string | null | undefined, live: boolean): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [live]);
+  if (!since) return null;
+  // Job timestamps carry an offset, but older rows may not; without a marker a
+  // browser reads them as local time and the counter starts hours out.
+  const started = Date.parse(/[Zz]|[+-]\d\d:?\d\d$/.test(since) ? since : `${since}Z`);
+  if (Number.isNaN(started)) return null;
+  const seconds = Math.max(0, Math.floor((now - started) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export function JobPage() {
   const { jobId = "" } = useParams();
   const navigate = useNavigate();
@@ -79,6 +98,10 @@ export function JobPage() {
       navigate(`/runs/${status.run_id}`);
     }
   });
+
+  // Before the early returns below: hooks may not sit behind a conditional.
+  // Queued jobs have no started_at yet, so fall back to when it was enqueued.
+  const elapsed = useElapsed(job?.started_at ?? job?.created_at, job?.running ?? false);
 
   if (error) return <EmptyState title="Job not available" body={error} />;
   if (!job) return <EmptyState title="Loading" body="Fetching job..." />;
@@ -138,12 +161,18 @@ export function JobPage() {
       <Panel titleId="job-status-title" title="Current Status">
         <p id="run-status" aria-live="polite">
           {job.running ? <Spinner /> : null} {job.message || job.state}
+          {/* A live job with no visible movement reads as a hung one. */}
+          {elapsed ? <span className="job-elapsed mono">{elapsed}</span> : null}
         </p>
 
-        {/* The stages before the first test result -- resolving the target,
-            confirming the request shape, planning -- used to be one spinner.
-            The worker names the stage it is in; ordering makes the rest. */}
-        <ol className="stepper" data-testid="job-steps">
+        {/* Pipeline left, live results right: the stepper is narrow, and the
+            result list needs somewhere to grow once tests start landing. */}
+        <div className="job-live">
+          <div className="job-live-pipeline">
+            {/* The stages before the first test result -- resolving the target,
+                confirming the request shape, planning -- used to be one spinner.
+                The worker names the stage it is in; ordering makes the rest. */}
+            <ol className="stepper" data-testid="job-steps">
           {(job.steps ?? []).map((step, index) => (
             <li key={step.name} className={`step step-${step.state}`}>
               <span className="step-marker" aria-hidden="true">
@@ -157,8 +186,15 @@ export function JobPage() {
           ))}
         </ol>
 
+        {/* Abort is secondary: destructive, and not the point of this page. */}
         {job.running ? (
-          <button type="button" onClick={cancel} disabled={busy} data-testid="job-cancel-submit">
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={cancel}
+            disabled={busy}
+            data-testid="job-cancel-submit"
+          >
             Abort run
           </button>
         ) : (
@@ -168,28 +204,32 @@ export function JobPage() {
         )}
         {cancelError ? <ErrorNote message={cancelError} /> : null}
         {rerunError ? <ErrorNote message={rerunError} /> : null}
-
-        {/* Live progress off the job row. A run is written once, when it
-            finishes, so nothing here reads a half-written run. */}
-        <div className="run-progress" data-testid="run-progress" hidden={job.tests_total === 0}>
-          <div
-            className="progress-meter"
-            role="progressbar"
-            aria-label="Tests completed"
-            aria-valuemin={0}
-            aria-valuenow={job.tests_done}
-            aria-valuemax={job.tests_total}
-          >
-            <span className="progress-fill" style={{ width: `${percent}%` }} />
           </div>
-          <ul className="progress-list">
-            {[...job.recent].reverse().map((entry, i) => (
-              <li key={`${entry.test_id}-${i}`}>
-                <span className="mono">{entry.test_id}</span>
-                <span className={`badge badge-${entry.status}`}>{entry.status}</span>
-              </li>
-            ))}
-          </ul>
+
+          {/* Live progress off the job row. A run is written once, when it
+              finishes, so nothing here reads a half-written run. */}
+          <div className="run-progress" data-testid="run-progress" hidden={job.tests_total === 0}>
+            {/* At 0% a determinate bar is an empty rail, indistinguishable from
+                a stalled one. Until the first test lands, show motion instead. */}
+            <div
+              className={`progress-meter${job.running && job.tests_done === 0 ? " progress-meter-waiting" : ""}`}
+              role="progressbar"
+              aria-label="Tests completed"
+              aria-valuemin={0}
+              aria-valuenow={job.tests_done}
+              aria-valuemax={job.tests_total}
+            >
+              <span className="progress-fill" style={{ width: `${percent}%` }} />
+            </div>
+            <ul className="progress-list">
+              {[...job.recent].reverse().map((entry, i) => (
+                <li key={`${entry.test_id}-${i}`}>
+                  <span className="mono">{entry.test_id}</span>
+                  <span className={`badge badge-${entry.status}`}>{entry.status}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
         {job.run_id ? (
           <p>
