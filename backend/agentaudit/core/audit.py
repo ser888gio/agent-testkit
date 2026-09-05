@@ -25,7 +25,7 @@ from agentaudit.core.discovery import discover
 from agentaudit.core.egress import ValidatedEndpoint
 from agentaudit.core.planner import apply_plan
 from agentaudit.core.planner import plan as plan_harness
-from agentaudit.core.profile import HarnessPlan, SelectedTest
+from agentaudit.core.profile import AgentProfile, HarnessPlan, SelectedTest
 from agentaudit.core.redaction import Redactor
 from agentaudit.core.runner import run as run_tests
 from agentaudit.core.schema import RunResult, TestResult
@@ -86,6 +86,7 @@ def execute(
     redactor: Redactor | None = None,
     endpoint: ValidatedEndpoint | None = None,
     plan: bool = False,
+    profile: AgentProfile | None = None,
     max_tests: int | None = None,
     attack_transforms: Sequence[str] = (),
     external: bool = False,
@@ -104,6 +105,13 @@ def execute(
     nor the runner may reach into. Whatever is passed binds *every* request the
     run makes, discovery probes included, so probing cannot reach an endpoint
     the run's own policy would reject.
+
+    `profile` is the planner's input when the caller already has one stored.
+    Without it the run re-probes the live endpoint on every audit, which is a
+    second round of requests to a partner agent for facts a prior discovery job
+    already wrote down -- and it made "Re-profile" cosmetic, since nothing the
+    button produced was ever read back. A caller with no persistence (the CLI)
+    omits it and still discovers inline.
 
     `on_plan` fires once with the tests that are about to run, so a caller can
     print or log the plan before evidence starts arriving.
@@ -127,7 +135,7 @@ def execute(
     unexecuted: list[SelectedTest] = []
     if plan:
         harness = plan_harness(
-            discover(target, runner=bound_run),
+            profile if profile is not None else discover(target, runner=bound_run),
             tests,
             adapters=list(ADAPTERS.values()),
             max_tests=max_tests,
