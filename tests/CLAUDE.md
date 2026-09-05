@@ -32,7 +32,7 @@ dial a real endpoint on a real key.
 
 Any test asserting a role is *off*, or stubbing one, must call
 `_fixtures.isolate_llm_config(monkeypatch, tmp_path)`, which chdirs to an empty
-directory and clears all seven variables. Note `runner.run_one` builds a judge on
+directory and clears every `AGENTAUDIT_*` LLM variable (`_fixtures.LLM_ENV_VARS`). Note `runner.run_one` builds a judge on
 its own, so an adaptive test degrades even when only the attacker is stubbed.
 
 ## Known collection warning

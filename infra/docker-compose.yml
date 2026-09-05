@@ -69,6 +69,23 @@ services:
     command: ["agentaudit", "worker", "--db", "/data/agentaudit.db"]
     environment:
       AGENTAUDIT_DB: /data/agentaudit.db
+      # Deployment-wide attacker/judge models, so a demo user gets generated
+      # tests without supplying a key. An org that saves its own model in
+      # settings overrides these per job; absent both, generation stays off and
+      # runs are the offline scripted ladder.
+      #
+      # Optional: unset ENDPOINT or MODEL and the role is simply off.
+      AGENTAUDIT_ATTACKER_ENDPOINT: ${AGENTAUDIT_ATTACKER_ENDPOINT:-}
+      AGENTAUDIT_ATTACKER_MODEL: ${AGENTAUDIT_ATTACKER_MODEL:-}
+      AGENTAUDIT_ATTACKER_API_KEY: ${AGENTAUDIT_ATTACKER_API_KEY:-}
+      # Free/shared model hosts stall under load, and a timeout falls back to
+      # the scripted ladder without surfacing an error -- so a demo deployment
+      # on a free tier wants this well above the 30s default.
+      AGENTAUDIT_ATTACKER_TIMEOUT_S: ${AGENTAUDIT_ATTACKER_TIMEOUT_S:-60}
+      AGENTAUDIT_JUDGE_ENDPOINT: ${AGENTAUDIT_JUDGE_ENDPOINT:-}
+      AGENTAUDIT_JUDGE_MODEL: ${AGENTAUDIT_JUDGE_MODEL:-}
+      AGENTAUDIT_JUDGE_API_KEY: ${AGENTAUDIT_JUDGE_API_KEY:-}
+      AGENTAUDIT_JUDGE_TIMEOUT_S: ${AGENTAUDIT_JUDGE_TIMEOUT_S:-60}
     networks:
       - egress
     read_only: true

@@ -221,10 +221,22 @@ def _from_env() -> LLMConfig:
         model = os.environ.get(f"AGENTAUDIT_{prefix}_MODEL")
         if not endpoint or not model:
             return None
+        # Overridable because the default suits a dedicated host, not a shared
+        # free tier: those stall under load, and a timeout here is silent lost
+        # coverage -- the caller falls back to the scripted ladder rather than
+        # failing, so nothing in the run says the model was never asked.
+        timeout = os.environ.get(f"AGENTAUDIT_{prefix}_TIMEOUT_S")
+        try:
+            timeout_s = float(timeout) if timeout else RoleConfig.model_fields["timeout_s"].default
+        except ValueError as exc:
+            raise LLMConfigError(
+                f"AGENTAUDIT_{prefix}_TIMEOUT_S must be a number, got {timeout!r}"
+            ) from exc
         return RoleConfig(
             model=model,
             endpoint=endpoint,
             api_key_ref=f"env://AGENTAUDIT_{prefix}_API_KEY",
+            timeout_s=timeout_s,
         )
 
     return LLMConfig(attacker=role("ATTACKER"), judge=role("JUDGE"))
