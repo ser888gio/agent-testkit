@@ -7,8 +7,7 @@ import type { Session } from "../session";
 import { CommandPalette } from "./CommandPalette";
 
 function initials(session: Session): string {
-  const name = session.subject || session.email;
-  return name.slice(0, 2).toUpperCase();
+  return session.email.slice(0, 2).toUpperCase();
 }
 
 function AccountMenu({ session }: { session: Session }) {
@@ -19,14 +18,13 @@ function AccountMenu({ session }: { session: Session }) {
           <span className="account-avatar" aria-hidden="true">
             {initials(session)}
           </span>
-          <span className="account-name">{session.subject || session.email}</span>
+          <span className="account-name">{session.email}</span>
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="account-menu-list" align="end" sideOffset={8}>
           <DropdownMenu.Label className="account-menu-head">
-            <strong>{session.subject || session.email}</strong>
-            <small>{session.email}</small>
+            <strong>{session.email}</strong>
           </DropdownMenu.Label>
           <DropdownMenu.Separator className="account-menu-rule" />
           <DropdownMenu.Item asChild>
