@@ -399,6 +399,48 @@ def test_rediscovery_replaces_the_stored_profile(tmp_path):
     assert second[1] >= first[1]
 
 
+def test_an_audit_reuses_the_stored_profile_instead_of_reprobing(tmp_path, monkeypatch):
+    """A profiled target must not be re-probed on every run.
+
+    Discovery wrote the profile down; re-deriving it live is a second round of
+    requests to a partner endpoint for facts already on the row -- and it made
+    "Re-profile" cosmetic, since nothing it produced was ever read back.
+    """
+    store = Store(str(tmp_path / "reuse-profile.db"))
+    store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)
+    store.save_pack("org-a", "pack-1", "Pack One", [_TEST])
+    store.jobs.enqueue_discovery("org-a", "worker-target")
+    work_once(store, "w0")
+    stored = store.get_target_profile("org-a", "worker-target")
+    assert stored is not None, "expected the discovery job to write a profile"
+
+    store.jobs.enqueue("org-a", "worker-target", "pack-1")
+
+    calls: list[object] = []
+    monkeypatch.setattr(
+        audit_module, "discover", lambda *a, **kw: calls.append(a) or stored[0]
+    )
+    work_once(store, "w1")
+
+    assert calls == [], "a profiled target was re-probed anyway"
+
+
+def test_an_audit_discovers_when_the_target_has_no_stored_profile(tmp_path, monkeypatch):
+    """Without a profile there is nothing to reuse, so the live probe stays."""
+    store, _ = _store_with_job(tmp_path)
+    real_discover = audit_module.discover
+    calls: list[object] = []
+
+    def spy(cfg, **kwargs):
+        calls.append(cfg)
+        return real_discover(cfg, **kwargs)
+
+    monkeypatch.setattr(audit_module, "discover", spy)
+    work_once(store, "w1")
+
+    assert calls, "an unprofiled target must still be discovered"
+
+
 def test_profile_is_none_before_discovery_and_unknown_target_raises(tmp_path):
     store = Store(str(tmp_path / "no-profile.db"))
     store.save_target("org-a", "worker-target", "Worker Target", _TARGET_CONFIG)

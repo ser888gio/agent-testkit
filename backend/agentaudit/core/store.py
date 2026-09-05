@@ -575,6 +575,16 @@ class JobQueue:
         ("scoring", "Scoring and saving"),
     )
 
+    # Discovery runs a different pipeline: it probes an endpoint and writes a
+    # profile, never planning, running or scoring tests. Showing it the audit
+    # stages left it stuck on step 1 for the whole job.
+    DISCOVERY_PHASES = (
+        ("connecting", "Connecting to agent"),
+        ("shaping", "Confirming request shape"),
+        ("probing", "Probing capabilities"),
+        ("profiling", "Saving the profile"),
+    )
+
     def set_phase(self, job_id: str, phase: str) -> None:
         """Record which pipeline stage the job entered."""
         with self._store._connection() as conn, conn:
@@ -1059,21 +1069,6 @@ class Store:
         if not row["profile_json"]:
             return None
         return AgentProfile.model_validate_json(row["profile_json"]), row["profiled_at"]
-
-    def get_target_profiled_at(self, org_id: str, target_id: str) -> str | None:
-        """When the target was last discovered, or None if it never has been.
-
-        Separate from `get_target_profile` because the callers that only need
-        "has this been confirmed?" should not pay to deserialize a profile.
-        """
-        with self._connection() as conn:
-            row = conn.execute(
-                "SELECT profiled_at FROM targets WHERE org_id = ? AND id = ?",
-                (org_id, target_id),
-            ).fetchone()
-        if row is None:
-            raise KeyError(target_id)
-        return row["profiled_at"]
 
     def list_targets(self, org_id: str) -> list[TargetRow]:
         with self._connection() as conn:

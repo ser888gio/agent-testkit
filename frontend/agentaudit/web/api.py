@@ -127,13 +127,17 @@ def _job_steps(job) -> list[dict]:
 
     Stages the job will not reach are dropped rather than shown as permanently
     pending: a job with no attack transforms never expands anything, and a step
-    that can never light up misreports the pipeline.
+    that can never light up misreports the pipeline. Discovery runs a different
+    pipeline entirely, so it gets its own stage list.
     """
-    stages = [
-        (name, label)
-        for name, label in JobQueue.PHASES
-        if name != "expanding" or job.attack_transforms_json
-    ]
+    if job.pack_id == DISCOVERY_PACK_ID:
+        stages = list(JobQueue.DISCOVERY_PHASES)
+    else:
+        stages = [
+            (name, label)
+            for name, label in JobQueue.PHASES
+            if name != "expanding" or job.attack_transforms_json
+        ]
     names = [name for name, _ in stages]
     current = job.phase if job.phase in names else None
     reached = names.index(current) if current else -1

@@ -224,8 +224,11 @@ def execute_discovery(store: Store, job: JobRow) -> None:
     def bound_run(cfg: TargetConfig, cases: list) -> RunResult:
         return run_tests(cfg, cases, redactor=redactor, endpoint=endpoint)
 
+    store.jobs.set_phase(job.id, "shaping")
     target = _confirm_request_shape(store, job, target, bound_run)
+    store.jobs.set_phase(job.id, "probing")
     profile = discover(target, runner=bound_run)
+    store.jobs.set_phase(job.id, "profiling")
     store.save_target_profile(job.org_id, job.target_id, profile)
     log.info("job %s: profiled target %s", job.id, job.target_id)
 
@@ -363,13 +366,19 @@ def _execute_job(
     # against the live endpoint, so confirm it here for a target that has never
     # been profiled -- register -> run must not be a legal path to a green run
     # that tested nothing.
-    if store.get_target_profiled_at(job.org_id, job.target_id) is None:
+    #
+    # The same row carries the profile the planner ranks against, so one read
+    # answers both questions: an unprofiled target needs its shape confirmed,
+    # and a profiled one can skip re-probing the endpoint below.
+    stored = store.get_target_profile(job.org_id, job.target_id)
+    if stored is None:
         target = _confirm_request_shape(
             store,
             job,
             target,
             lambda cfg, cases: run_tests(cfg, cases, redactor=redactor, endpoint=endpoint),
         )
+    profile = stored[0] if stored else None
 
     try:
         tests = load_tests_from_rows(store.get_pack_tests(job.org_id, job.pack_id))
@@ -426,6 +435,7 @@ def _execute_job(
         redactor=redactor,
         endpoint=endpoint,
         plan=True,
+        profile=profile,
         attack_transforms=transforms,
         on_plan=count,
         on_expand=expanding,

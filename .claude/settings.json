@@ -18,7 +18,9 @@
       "Bash(python -m pytest tests/test_web.py -q)",
       "Bash(python -m pytest tests/test_web.py -q -k \"test_post_runs_enqueues_without_executing or test_post_runs_enqueues_against_a_registered_target\")",
       "Bash(npx tsc *)",
-      "Bash(echo \"=== TSC EXIT: $? ===\")"
+      "Bash(echo \"=== TSC EXIT: $? ===\")",
+      "Bash(sed -i 's/^        profile=profile,$/        # profile=profile,/' backend/agentaudit/worker.py)",
+      "Bash(timeout 200 python -m pytest tests/test_worker.py -q -k \"reprobing\")"
     ]
   },
   "hooks": {
