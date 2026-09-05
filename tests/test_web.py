@@ -164,6 +164,18 @@ def test_run_harness_view_shows_findings_skills_context_summary(tmp_path, monkey
     assert "action_safety" in skill_names
     assert body["memory"]["total"] == 0
 
+    # Each step advertises what sits behind its evidence link, so the SPA can
+    # render the tags without a second round-trip per step.
+    assert set(fail["evidence"]) == {
+        "request",
+        "response",
+        "sandbox_diff",
+        "events",
+        "timeline",
+    }
+    # The step count and the scored denominator must reconcile on the page.
+    assert body["summary"]["steps"] == len(body["findings"])
+
 
 def test_test_detail_shows_redacted_response_assertions_latency(tmp_path, monkeypatch):
     db = str(tmp_path / "web.db")

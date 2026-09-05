@@ -337,3 +337,88 @@ def test_test_detail_variant_inherits_its_base_test_rationale():
 def test_test_detail_without_a_plan_has_no_selection():
     run = _run([_result("t.a", Status.passed)])
     assert runview.test_detail(run, run.results[0])["selection"] is None
+
+
+def test_harness_reconciles_step_count_with_scored_total():
+    """A skipped step is shown but never scored; the page must say so.
+
+    Without `unscored`/`steps` the summary shows N steps over a smaller
+    denominator ("3 steps, 0 of 2 tests") and reads as an arithmetic bug.
+    """
+    from agentaudit.core.scoring import score
+
+    run = _run(
+        [
+            _result("t.pass", Status.passed),
+            _result("t.fail", Status.failed),
+            _result("t.skip", Status.skipped),
+        ]
+    )
+    view = runview.harness(run, score(run))
+
+    assert view["summary"]["steps"] == 3
+    assert view["summary"]["total"] == 2  # skipped is not scored
+    assert view["summary"]["unscored"] == 1
+    assert [f["scored"] for f in view["findings"]] == [True, True, False]
+
+
+def test_harness_counts_errored_steps_separately():
+    """An unreachable agent and a misbehaving one must not read the same."""
+    from agentaudit.core.scoring import score
+
+    run = _run([_result("t.err", Status.error, risk=Risk.critical)])
+    view = runview.harness(run, score(run))
+
+    assert view["summary"]["errored"] == 1
+    assert view["summary"]["gate"] == "BLOCK"
+
+
+def test_harness_step_reports_only_the_evidence_it_has():
+    """A timed-out step must not advertise evidence behind its link."""
+    from agentaudit.core.scoring import score
+
+    run = _run([_result("t.err", Status.error)])
+    (finding,) = runview.harness(run, score(run))["findings"]
+
+    assert finding["evidence"] == {
+        "request": False,
+        "response": False,
+        "sandbox_diff": False,
+        "events": 0,
+        "timeline": False,
+    }
+
+
+def test_harness_step_evidence_matches_what_the_evidence_page_renders():
+    """The badge must not promise a timeline `test_detail` then declines to draw.
+
+    Both apply the same >= 2 turn bar; asserting them together is what stops
+    the two from drifting apart.
+    """
+    from agentaudit.core.scoring import score
+
+    result = _result("t.multi", Status.failed)
+    result.request = ["turn one", "turn two"]
+    result.response = "final reply"
+    result.sandbox_diff = {"bank": {"payments": 1}}
+    run = _run([result])
+
+    (finding,) = runview.harness(run, score(run))["findings"]
+    assert finding["evidence"]["request"] is True
+    assert finding["evidence"]["response"] is True
+    assert finding["evidence"]["sandbox_diff"] is True
+    assert finding["evidence"]["timeline"] is True
+    assert runview.test_detail(run, result)["timeline"] is not None
+
+
+def test_harness_step_hides_timeline_badge_for_a_single_turn():
+    """One turn is a request and a reply, not a sequence worth drawing."""
+    from agentaudit.core.scoring import score
+
+    result = _result("t.single", Status.failed)
+    result.request = "just the one turn"
+    run = _run([result])
+
+    (finding,) = runview.harness(run, score(run))["findings"]
+    assert finding["evidence"]["timeline"] is False
+    assert runview.test_detail(run, result)["timeline"] is None

@@ -69,6 +69,30 @@ def _derive_status(
     return Status.failed
 
 
+def _evidence_bearing(
+    status: Status, assertion_results: list[AssertionResult]
+) -> list[AssertionResult]:
+    """Drop assertion rows for a status that means "no verdict was reached".
+
+    ERROR and SKIPPED both mean the agent never produced a reply this run can
+    reason about, but the assertions were still evaluated -- against
+    `response.text == ""` for a timeout, or against a sandbox that was never
+    exercised for a skip. Every negative assertion (`not_contains` and friends)
+    passes vacuously there, and every positive one fails just as vacuously.
+    Persisting those rows puts "timeout" and "pass" on the same step, which
+    reads as a broken report and, worse, as evidence the agent was probed when
+    it never answered.
+
+    The status itself already carries the outcome -- `findings.FAILING` counts
+    ERROR as a failure, so nothing about gating changes here. This only stops
+    the run from claiming assertion-level evidence it does not have, the same
+    rule `_skipped_result` already follows by shipping no assertion rows at all.
+    """
+    if status in (Status.error, Status.skipped):
+        return []
+    return assertion_results
+
+
 def _redact_evidence(
     evidence: EvidencePolicy, redactor: Redactor, request: Any, response: AgentResponse
 ) -> tuple[Any, Any]:
@@ -221,6 +245,7 @@ def run_one(
         )
         assertion_results = [evaluate(a, ctx) for a in test.assertions]
         status = _derive_status(response, assertion_results, test)
+        assertion_results = _evidence_bearing(status, assertion_results)
         request_evidence, response_evidence = _redact_evidence(
             evidence, redactor, request, response
         )
