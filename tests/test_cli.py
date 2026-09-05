@@ -7,6 +7,8 @@ from agentaudit.cli import app
 from agentaudit.core.loader import discover
 from agentaudit.core.store import DEFAULT_ORG, Store
 
+from ._fixtures import LLM_ENV_VARS
+
 runner = CliRunner()
 
 TREASURY_TARGET = "agentaudit/config/treasury-agent.yaml"
@@ -400,8 +402,9 @@ def test_report_plan_format_is_honest_about_an_unplanned_run(tmp_path):
 def test_evolve_refuses_without_an_attacker_model(tmp_path, monkeypatch):
     # A silent no-op would be worse than an error: the operator would think a
     # campaign ran. The message has to name what is missing.
-    monkeypatch.delenv("AGENTAUDIT_ATTACKER_ENDPOINT", raising=False)
-    monkeypatch.delenv("AGENTAUDIT_ATTACKER_MODEL", raising=False)
+    for var in LLM_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("AGENTAUDIT_LLM_CONFIG", str(tmp_path / "absent.yaml"))
     result = runner.invoke(
         app,
         ["evolve", TREASURY_PACK, "--target", TREASURY_TARGET, "--db", str(tmp_path / "e.db")],

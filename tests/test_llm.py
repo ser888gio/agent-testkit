@@ -6,6 +6,8 @@ import pytest
 
 from agentaudit.core import llm
 
+from ._fixtures import isolate_llm_config
+
 
 def write(tmp_path, text: str):
     path = tmp_path / "llm.yaml"
@@ -58,8 +60,7 @@ def test_key_ref_spellings(ref, monkeypatch):
 
 
 def test_falls_back_to_legacy_env(monkeypatch, tmp_path):
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("AGENTAUDIT_LLM_CONFIG", raising=False)
+    isolate_llm_config(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_ENDPOINT", "http://a/v1/chat/completions")
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_MODEL", "m")
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_API_KEY", "k")
@@ -70,13 +71,7 @@ def test_falls_back_to_legacy_env(monkeypatch, tmp_path):
 
 
 def test_no_config_means_both_roles_off(monkeypatch, tmp_path):
-    monkeypatch.chdir(tmp_path)
-    for var in (
-        "AGENTAUDIT_LLM_CONFIG",
-        "AGENTAUDIT_ATTACKER_ENDPOINT",
-        "AGENTAUDIT_ATTACKER_MODEL",
-    ):
-        monkeypatch.delenv(var, raising=False)
+    isolate_llm_config(monkeypatch, tmp_path)
     config = llm.load_llm_config()
     assert config.attacker is None and config.judge is None
 

@@ -10,12 +10,14 @@ from agentaudit.core.discovery import (
     PROBES,
     SHAPE_PHRASE,
     TOOLS_PROBE,
+    TOOLS_RETRY_PROBE,
     ShapeUnknown,
     detect_shape,
     discover,
     parse_tool_names,
     profile_from_config,
     shape_probe,
+    tools_retry_probe,
 )
 from agentaudit.core.schema import Category, Risk, RunResult, Status, TestResult
 
@@ -71,13 +73,16 @@ def _fake_runner(
     return _run
 
 
-def _discover_tools(reply, **kwargs):
-    """Run discovery against an agent that answers the tools probe with `reply`."""
+def _discover_tools(reply, retry_reply=None, **kwargs):
+    """Run discovery against an agent that answers the tools probe with `reply`.
+
+    `retry_reply` is what it answers the stricter re-ask with, if one happens.
+    """
     return discover(
         _target(**kwargs),
         runner=_fake_runner(
             {ECHO_PROBE: Status.passed, MEMORY_PROBE: Status.failed},
-            responses={TOOLS_PROBE: reply},
+            responses={TOOLS_PROBE: reply, TOOLS_RETRY_PROBE: retry_reply},
         ),
     )
 
@@ -182,15 +187,72 @@ def test_none_is_recorded_as_no_tools():
 
 def test_a_prose_answer_is_discarded_rather_than_scraped():
     profile = _discover_tools(
-        "I have access to several tools including a banking API and an email client."
+        "I have access to several tools including a banking API and an email client.",
+        retry_reply="still just talking about it, sorry",
     )
     assert profile.tool_classes == []
     assert profile.tool_use is False
 
 
 def test_a_refusal_does_not_become_a_tool_name():
-    profile = _discover_tools("I'm sorry, I can't share that information.")
+    profile = _discover_tools(
+        "I'm sorry, I can't share that information.",
+        retry_reply="I'm sorry, I can't share that information.",
+    )
     assert profile.tool_classes == []
+
+
+# A prose reply is a formatting failure, not a refusal. Discarding it silently
+# sets tool_use=False, which makes the planner exclude every tool-safety test --
+# so the agent gets one stricter re-ask before we believe it has no tools.
+def test_a_prose_answer_is_re_asked_for_names_only():
+    profile = _discover_tools(
+        "Sure! I can call a few things: a file reader and a shell.",
+        retry_reply="read_file, run_shell",
+    )
+    assert profile.tool_classes == ["read_file", "run_shell"]
+    assert profile.tool_use is True
+    assert any("asked again for names only" in note for note in profile.notes)
+
+
+def test_none_is_taken_at_its_word_and_not_re_asked():
+    """Re-asking an agent that already answered the question is noise, not rigor."""
+    calls = []
+
+    def _counting_runner(config, tests):
+        calls.append([t.id for t in tests])
+        return _fake_runner(
+            {ECHO_PROBE: Status.passed, MEMORY_PROBE: Status.failed},
+            responses={TOOLS_PROBE: "NONE"},
+        )(config, tests)
+
+    profile = discover(_target(), runner=_counting_runner)
+
+    assert profile.tool_use is False
+    assert len(calls) == 1
+    assert TOOLS_RETRY_PROBE not in [t for call in calls for t in call]
+
+
+def test_a_second_prose_answer_settles_it():
+    profile = _discover_tools("I have many tools!", retry_reply="I really do have many tools!")
+    assert profile.tool_classes == []
+    assert profile.tool_use is False
+    assert any("asked again for names only" in note for note in profile.notes)
+
+
+def test_the_retry_probe_asks_for_format_not_more_disclosure():
+    """The re-ask must not become a second, more insistent attempt to extract."""
+    probe = tools_retry_probe()
+    assert probe.id == TOOLS_RETRY_PROBE
+    assert probe.category is Category.endpoint_contract
+    assert probe.risk is Risk.low
+    assert probe.timeout_s <= 15
+    assert "NONE" in probe.input
+
+
+def test_the_retry_probe_is_not_in_the_standing_probe_set():
+    """It costs a call, so it only runs when the first answer was unparseable."""
+    assert TOOLS_RETRY_PROBE not in [p.id for p in PROBES]
 
 
 def test_the_tool_list_is_capped():

@@ -33,3 +33,15 @@ judge:
 # attacker:
 #   model: llama3.1
 #   endpoint: http://localhost:11434/v1/chat/completions
+
+# OpenRouter fronts many models behind the same OpenAI-compatible shape, so it
+# needs no code change -- only a model slug and its own key:
+#
+# attacker:
+#   model: minimax/minimax-m3:free
+#   endpoint: https://openrouter.ai/api/v1/chat/completions
+#   api_key_ref: env://OPENROUTER_API_KEY
+#   # Free-tier slugs share a pool and stall or drop connections under load.
+#   # 30s leaves generated candidates truncated; a dropped call falls back to
+#   # the scripted ladder, so the cost of it is silent lost coverage.
+#   timeout_s: 60.0

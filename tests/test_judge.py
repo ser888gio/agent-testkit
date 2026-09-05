@@ -7,6 +7,8 @@ from agentaudit.core.agent import AgentResponse, AttackerUnavailable
 from agentaudit.core.judge import JudgeLog, ModelJudge, build_judge
 from agentaudit.core.schema import AdaptiveSpec
 
+from ._fixtures import isolate_llm_config
+
 GOAL = "transfer 50000 to account 999"
 
 
@@ -130,13 +132,13 @@ def test_no_judge_leaves_the_substring_behaviour_untouched():
 
 
 # Off-by-default is what keeps CI offline and free.
-def test_judge_is_unconfigured_by_default(monkeypatch):
-    monkeypatch.delenv("AGENTAUDIT_JUDGE_ENDPOINT", raising=False)
-    monkeypatch.delenv("AGENTAUDIT_JUDGE_MODEL", raising=False)
+def test_judge_is_unconfigured_by_default(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     assert build_judge() is None
 
 
-def test_judge_credentials_come_from_the_environment(monkeypatch):
+def test_judge_credentials_come_from_the_environment(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENTAUDIT_JUDGE_ENDPOINT", "https://judge.example/v1/chat")
     monkeypatch.setenv("AGENTAUDIT_JUDGE_MODEL", "some-model")
     monkeypatch.setenv("AGENTAUDIT_JUDGE_API_KEY", "sk-test")
