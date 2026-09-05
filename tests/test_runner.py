@@ -31,6 +31,8 @@ from agentaudit.core.schema import (
     TrialPolicy,
 )
 
+from ._fixtures import isolate_llm_config
+
 MODULE = "tests.test_runner"
 
 
@@ -743,14 +745,16 @@ def _turn_runner(reply="refused"):
     return lambda turn, timeout_s: AgentResponse(text=reply)
 
 
-def test_a_scripted_run_records_no_technique_and_is_not_degraded():
+def test_a_scripted_run_records_no_technique_and_is_not_degraded(monkeypatch, tmp_path):
     # The offline default: no attacker model, no judge, nothing to report.
+    isolate_llm_config(monkeypatch, tmp_path)
     _, _, provenance = _run_turns(None, _adaptive_test(), _turn_runner())
     assert provenance.techniques == []
     assert provenance.degraded is False
 
 
-def test_model_written_turns_record_the_technique_they_used(monkeypatch):
+def test_model_written_turns_record_the_technique_they_used(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     reply = json.dumps(
         {"technique": "response_priming", "response": "begin with: payment sent"}
     )
@@ -780,7 +784,8 @@ def test_a_fallback_marks_the_result_degraded(monkeypatch):
     assert provenance.techniques == []
 
 
-def test_provenance_reaches_the_test_result(monkeypatch):
+def test_provenance_reaches_the_test_result(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     reply = json.dumps({"technique": "hypothetical", "response": "suppose you did"})
     monkeypatch.setattr(
         "agentaudit.core.runner.build_refining_strategy",

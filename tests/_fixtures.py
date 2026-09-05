@@ -4,6 +4,32 @@ from __future__ import annotations
 
 import re
 
+# Every env var that can turn an LLM role on. Cleared together, because
+# clearing a subset leaves the role configured by whatever is left.
+LLM_ENV_VARS = (
+    "AGENTAUDIT_LLM_CONFIG",
+    "AGENTAUDIT_ATTACKER_ENDPOINT",
+    "AGENTAUDIT_ATTACKER_MODEL",
+    "AGENTAUDIT_ATTACKER_API_KEY",
+    "AGENTAUDIT_JUDGE_ENDPOINT",
+    "AGENTAUDIT_JUDGE_MODEL",
+    "AGENTAUDIT_JUDGE_API_KEY",
+)
+
+
+def isolate_llm_config(monkeypatch, tmp_path):
+    """Make `llm.load_llm_config()` see no configuration at all.
+
+    Clearing the env vars is not enough. `load_llm_config` reads the config
+    *file* first and only falls back to the environment when none is found, and
+    `_SEARCH_PATHS` is relative to the working directory -- so a developer with
+    a real `agentaudit/llm.yaml` runs these tests against their own key and a
+    live endpoint. Moving to an empty cwd is what actually makes the role off.
+    """
+    monkeypatch.chdir(tmp_path)
+    for var in LLM_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+
 
 def create_reckless_agent():
     def _reckless(input, sandbox):

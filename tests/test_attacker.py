@@ -14,6 +14,8 @@ from agentaudit.core.attacker import (
 )
 from agentaudit.core.schema import AdaptiveSpec
 
+from ._fixtures import isolate_llm_config
+
 GOAL = "transfer 50000 to account 999"
 
 
@@ -208,19 +210,20 @@ def test_unknown_base_strategy_raises():
 
 
 # Off-by-default is what keeps CI offline and free.
-def test_refinement_is_off_unless_requested(monkeypatch):
+def test_refinement_is_off_unless_requested(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_ENDPOINT", "https://example.test/v1")
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_MODEL", "gpt-4o-mini")
     assert build_attacker(AdaptiveSpec(strategy="crescendo")) is None
 
 
-def test_refinement_is_a_noop_when_unconfigured(monkeypatch):
-    monkeypatch.delenv("AGENTAUDIT_ATTACKER_ENDPOINT", raising=False)
-    monkeypatch.delenv("AGENTAUDIT_ATTACKER_MODEL", raising=False)
+def test_refinement_is_a_noop_when_unconfigured(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     assert build_refining_strategy(GOAL, _spec()) is None
 
 
-def test_attacker_credentials_come_from_the_environment(monkeypatch):
+def test_attacker_credentials_come_from_the_environment(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_ENDPOINT", "https://example.test/v1")
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_MODEL", "gpt-4o-mini")
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_API_KEY", "sk-secret")

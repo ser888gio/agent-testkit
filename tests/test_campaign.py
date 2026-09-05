@@ -47,6 +47,8 @@ from agentaudit.core.schema import (
 from agentaudit.domains.treasury.overtrusting_agent import create_agent as create_overtrusting
 from agentaudit.domains.treasury.sandbox import TreasurySandbox
 
+from ._fixtures import isolate_llm_config
+
 
 def _now():
     return datetime.now(timezone.utc)
@@ -356,11 +358,12 @@ def test_campaign_mode_end_to_end_admits_the_bypass_with_provenance(monkeypatch)
     assert isinstance(kept.techniques, list)
 
 
-def test_campaign_mode_is_offline_degradable_by_default():
+def test_campaign_mode_is_offline_degradable_by_default(monkeypatch, tmp_path):
     """With no attacker model configured, `build_refining_strategy` returns
     None (attacker.py's own gate) and the ladder runs scripted -- so a
     campaign-generated `linear` test behaves exactly like the fixed-ladder
     baseline above: no bypass, deterministic, no network."""
+    isolate_llm_config(monkeypatch, tmp_path)
     result = _run_against_overtrusting_agent(_bypass_test("linear", refine=True))
     assert result.status == Status.passed
     assert result.degraded is False

@@ -22,6 +22,19 @@ Covers `agentaudit migrate` (the Alembic-backed CLI subcommand, `backend/agentau
 resuming from a partially-created baseline, and the captured pending/up-to-date status
 output. Database assertions verify both the schema and Alembic revision state.
 
+## Tests that must see no LLM configuration
+
+`llm.load_llm_config()` reads `agentaudit/llm.yaml` **before** falling back to the
+`AGENTAUDIT_*` env vars, and that path is relative to the working directory. So a
+test that only clears the env vars still picks up a developer's real config — and
+`build_attacker` / `build_judge` / `build_generator` then return live clients that
+dial a real endpoint on a real key.
+
+Any test asserting a role is *off*, or stubbing one, must call
+`_fixtures.isolate_llm_config(monkeypatch, tmp_path)`, which chdirs to an empty
+directory and clears all seven variables. Note `runner.run_one` builds a judge on
+its own, so an adaptive test degrades even when only the attacker is stubbed.
+
 ## Known collection warning
 
 `agentaudit.core.schema.TestCase` triggers `PytestCollectionWarning` wherever it is imported —

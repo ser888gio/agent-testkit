@@ -22,6 +22,8 @@ from agentaudit.core.schema import (
     TestResult,
 )
 
+from ._fixtures import isolate_llm_config
+
 
 def _now():
     return datetime.now(timezone.utc)
@@ -83,15 +85,14 @@ def _runner(status=Status.passed):
     return run_fn
 
 
-def test_evolution_is_off_until_an_endpoint_is_configured(monkeypatch):
-    monkeypatch.delenv("AGENTAUDIT_ATTACKER_ENDPOINT", raising=False)
-    monkeypatch.delenv("AGENTAUDIT_ATTACKER_MODEL", raising=False)
+def test_evolution_is_off_until_an_endpoint_is_configured(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     assert build_generator() is None
 
 
-def test_a_partial_configuration_does_not_half_enable_it(monkeypatch):
+def test_a_partial_configuration_does_not_half_enable_it(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENTAUDIT_ATTACKER_ENDPOINT", "https://example.test/v1")
-    monkeypatch.delenv("AGENTAUDIT_ATTACKER_MODEL", raising=False)
     assert build_generator() is None
 
 
