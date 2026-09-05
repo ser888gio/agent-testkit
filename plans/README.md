@@ -39,7 +39,7 @@ locally, pinned at `v5.1.0`, while `pyproject.toml` requires `>=7.0.1`.
 | 015 | Make the tenant's LLM config reach the isolated child, and put the attacker/judge dial behind the egress policy | P1 | M | 014 | `fix/015-tenant-llm-config-egress` | TODO |
 | 016 | Widen the credential vocabulary so leaked provider keys are masked | P1 | S | — | `fix/016-widen-credential-vocabulary` | TODO |
 | 017 | Stop relabelling a fully-completed run as cancelled | P2 | S | — | `fix/017-completed-run-is-not-cancelled` | TODO |
-| 018 | Correct the four false statements in `CLAUDE.md` and the stale `web` entry in `components.yaml` | P2 | S | — | `docs/018-claude-md-drift` | TODO |
+| 018 | Correct the four false statements in `CLAUDE.md` and the stale `web` entry in `components.yaml` | P2 | S | — | `docs/018-claude-md-drift` | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)

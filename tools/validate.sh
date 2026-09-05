@@ -9,8 +9,8 @@
 #   tools/validate.sh --lint-only     lint the repo, skip tests
 #   tools/validate.sh --lint-all      accepted for compatibility; lint is repo-wide already
 #
-# The full suite runs in a few seconds, so --affected is for tight iteration loops;
-# prefer the default before declaring work complete.
+# The full suite takes ~10 minutes, so use --affected while iterating and run the
+# default once before declaring work complete.
 #
 # Exit codes: the first failing step's exit code is preserved; 2 on usage error.
 set -euo pipefail

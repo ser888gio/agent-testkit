@@ -113,19 +113,30 @@ Generated / vendored — **never edit by hand:** `dist/`, `agentaudit.egg-info/`
 agentaudit/              config/*.yaml (targets) · packs/ (YAML test packs)
 backend/agentaudit/
   cli.py               Typer CLI (the `agentaudit` console script)
+  worker.py            job execution engine (leases and runs queued jobs)
   core/                audit · agent · sandbox · schema · loader · runner · assertions
                        findings · scoring · redaction · compliance · regressions · store
                        profile · discovery · catalog · planner · adapters
-                       adaptive · attacker · judge · jsonx
-  domains/             treasury/ · email/  (Sandbox subclasses + demo agents)
-  reports/             json · junit · html · md · compliance · coverage · plan renderers
-                       charts (SVG geometry for the dashboard, no I/O)
-frontend/agentaudit/web/ app.py · templates/ · static/
+                       adaptive · attacker · attacks · judge · jsonx · isolation
+                       intake · runview · evolve · campaign · archive · artifacts
+                       llm · egress · credentials · incidents · incident_promotion
+                       config · timeline
+  domains/             treasury/ · email/ · mcp/ · support/ · declarative/
+                       (Sandbox subclasses + demo agents)
+  reports/             json · junit · html · md · pdf · compliance · coverage · plan
+                       renderers · charts (SVG geometry for the dashboard, no I/O)
+frontend/agentaudit/web/ app.py · api.py · auth.py · runtime.py · spa_dist/ (built SPA)
+frontend/spa/          React SPA source (Vite); `npm run build` emits web/spa_dist/
 tests/                 pytest suite · _fixtures.py
 docs/                  architecture.md · plan.md · specs/ · diagrams/ · components.yaml
 tools/                 validate.sh · affected.sh · guard-protected-paths.sh
 infra/                 Dockerfile · docker-compose.yml · dev.sh · alembic/ (DB migrations)
 ```
+
+The dashboard is a React SPA whose source lives in `frontend/spa/`; there is no server-side
+template layer. `frontend/agentaudit/web/spa_dist/` is its build output — gitignored, produced
+by `npm run build`, and asserted into the wheel by the CI `package` job. Do not edit it, and do
+not go looking for `templates/` or `static/`.
 
 Machine-readable component map with dependencies and validation commands:
 [`docs/components.yaml`](docs/components.yaml). Update it when component boundaries change.
@@ -138,7 +149,7 @@ All commands below were executed successfully in this repository.
 | --- | --- |
 | Install deps | `uv sync --extra dev` |
 | Editable install | `pip install -e .` |
-| Unit tests (full suite, 708 tests, ~3-6 min) | `python -m pytest` |
+| Unit tests (full suite, ~1.1k tests, ~10 min on Windows) | `python -m pytest` |
 | Single test file | `python -m pytest tests/test_runner.py` |
 | Single test | `python -m pytest tests/test_runner.py -k name` |
 | Lint | `python -m ruff check .` |
@@ -173,10 +184,12 @@ All commands below were executed successfully in this repository.
 There is **no type-checker configured** in this repository — do not run or document one.
 There is no separate integration/e2e runner either: `tests/test_http_agent.py`,
 `tests/test_web.py`, and `tests/test_cli.py` are the integration-level coverage and run
-inside the same pytest suite. There is **no `examples/` directory** — it held only stale
-`__pycache__` and was removed. The `agentaudit run ...` commands below are the maintained,
-tested way to exercise the tool by hand; do not reintroduce example scripts without also
-wiring them into CI, which is how the previous ones rotted unnoticed.
+inside the same pytest suite. The `examples/` directory **exists and is maintained** — three
+runnable quickstarts, tracked in git, linked from `README.md`, and covered by
+`tests/test_examples.py` in the same pytest suite. Keep it that way: an earlier set of examples
+was deleted after rotting unnoticed, and wiring them into the suite is what stops that
+recurring. Never add example content without a test that exercises it. The `agentaudit run ...`
+commands below are the other maintained way to exercise the tool by hand.
 
 Product commands (exercising agentaudit itself, useful for manual verification):
 
@@ -203,7 +216,7 @@ Work up this ladder; stop when the change is covered. Do not jump straight to th
    `tests/test_web.py` plus a manual `agentaudit ui` check
 6. **Full validation before completion** — `bash tools/validate.sh`
 
-The full suite is roughly 3-6 minutes. Most of that is process spawn: since T16 every `runner.run`
+The full suite is roughly 10 minutes. Most of that is process spawn: since T16 every `runner.run`
 call starts a sandbox supervisor plus a nested agent worker (`core/isolation.py`), costing
 ~2.5s per run on Windows. Production pays that once per run (and respawns only after a
 timeout), but the suite calls `run` dozens of times. Prefer step 2 while iterating and step 6
