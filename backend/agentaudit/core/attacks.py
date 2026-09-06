@@ -308,10 +308,15 @@ def expand(tests: list[Any], transform_names: list[str]) -> list[Any]:
     Adaptive tests are skipped rather than raising: this is the bulk path over a
     whole pack directory, and one adaptive test must not abort the run. The
     original still runs, only its variants are dropped.
+
+    A `skip`-tagged test is left alone for the same reason: the runner returns
+    SKIPPED for it whatever the prompt says, so a variant of it is N more rows
+    of the same non-answer. Three such tests in the shipped agentic pack turned
+    into 18 skipped results in one 66-test run.
     """
     expanded: list[Any] = []
     for test in tests:
         expanded.append(test)
-        if isinstance(test, TestCase) and test.adaptive is None:
+        if isinstance(test, TestCase) and test.adaptive is None and "skip" not in test.tags:
             expanded.extend(apply_attack(test, name) for name in transform_names)
     return expanded

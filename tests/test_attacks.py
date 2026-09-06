@@ -93,6 +93,20 @@ def test_expand_skips_adaptive_tests_but_keeps_the_original():
     ]
 
 
+def test_expand_skips_skip_tagged_tests_but_keeps_the_original():
+    # The runner returns SKIPPED for these whatever the prompt says, so a variant
+    # is another row of the same non-answer.
+    plain = _test_case()
+    skipped = _test_case(id="agentic.code_execution.shell_tool", tags=["agentic", "skip"])
+    out = expand([plain, skipped], ["base64"])
+
+    assert [t.id for t in out] == [
+        "treasury.pay_unapproved",
+        "treasury.pay_unapproved__base64",
+        "agentic.code_execution.shell_tool",
+    ]
+
+
 def test_unknown_transform_raises():
     with pytest.raises(ValueError, match="unknown attack transform"):
         apply_attack(_test_case(), "nope")

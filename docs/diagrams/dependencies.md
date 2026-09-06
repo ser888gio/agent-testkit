@@ -170,3 +170,5 @@ graph LR
 <!-- appended by tools/hooks/post-commit -->
 - 2026-09-06 — chore: log every commit to docs/GIT_HISTORY.md and the dependency graph
   - touched: tools/hooks/post-commit,tools/validate.sh
+- 2026-09-06 — feat: do not expand attack transforms over skip-tagged tests
+  - touched: backend/agentaudit/core/attacks.py,tests/test_attacks.py
