@@ -156,6 +156,17 @@ def rank(
     candidates: list[tuple[float, list[str], TestCatalogEntry]] = []
 
     for entry in sorted(entries, key=lambda e: e.test_id):
+        # The runner skips these outright (`runner._derive_status`), so ranking one
+        # spends plan budget on a test that can produce no evidence.
+        if "skip" in entry.tags:
+            excluded.append(
+                ExcludedTest(
+                    test_id=entry.test_id,
+                    source=entry.source,
+                    reason="tagged skip: documents an obligation this target cannot exercise",
+                )
+            )
+            continue
         missing = sorted(set(entry.requires) - capabilities)
         if missing:
             excluded.append(
