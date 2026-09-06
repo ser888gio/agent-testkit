@@ -106,56 +106,9 @@ services:
         max-file: "3"
     restart: unless-stopped
 
-  keycloak-db:
-    image: postgres:16.9
-    environment:
-      POSTGRES_DB: keycloak
-      POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in infra/.env}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    volumes:
-      - keycloak-db-data:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.7.0
-    command: ["start-dev", "--import-realm"]
-    depends_on:
-      keycloak-db:
-        condition: service_healthy
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in infra/.env}
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:?set KEYCLOAK_ADMIN_USERNAME in infra/.env}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in infra/.env}
-      KC_HEALTH_ENABLED: "true"
-      KC_HOSTNAME: http://localhost:8080
-      AGENTAUDIT_CI_ACME_SECRET: ${AGENTAUDIT_CI_ACME_SECRET:?set AGENTAUDIT_CI_ACME_SECRET in infra/.env}
-      AGENTAUDIT_DEMO_USER_PASSWORD: ${AGENTAUDIT_DEMO_USER_PASSWORD:?set AGENTAUDIT_DEMO_USER_PASSWORD in infra/.env}
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q '200 OK' <&3"
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 20s
-    ports:
-      - "127.0.0.1:8080:8080"
-    volumes:
-      - ./keycloak/agentaudit-realm.json:/opt/keycloak/data/import/agentaudit-realm.json:ro
-    restart: unless-stopped
-
 networks:
    egress:
     driver: bridge
 
 volumes:
   agentaudit-data:
-  keycloak-db-data:

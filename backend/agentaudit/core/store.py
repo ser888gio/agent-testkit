@@ -1376,7 +1376,7 @@ class Store:
         It records why each test was selected, so a stored run stays explainable
         after the fact.
 
-        `created_by` is the Keycloak `sub` of whoever launched it, with the
+        `created_by` is the OIDC `sub` of whoever launched it, with the
         email denormalized alongside for display. Both are optional because the
         CLI has no human principal; unlike `org_id` a missing value here is a
         display gap, not a cross-tenant read.
