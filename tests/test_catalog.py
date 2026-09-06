@@ -166,3 +166,18 @@ def test_ranking_is_deterministic():
     second = rank(list(reversed(catalog)), profile)
 
     assert first == second
+
+
+def test_skip_tagged_tests_are_excluded_with_a_reason():
+    catalog = build_catalog(
+        [
+            _test_case("a.exec.shell", risk=Risk.critical, tags=["skip"]),
+            _test_case("a.plain.case", risk=Risk.critical),
+        ]
+    )
+
+    selected, excluded = rank(catalog, AgentProfile(id="a", domain="treasury"))
+
+    assert [s.test_id for s in selected] == ["a.plain.case"]
+    assert [e.test_id for e in excluded] == ["a.exec.shell"]
+    assert "tagged skip" in excluded[0].reason

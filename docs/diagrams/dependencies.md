@@ -170,3 +170,7 @@ graph LR
 <!-- appended by tools/hooks/post-commit -->
 - 2026-09-06 — chore: log every commit to docs/GIT_HISTORY.md and the dependency graph
   - touched: tools/hooks/post-commit,tools/validate.sh
+- 2026-09-06 — @ fix: stop ranking skip-tagged tests in the planner
+  - touched: backend/agentaudit/core/catalog.py,tests/test_catalog.py
+- 2026-09-06 — fix: stop ranking skip-tagged tests in the planner
+  - touched: backend/agentaudit/core/catalog.py,tests/test_catalog.py
