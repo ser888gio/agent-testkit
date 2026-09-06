@@ -35,6 +35,12 @@ while [[ $# -gt 0 ]]; do
     *)           echo "error: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
+# The post-commit hook (git history + dependency-graph log) is tracked in tools/hooks,
+# but core.hooksPath is per-clone config and cannot be tracked. Set it here so any
+# clone picks the hook up on its first validation run.
+if [[ "$(git config --get core.hooksPath || true)" != "tools/hooks" ]]; then
+  git config core.hooksPath tools/hooks
+fi
 
 # Pick a python runner that actually works here.
 #

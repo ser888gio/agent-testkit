@@ -1,0 +1,24 @@
+#!/bin/sh
+# Appends each commit to docs/GIT_HISTORY.md and the dependency-graph change log,
+# then amends the commit to include them so the tree is left clean.
+#
+# Without the amend the two log files are dirty after every commit, and committing
+# them dirties them again -- an unclosable loop.
+#
+# No SHA is logged: a commit cannot contain its own hash, and amending to insert one
+# only invalidates it again. Date + subject identify the entry; `git log` has the SHAs.
+[ -n "$AGENTAUDIT_HOOK_AMENDING" ] && exit 0
+
+HIST=docs/GIT_HISTORY.md
+DEPS=docs/diagrams/dependencies.md
+
+subject=$(git log -1 --pretty=%s)
+date=$(git log -1 --pretty=%ad --date=short)
+files=$(git diff-tree --no-commit-id --name-only -r HEAD \
+  | grep -v "^$HIST\$" | grep -v "^$DEPS\$" | paste -sd', ' -)
+
+printf -- '- %s — %s\n  - touched: %s\n' "$date" "$subject" "${files:-none}" >> "$DEPS"
+printf -- '- %s — %s\n' "$date" "$subject" >> "$HIST"
+
+git add "$HIST" "$DEPS"
+AGENTAUDIT_HOOK_AMENDING=1 git commit --amend --no-edit --no-verify --quiet

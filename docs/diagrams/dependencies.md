@@ -164,3 +164,9 @@ graph LR
 - `cli -> web.app` is the one entrypoint-to-entrypoint edge (the `agentaudit ui` command).
 - `reports` no longer reaches `evolve`: test-id and expiry rules live in `core/lifecycle.py`,
   so rendering a coverage report does not import an attacker-model client.
+
+## Change log
+
+<!-- appended by tools/hooks/post-commit -->
+- 2026-09-06 — chore: log every commit to docs/GIT_HISTORY.md and the dependency graph
+  - touched: tools/hooks/post-commit,tools/validate.sh
