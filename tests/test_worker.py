@@ -300,11 +300,14 @@ def test_heartbeat_keeps_a_long_job_from_being_reclaimed(tmp_path, monkeypatch):
     store, job_id = _store_with_job(tmp_path)
     monkeypatch.setattr("agentaudit.core.audit.run_tests", _slow_run)
 
+    # The join budget covers every `run_tests` call the job makes, and `_slow_run`
+    # bills 3s for each: the discovery probes plus the pack itself. A discovery
+    # miss adds one more re-ask, so 10s left no headroom.
     done = threading.Thread(target=work_once, args=(store, "w1"), kwargs={"lease_seconds": 4})
     done.start()
     time.sleep(2.5)
     reclaimed = store.jobs.reclaim()
-    done.join(timeout=10)
+    done.join(timeout=30)
 
     assert reclaimed == 0
     assert store.jobs.get("org-a", job_id).state == "done"

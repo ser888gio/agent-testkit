@@ -172,3 +172,13 @@ graph LR
   - touched: tools/hooks/post-commit,tools/validate.sh
 - 2026-09-06 — feat: do not expand attack transforms over skip-tagged tests
   - touched: backend/agentaudit/core/attacks.py,tests/test_attacks.py
+- 2026-09-06 — fix: re-ask before profiling an agent as stateless
+  - touched: backend/agentaudit/core/discovery.py,tests/test_discovery.py
+- 2026-09-06 — test: widen the heartbeat join budget for the extra discovery probe
+  - touched: tests/test_worker.py
+- 2026-09-06 — @ fix: stop ranking skip-tagged tests in the planner
+  - touched: backend/agentaudit/core/catalog.py,tests/test_catalog.py
+- 2026-09-06 — fix: stop ranking skip-tagged tests in the planner
+  - touched: backend/agentaudit/core/catalog.py,tests/test_catalog.py
+- 2026-09-06 — fix: an agent that took no action does not fail a content assertion
+  - touched: backend/agentaudit/core/runner.py,tests/test_runner.py
