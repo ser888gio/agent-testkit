@@ -694,9 +694,12 @@ def test_campaign_flag_runs_the_branching_loop_with_the_turn_budget(tmp_path, mo
 
     calls = {}
 
-    def fake_run_campaign(generator, run_fn, *, archive=None, categories=None, budget=None):
+    def fake_run_campaign(
+        generator, run_fn, *, archive=None, categories=None, budget=None, profile=None
+    ):
         calls["budget"] = budget
         calls["categories"] = categories
+        calls["profile"] = profile
         return CampaignResult(stopped_because="budget")
 
     def fail_run_evolution(*args, **kwargs):
@@ -728,6 +731,7 @@ def test_campaign_flag_runs_the_branching_loop_with_the_turn_budget(tmp_path, mo
     assert calls["budget"].max_candidates == 2
     # Seeded from the pack's own categories, same as a plain evolve run.
     assert calls["categories"]
+    assert calls["profile"] is not None
 
 
 def test_cli_endpoint_must_be_https(monkeypatch):
