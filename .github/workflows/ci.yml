@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, develop]
   push:
-    branches: [main, develop]
+    branches: [main]
   workflow_dispatch:
     inputs:
       deploy:
@@ -27,7 +27,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # Full matrix only on main, where a failure would reach the VPS deploy.
+        # Elsewhere: floor (declared requires-python) and ceiling (newest deps /
+        # deprecations). No code branches on version, so 3.11/3.12 interpolate.
+        python-version: ${{ github.ref == 'refs/heads/main' && fromJSON('["3.10","3.11","3.12","3.13"]') || fromJSON('["3.10","3.13"]') }}
 
     steps:
       - name: Check out repository

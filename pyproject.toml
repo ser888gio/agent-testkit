@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-xdist",
     "ruff",
 ]
 
@@ -86,6 +87,8 @@ agentaudit = "backend/agentaudit"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Suite is dominated by per-run process spawn (core/isolation.py), not CPU.
+addopts = "-n logical"
 
 [tool.ruff]
 line-length = 100
