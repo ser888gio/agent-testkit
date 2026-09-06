@@ -172,3 +172,5 @@ graph LR
   - touched: tools/hooks/post-commit,tools/validate.sh
 - 2026-09-06 — fix: re-ask before profiling an agent as stateless
   - touched: backend/agentaudit/core/discovery.py,tests/test_discovery.py
+- 2026-09-06 — test: widen the heartbeat join budget for the extra discovery probe
+  - touched: tests/test_worker.py
