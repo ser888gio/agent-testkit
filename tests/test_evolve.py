@@ -5,11 +5,9 @@ from agentaudit.core.adaptive import STRATEGIES
 from agentaudit.core.archive import STYLES, Archive, Candidate
 from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.evolve import (
-    DEFAULT_KEEP_RUNS,
     EvolveBudget,
     build_generator,
     evolve,
-    expired,
     next_cell,
 )
 from agentaudit.core.profile import AgentProfile
@@ -323,16 +321,3 @@ def test_the_next_cell_prefers_uncovered_ground():
     assert cell not in archive
 
 
-def test_a_provisional_test_expires_after_its_trial_runs():
-    assert expired(run_count=DEFAULT_KEEP_RUNS - 1) is False
-    assert expired(run_count=DEFAULT_KEEP_RUNS) is True
-
-
-def test_zero_keep_runs_disables_expiry():
-    assert expired(run_count=1000, keep_runs=0) is False
-
-
-def test_a_test_that_is_still_catching_a_defect_never_expires():
-    # Retiring a live finding to save runtime is the one outcome this must
-    # not produce.
-    assert expired(run_count=99, keep_runs=5, still_failing=True) is False

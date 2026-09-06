@@ -35,14 +35,14 @@ from agentaudit.core import llm, runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.attacks import describe_transforms
 from agentaudit.core.config import known_sandboxes
-from agentaudit.core.evolve import (
+from agentaudit.core.intake import is_offerable_target, is_pack_dir, register_http_target
+from agentaudit.core.intake import queue_run as intake_queue_run
+from agentaudit.core.lifecycle import (
     GENERATED_PREFIX,
     PROMOTED_PREFIX,
     promotable,
     promoted_id,
 )
-from agentaudit.core.intake import is_offerable_target, is_pack_dir, register_http_target
-from agentaudit.core.intake import queue_run as intake_queue_run
 from agentaudit.core.loader import LoaderError, discover
 from agentaudit.core.profile import AgentProfile
 from agentaudit.core.regressions import compare

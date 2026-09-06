@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from agentaudit.core.archive import STYLES
 from agentaudit.core.attacks import split_variant
-from agentaudit.core.evolve import GENERATED_PREFIX, PROMOTED_PREFIX
+from agentaudit.core.lifecycle import GENERATED_PREFIX, PROMOTED_PREFIX
 from agentaudit.core.schema import Category, RunResult, Status
 from agentaudit.core.scoring import ScoreReport
 
