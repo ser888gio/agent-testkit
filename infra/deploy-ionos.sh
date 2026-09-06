@@ -66,8 +66,6 @@ Fill in the AGENTAUDIT_OIDC_* block from Clerk's discovery document:
 
 Set AGENTAUDIT_OIDC_REDIRECT_URI=https://$DEPLOY_HOST/auth/callback
 Set AGENTAUDIT_DEMO_MODE=1 for an instance strangers can log into.
-Leave the five KEYCLOAK_* placeholders alone; Compose needs them present but
-nothing reads them on a hosted provider.
 
 Then re-run this script.
 EOF
@@ -88,8 +86,8 @@ log "Verify the SPA bundle shipped inside the wheel"
 $COMPOSE run --rm --no-deps agentaudit \
     ls /opt/venv/lib/python3.12/site-packages/agentaudit/web/spa_dist/index.html
 
-log "Start (migrate runs once and exits; keycloak stays down)"
-$COMPOSE up -d migrate agentaudit worker
+log "Start (migrate runs once and exits)"
+$COMPOSE up -d
 $COMPOSE ps
 
 log "Wait for health"

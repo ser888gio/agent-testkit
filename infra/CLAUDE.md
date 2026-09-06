@@ -31,22 +31,6 @@ a second way to touch the database.
 - Migrations are forward-only in production — applied at deploy time by explicit command,
   never implicitly on app startup, so two replicas booting together can't race.
 
-## Identity-provider services
-
-A deployment on a hosted provider (Clerk) needs neither `keycloak` nor
-`keycloak-db`, and on a small VPS a JVM plus Postgres is real memory. Such a
-deploy names its services: `up -d migrate agentaudit worker`.
-
-Compose profiles do **not** help here, and neither does an override file:
-interpolation runs at parse time across every service, before profile selection
-and before overlay merging, so `${KEYCLOAK_ADMIN_PASSWORD:?...}` fires even for
-a container that will never start. Both were tried and reverted. The five
-`KEYCLOAK_*`/demo-secret variables therefore keep their `:?` form — the guard
-against shipping a default secret is worth more than the ergonomics, and it is
-pinned by `tests/test_phase2_infra.py::test_compose_requires_secrets_instead_of_shipping_defaults`.
-`infra/.env.example` satisfies the parse with visibly-unused placeholders and
-says so; real values are required only when Keycloak actually runs.
-
 ## Egress policy (T15)
 
 Worker-side environment, deployment-owned. Never derived from target config.
@@ -72,7 +56,7 @@ untrusted third-party endpoint, so the container is treated as the isolation
 boundary rather than a deployment convenience.
 
 - **Network.** `worker` is alone on the `egress` network; every other service
-  (`agentaudit`, `keycloak`, `keycloak-db`, `migrate`) stays on `default`. The
+  (`agentaudit`, `migrate`) stays on `default`. The
   worker therefore has no TCP route to the control plane. Verify after any
   compose edit: no other service may join `egress`.
 - **Database access is a file, not a route.** The worker reaches SQLite through

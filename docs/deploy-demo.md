@@ -4,9 +4,8 @@ How to put agentaudit on a public URL behind TLS so someone else can log in and
 use it. Covers hosting only:
 
 - Identity provider setup — [`deploy-clerk.md`](deploy-clerk.md) for a worked
-  Clerk deployment on an Ionos VPS; [`keycloak.md`](keycloak.md) for the local
-  Keycloak fallback. The hosted OIDC provider is configured through the
-  environment variables below.
+  Clerk deployment on an Ionos VPS. The hosted OIDC provider is configured
+  through the environment variables below.
 - What to actually show once logged in — [`demo.md`](demo.md).
 
 Target shape: one small VPS, Docker Compose, Caddy terminating TLS on the host.
@@ -114,11 +113,7 @@ docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
 docker compose -f infra/docker-compose.yml ps
 ```
 
-`migrate` runs once and exits; `agentaudit` and `worker` stay up. On a hosted
-identity provider, name the three services you want
-(`up -d migrate agentaudit worker`) so the local Keycloak stack stays down; its
-five `KEYCLOAK_*` variables must still be present in `infra/.env` because
-Compose interpolates unnamed services too.
+`migrate` runs once and exits; `agentaudit` and `worker` stay up.
 
 All services are `restart: unless-stopped`, so a host reboot brings them back.
 

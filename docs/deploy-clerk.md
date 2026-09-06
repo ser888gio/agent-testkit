@@ -130,21 +130,14 @@ systemctl reload caddy
 
 ## 3. Run
 
-A Clerk deploy starts three services and leaves the local Keycloak stack out.
-Name them explicitly:
+A Clerk deploy starts three services:
 
 ```bash
 cp infra/.env.example infra/.env     # fill the OIDC block, set AGENTAUDIT_DEMO_MODE=1
 docker compose -f infra/docker-compose.yml build
-docker compose -f infra/docker-compose.yml --env-file infra/.env   up -d migrate agentaudit worker
+docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
 docker compose -f infra/docker-compose.yml ps
 ```
-
-Compose interpolates every service at parse time, including ones you did not
-name, so the five `KEYCLOAK_*` variables must still be *present* in
-`infra/.env`. `.env.example` ships them with `unused-on-a-hosted-identity-provider`
-placeholders; leave them alone. Nothing reads them unless you start Keycloak,
-which needs real values — see [`keycloak.md`](keycloak.md).
 
 Then follow [`deploy-demo.md` §5](deploy-demo.md#5-verify), including the
 cross-organization tenancy check.
@@ -153,6 +146,4 @@ cross-organization tenancy check.
 
 A VPS 4-4-120 (4 vCore / 4 GB / 120 GB) runs the Clerk configuration
 comfortably: the `worker` container is capped at `mem_limit: 2g` and the web
-service is small. Starting the local Keycloak stack on the same box puts a JVM
-and a Postgres alongside that ceiling and will contend for the 4 GB — another
-reason a hosted provider is the better fit here.
+service is small.

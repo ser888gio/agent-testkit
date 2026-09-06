@@ -184,3 +184,5 @@ graph LR
   - touched: backend/agentaudit/core/runner.py,tests/test_runner.py
 - 2026-09-06 — chore(ci): cut Actions minutes ~87% per feature
   - touched: .github/workflows/ci.yml,.github/workflows/security.yml CLAUDE.md,pyproject.toml uv.lock
+- 2026-09-06 — chore: remove Keycloak, standardise on hosted OIDC
+  - touched: README.md,backend/agentaudit/core/store.py docs/README.md,docs/deploy-clerk.md docs/deploy-demo.md,infra/.env.example infra/CLAUDE.md,infra/alembic/versions/0005_run_attribution.py infra/deploy-ionos.sh,infra/docker-compose.yml infra/keycloak/agentaudit-realm.json,tests/test_phase2_infra.py

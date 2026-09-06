@@ -90,7 +90,7 @@ agentaudit ui                                  # dashboard at http://127.0.0.1:8
 ```
 
 `ui` binds to `127.0.0.1` with local dev auth. A non-loopback bind requires
-`AGENTAUDIT_AUTH_MODE=oidc` and full OIDC config — see [`docs/keycloak.md`](docs/keycloak.md).
+`AGENTAUDIT_AUTH_MODE=oidc` and full OIDC config — see [`docs/deploy-clerk.md`](docs/deploy-clerk.md).
 
 ### EU AI Act evidence
 

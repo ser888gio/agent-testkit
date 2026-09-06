@@ -1,6 +1,6 @@
 """run and authored-test attribution
 
-Records who launched a run / authored a test: the Keycloak `sub` plus the email
+Records who launched a run / authored a test: the OIDC `sub` plus the email
 denormalized for display. Nullable, because runs launched by the CLI have no
 human principal and rows predating this revision have no attribution to recover.
 
