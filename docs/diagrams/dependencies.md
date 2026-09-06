@@ -182,3 +182,5 @@ graph LR
   - touched: backend/agentaudit/core/catalog.py,tests/test_catalog.py
 - 2026-09-06 — fix: an agent that took no action does not fail a content assertion
   - touched: backend/agentaudit/core/runner.py,tests/test_runner.py
+- 2026-09-06 — chore(ci): cut Actions minutes ~87% per feature
+  - touched: .github/workflows/ci.yml,.github/workflows/security.yml CLAUDE.md,pyproject.toml uv.lock

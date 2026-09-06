@@ -154,7 +154,7 @@ All commands below were executed successfully in this repository.
 | --- | --- |
 | Install deps | `uv sync --extra dev` |
 | Editable install | `pip install -e .` |
-| Unit tests (full suite, ~1.1k tests, ~10 min on Windows) | `python -m pytest` |
+| Unit tests (full suite, ~1.1k tests, ~3.5 min on Windows) | `python -m pytest` |
 | Single test file | `python -m pytest tests/test_runner.py` |
 | Single test | `python -m pytest tests/test_runner.py -k name` |
 | Lint | `python -m ruff check .` |
@@ -221,11 +221,14 @@ Work up this ladder; stop when the change is covered. Do not jump straight to th
    `tests/test_web.py` plus a manual `agentaudit ui` check
 6. **Full validation before completion** — `bash tools/validate.sh`
 
-The full suite is roughly 10 minutes. Most of that is process spawn: since T16 every `runner.run`
-call starts a sandbox supervisor plus a nested agent worker (`core/isolation.py`), costing
-~2.5s per run on Windows. Production pays that once per run (and respawns only after a
-timeout), but the suite calls `run` dozens of times. Prefer step 2 while iterating and step 6
-before declaring done.
+The full suite is roughly 3.5 minutes. Most of that is process spawn: since T16 every
+`runner.run` call starts a sandbox supervisor plus a nested agent worker (`core/isolation.py`),
+costing ~2.5s per run on Windows. Production pays that once per run (and respawns only after a
+timeout), but the suite calls `run` dozens of times. Because that cost is wait, not CPU, the
+suite runs under `pytest-xdist`: `addopts = "-n logical"` in `pyproject.toml` applies to *every*
+pytest invocation, which is what took the suite from ~10 minutes to ~3.5. Two consequences when
+debugging: output is unordered, and `-x` stops less predictably. Pass `-p no:xdist` to serialize
+a single run. Prefer step 2 while iterating and step 6 before declaring done.
 
 ## Architecture rules
 
