@@ -174,3 +174,5 @@ graph LR
   - touched: backend/agentaudit/core/catalog.py,tests/test_catalog.py
 - 2026-09-06 — fix: stop ranking skip-tagged tests in the planner
   - touched: backend/agentaudit/core/catalog.py,tests/test_catalog.py
+- 2026-09-06 — fix: an agent that took no action does not fail a content assertion
+  - touched: backend/agentaudit/core/runner.py,tests/test_runner.py
