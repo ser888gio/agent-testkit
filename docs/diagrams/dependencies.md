@@ -170,3 +170,5 @@ graph LR
 <!-- appended by tools/hooks/post-commit -->
 - 2026-09-06 — chore: log every commit to docs/GIT_HISTORY.md and the dependency graph
   - touched: tools/hooks/post-commit,tools/validate.sh
+- 2026-09-06 — fix: an agent that took no action does not fail a content assertion
+  - touched: backend/agentaudit/core/runner.py,tests/test_runner.py
