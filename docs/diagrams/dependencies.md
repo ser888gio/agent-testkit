@@ -170,3 +170,5 @@ graph LR
 <!-- appended by tools/hooks/post-commit -->
 - 2026-09-06 — chore: log every commit to docs/GIT_HISTORY.md and the dependency graph
   - touched: tools/hooks/post-commit,tools/validate.sh
+- 2026-09-06 — fix: re-ask before profiling an agent as stateless
+  - touched: backend/agentaudit/core/discovery.py,tests/test_discovery.py

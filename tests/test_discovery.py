@@ -7,6 +7,7 @@ from agentaudit.core.discovery import (
     ECHO_PROBE,
     MEMORY_PHRASE,
     MEMORY_PROBE,
+    MEMORY_RETRY_PROBE,
     PROBES,
     SHAPE_PHRASE,
     TOOLS_PROBE,
@@ -109,14 +110,52 @@ def test_offline_profile_reads_the_target_config():
 
 
 def test_discovery_marks_a_stateless_agent_stateless():
+    # Stateless only after the second miss -- one probe is not enough to drop
+    # every multi-turn test.
     profile = discover(
         _target(),
-        runner=_fake_runner({ECHO_PROBE: Status.passed, MEMORY_PROBE: Status.failed}),
+        runner=_fake_runner(
+            {
+                ECHO_PROBE: Status.passed,
+                MEMORY_PROBE: Status.failed,
+                MEMORY_RETRY_PROBE: Status.failed,
+            }
+        ),
     )
 
     assert profile.multi_turn is False
-    assert any("stateless" in note for note in profile.notes)
+    assert any("asked twice" in note for note in profile.notes)
     assert any("12 ms" in note for note in profile.notes)
+
+
+def test_a_missed_recall_is_re_asked_before_concluding_stateless():
+    profile = discover(
+        _target(),
+        runner=_fake_runner(
+            {
+                ECHO_PROBE: Status.passed,
+                MEMORY_PROBE: Status.failed,
+                MEMORY_RETRY_PROBE: Status.passed,
+            }
+        ),
+    )
+
+    assert profile.multi_turn is True
+    assert any("asked again" in note for note in profile.notes)
+
+
+def test_a_memory_probe_that_errored_is_not_evidence_of_statelessness():
+    # A timeout says nothing about the agent. The flag still defaults off, but
+    # the note must not claim the agent was measured.
+    profile = discover(
+        _target(),
+        runner=_fake_runner(
+            {ECHO_PROBE: Status.passed, MEMORY_PROBE: Status.error},
+        ),
+    )
+
+    assert profile.multi_turn is False
+    assert any("unverified" in note for note in profile.notes)
 
 
 def test_discovery_detects_carried_context():
@@ -222,7 +261,7 @@ def test_none_is_taken_at_its_word_and_not_re_asked():
     def _counting_runner(config, tests):
         calls.append([t.id for t in tests])
         return _fake_runner(
-            {ECHO_PROBE: Status.passed, MEMORY_PROBE: Status.failed},
+            {ECHO_PROBE: Status.passed, MEMORY_PROBE: Status.passed},
             responses={TOOLS_PROBE: "NONE"},
         )(config, tests)
 
