@@ -35,13 +35,13 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from agentaudit.core.evolve import GENERATED_PREFIX
 from agentaudit.core.incidents import ParsedIncident
+from agentaudit.core.lifecycle import GENERATED_PREFIX
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
 from agentaudit.core.schema import Category, Risk, RunResult, Status, TestCase
 
 # Tag marking a candidate as incident-derived rather than model-generated.
-# `evolve.promotable`/`promoted_id` only look at the id prefix, so this is
+# `lifecycle.promotable`/`promoted_id` only look at the id prefix, so this is
 # purely informational -- but it is what lets a reviewer (and, later, a
 # compliance report) tell "production told us this" from "a model found this".
 PROVENANCE_TAG = "incident"

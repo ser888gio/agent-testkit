@@ -30,16 +30,12 @@ from agentaudit.core.egress import (
     ValidatedEndpoint,
     validate_endpoint,
 )
-from agentaudit.core.evolve import (
-    DEFAULT_KEEP_RUNS,
-    GENERATED_PREFIX,
-    EvolveBudget,
-    build_generator,
-)
+from agentaudit.core.evolve import EvolveBudget, build_generator
 from agentaudit.core.evolve import evolve as run_evolution
 from agentaudit.core.incident_promotion import DerivationError, derive_candidate
 from agentaudit.core.incident_promotion import reproduce as reproduce_candidate
 from agentaudit.core.incidents import parse_transcript, redact_incident
+from agentaudit.core.lifecycle import DEFAULT_KEEP_RUNS, GENERATED_PREFIX
 from agentaudit.core.loader import LoaderError, discover, filter_tests
 from agentaudit.core.planner import plan as build_plan
 from agentaudit.core.profile import HarnessPlan
@@ -390,9 +386,7 @@ def evolve_cmd(
     # tools and the side effects worth asserting on are most of what makes a
     # candidate land, and without them it writes attacks for a generic agent.
     # Two trivial probes, on the same bound endpoint the run uses.
-    profile = discover_profile(
-        cfg, runner=lambda c, cases: run_tests(c, cases, endpoint=validated)
-    )
+    profile = discover_profile(cfg, runner=lambda c, cases: run_tests(c, cases, endpoint=validated))
 
     # `CampaignResult` mirrors `EvolveResult`'s fields and `as_pack_rows()`, so
     # everything below this branch is common to both.

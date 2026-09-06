@@ -38,7 +38,8 @@ from agentaudit.core.egress import (
     ValidatedEndpoint,
     validate_endpoint,
 )
-from agentaudit.core.evolve import GENERATED_PREFIX, build_generator
+from agentaudit.core.evolve import build_generator
+from agentaudit.core.lifecycle import GENERATED_PREFIX
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
 from agentaudit.core.profile import AgentProfile
 from agentaudit.core.redaction import Redactor
