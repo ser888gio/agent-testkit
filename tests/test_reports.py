@@ -79,6 +79,7 @@ def _run() -> RunResult:
             risk=Risk.low,
             status=Status.skipped,
             latency_ms=None,
+            error="requires sandbox, none configured",
             started_at=_now(),
             finished_at=_now(),
         ),
@@ -187,9 +188,12 @@ def test_to_markdown_names_the_attacker_technique_and_degradation():
 
 def test_to_markdown_unchanged_without_variants(run_and_score):
     rr, report = run_and_score
-    assert to_markdown(rr, report).split("## Failures\n\n")[1] == (
-        "- ❌ b.fail.case: found 1 payment\n- ❌ c.error.case: timeout"
-    )
+    # Only the failures block: sections after it (skipped, trial policies) are
+    # covered by their own tests, and asserting on the tail made this test fail
+    # whenever an unrelated section was added.
+    md = to_markdown(rr, report)
+    failures = md.split("## Failures\n\n")[1].split("\n\n##")[0]
+    assert failures == "- \u274c b.fail.case: found 1 payment\n- \u274c c.error.case: timeout"
 
 
 def test_to_markdown_has_no_trial_section_without_trial_results(run_and_score):

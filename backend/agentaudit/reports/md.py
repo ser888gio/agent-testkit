@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from agentaudit.core.attacks import split_variant
 from agentaudit.core.findings import detail_for, failures, provenance_for
-from agentaudit.core.schema import RunResult
+from agentaudit.core.schema import RunResult, Status
 from agentaudit.core.scoring import ScoreReport
 from agentaudit.core.timeline import build as build_timeline
 from agentaudit.core.timeline import to_lines as timeline_lines
@@ -30,11 +30,29 @@ def to_markdown(run: RunResult, score: ScoreReport) -> str:
     else:
         lines.extend(_failure_lines(failing))
 
+    skipped = _skipped_lines(run.results)
+    if skipped:
+        lines += ["", "## Skipped (untested)", ""] + skipped
+
     trial_lines = _trial_lines(run.results)
     if trial_lines:
         lines += ["", "## Trial policies", ""] + trial_lines
 
     return "\n".join(lines)
+
+
+def _skipped_lines(results) -> list[str]:
+    """Every skipped test with its reason.
+
+    Skips were invisible in this report, which let an untested obligation read
+    as a clean run. They are listed, never counted toward the score.
+    """
+    skipped = [r for r in results if r.status is Status.skipped]
+    if not skipped:
+        return []
+    lines = ["| Test | Risk | Reason |", "|---|---|---|"]
+    lines += [f"| {r.test_id} | {r.risk.value} | {r.error or ''} |" for r in skipped]
+    return lines
 
 
 def _timeline_block(result) -> list[str]:

@@ -21,7 +21,7 @@ def _result(test_id, status, *, assertions=(), error=None) -> TestResult:
         status=status,
         latency_ms=1.0,
         assertion_results=list(assertions),
-        error=error,
+        error=error or ("not applicable" if status is Status.skipped else None),
         started_at=now,
         finished_at=now,
     )
