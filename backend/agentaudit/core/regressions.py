@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import statistics
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
@@ -9,6 +10,22 @@ from pydantic import BaseModel, Field
 from agentaudit.core.findings import FAILING
 from agentaudit.core.schema import Risk, RunResult, Status, TestResult
 from agentaudit.core.scoring import ScoreReport
+
+# An error rate at or above this is worth surfacing on its own: at half the
+# suite unable to reach a verdict, the score is computed on a minority of the
+# tests and is not a number anyone should act on.
+ERROR_RATE_FLOOR = 0.5
+
+# ...and it must also be a jump, not this target's normal. Compared against the
+# trailing median rather than the mean: a target with one previous bad run
+# would drag a mean up far enough to hide the next one.
+ERROR_RATE_JUMP = 0.3
+
+# Below this many prior runs there is no baseline to call anything a jump
+# against, so a first bad run is reported as `no_baseline` instead -- which is
+# the real shape of the corpus: five of the six 4 Sep spikes are an agent's
+# first ever run, where the rate never "spiked" because nothing preceded it.
+MIN_BASELINE_RUNS = 3
 
 
 @dataclass
@@ -115,4 +132,74 @@ def compare(
         latency_deltas=latency_deltas,
         score_delta=score_delta,
         critical_regressions=sorted(buckets.critical_regressions),
+    )
+
+
+class ErrorRateIncident(BaseModel):
+    """A run whose error rate is too high for its score to be trusted.
+
+    Not a finding about the agent: an errored test reached no verdict, so this
+    says the *run* is unreliable, which is why it is surfaced above the score
+    rather than inside it.
+    """
+
+    error_rate: float
+    baseline: float | None
+    errored: int
+    total: int
+    # True when there was not enough history to compare against, so the run is
+    # flagged on its absolute rate alone.
+    no_baseline: bool
+
+
+def error_rate(results: list[TestResult]) -> float:
+    """Share of results that errored. 0.0 for an empty run."""
+    if not results:
+        return 0.0
+    return sum(1 for r in results if r.status == Status.error) / len(results)
+
+
+def detect_error_rate_incident(
+    run: RunResult, prior_rates: list[float]
+) -> ErrorRateIncident | None:
+    """Flag a run whose error rate makes its score meaningless.
+
+    `prior_rates` is this target's earlier error rates, oldest first; the
+    caller supplies them (the store owns that query, this module owns the
+    rule). Returns None when the run is normal for the target.
+
+    Two ways to trip, because the corpus contains both shapes:
+
+    - **A jump.** The rate is at least `ERROR_RATE_FLOOR` and exceeds the
+      trailing median by `ERROR_RATE_JUMP`. This is the `bare-echo` case:
+      two clean runs, then every test errors.
+    - **No baseline.** The rate is at least `ERROR_RATE_FLOOR` and there is
+      not enough history to compare. This is what the 4 Sep railway cluster
+      actually is -- each agent's first run erroring outright, then recovering
+      to 0.15-0.25 once configured. A pure jump rule would miss all five,
+      which is exactly the silent-bad-run case this exists to catch.
+    """
+    rate = error_rate(run.results)
+    if rate < ERROR_RATE_FLOOR:
+        return None
+
+    errored = sum(1 for r in run.results if r.status == Status.error)
+    if len(prior_rates) < MIN_BASELINE_RUNS:
+        return ErrorRateIncident(
+            error_rate=rate,
+            baseline=None,
+            errored=errored,
+            total=len(run.results),
+            no_baseline=True,
+        )
+
+    baseline = statistics.median(prior_rates)
+    if rate - baseline < ERROR_RATE_JUMP:
+        return None
+    return ErrorRateIncident(
+        error_rate=rate,
+        baseline=baseline,
+        errored=errored,
+        total=len(run.results),
+        no_baseline=False,
     )

@@ -815,6 +815,27 @@ class Analytics:
         points.reverse()
         return points
 
+    def prior_error_rates(
+        self, org_id: str, agent_id: str, *, before: str, limit: int = 20
+    ) -> list[float]:
+        """This target's error rate per run before `before`, oldest first.
+
+        Feeds `regressions.detect_error_rate_incident`, which owns the rule but
+        must not own a query. Aggregated in SQL rather than by loading runs: the
+        answer is one float per run, and `status` is a real column on
+        `test_results` (unlike the score, which lives in a JSON blob).
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT SUM(CASE WHEN t.status = 'error' THEN 1 ELSE 0 END) * 1.0 "
+                "         / COUNT(*) AS rate "
+                "FROM runs r JOIN test_results t ON t.run_id = r.id "
+                "WHERE r.org_id = ? AND r.agent_id = ? AND r.started_at < ? "
+                "GROUP BY r.id ORDER BY r.started_at DESC LIMIT ?",
+                (org_id, agent_id, before, limit),
+            ).fetchall()
+        return [row["rate"] for row in reversed(rows)]
+
     def category_failure_rates(self, org_id: str, *, since: str | None = None) -> list[dict]:
         """Failure rate per test category, worst first.
 
