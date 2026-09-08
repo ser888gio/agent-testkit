@@ -204,3 +204,5 @@ graph LR
   - touched: tests/test_domain_agent_robustness.py
 - 2026-09-08 — Correct stored runs that gated green on zero evidence
   - touched: infra/alembic/versions/0021_backfill_stale_green_gates.py,tests/test_migrate.py
+- 2026-09-08 — feat(core): give the attacker and judge the sandbox event ledger
+  - touched: backend/agentaudit/core/agent.py,backend/agentaudit/core/attacker.py backend/agentaudit/core/judge.py,backend/agentaudit/core/runner.py tests/test_attacker.py,tests/test_judge.py tests/test_runner.py

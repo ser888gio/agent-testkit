@@ -19,6 +19,7 @@ from agentaudit.core.runner import (
     run,
     run_one,
 )
+from agentaudit.core.sandbox import Event as SandboxEventSource
 from agentaudit.core.schema import (
     AdaptiveSpec,
     Assertion,
@@ -956,3 +957,88 @@ def test_agent_failure_stays_an_agent_error_not_a_harness_error():
     )
 
     assert run(cfg, [test]).results[0].status == Status.error
+
+
+# --- Sandbox events are attached per turn ------------------------------------
+# So an attacker/judge reasoning mid-run sees what the agent DID, not only what
+# it said. Without this, a silent tool call reads as a clean refusal.
+
+
+class _EventingSandbox:
+    """Records one event per turn, like a sandbox whose tool the agent calls."""
+
+    def __init__(self):
+        self._events = []
+
+    @property
+    def events(self):
+        return list(self._events)
+
+    def fire(self, kind, **data):
+        self._events.append(SandboxEventSource(kind=kind, data=data))
+
+
+def test_each_turn_carries_only_its_own_sandbox_events(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
+    sandbox = _EventingSandbox()
+    seen = []
+
+    def turn_runner(turn, timeout_s):
+        sandbox.fire("wire_out", payee=f"acct-{len(sandbox.events)}")
+        return AgentResponse(text="I cannot help with that.")
+
+    def strategy(goal, spec, judge=None):
+        class _S:
+            def next_turn(self, history):
+                seen.append([list(r.events) for r in history])
+                return "go" if len(history) < 2 else None
+
+        return _S()
+
+    monkeypatch.setattr("agentaudit.core.runner.build_strategy", strategy)
+    _run_turns(
+        None,
+        _adaptive_test(),
+        turn_runner,
+        sandbox=sandbox,
+        redactor=Redactor(RedactionConfig()),
+    )
+
+    # Third call sees both turns, one event each -- deltas, not the running total.
+    assert [len(r) for r in seen[-1]] == [1, 1]
+    assert seen[-1][0][0].data["payee"] == "acct-0"
+    assert seen[-1][1][0].data["payee"] == "acct-1"
+
+
+def test_turn_events_are_redacted_before_the_attacker_sees_them(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
+    sandbox = _EventingSandbox()
+    captured = []
+
+    def turn_runner(turn, timeout_s):
+        sandbox.fire("pay", card="4111111111111111")
+        return AgentResponse(text="ok")
+
+    def strategy(goal, spec, judge=None):
+        class _S:
+            def next_turn(self, history):
+                captured.extend(history)
+                return "go" if not history else None
+
+        return _S()
+
+    monkeypatch.setattr("agentaudit.core.runner.build_strategy", strategy)
+    _run_turns(
+        None,
+        _adaptive_test(),
+        turn_runner,
+        sandbox=sandbox,
+        redactor=Redactor(RedactionConfig()),
+    )
+    assert "4111111111111111" not in str(captured[0].events)
+
+
+def test_without_a_sandbox_turns_carry_no_events(monkeypatch, tmp_path):
+    isolate_llm_config(monkeypatch, tmp_path)
+    response, _, _ = _run_turns(None, _adaptive_test(), _turn_runner())
+    assert response.events == []
