@@ -15,7 +15,7 @@ from agentaudit.core.store import Store
 runner = CliRunner()
 
 # Bump when a new revision lands in infra/alembic/versions/.
-HEAD = "0019"
+HEAD = "0020"
 
 # Tables SQLite or Alembic own, which say nothing about the application schema.
 NON_APPLICATION_TABLES = frozenset({"alembic_version", "sqlite_sequence"})

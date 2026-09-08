@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from agentaudit.core.archive import STYLES
 from agentaudit.core.attacks import split_variant
-from agentaudit.core.lifecycle import GENERATED_PREFIX, PROMOTED_PREFIX
+from agentaudit.core.lifecycle import origin_of
 from agentaudit.core.schema import Category, RunResult, Status
 from agentaudit.core.scoring import ScoreReport
 
@@ -32,15 +32,6 @@ def _style_of_result(test_id: str) -> str:
     return transform if transform in STYLES else "plain"
 
 
-def _origin(test_id: str) -> str:
-    head = test_id.split(".", 1)[0]
-    if head == GENERATED_PREFIX:
-        return "generated"
-    if head == PROMOTED_PREFIX:
-        return "promoted"
-    return "authored"
-
-
 def to_coverage(run: RunResult, score: ScoreReport) -> str:  # noqa: ARG001
     """`score` is unused: every renderer takes (run, score) so `render` can
     dispatch on format alone. Coverage is derived entirely from results.
@@ -53,7 +44,7 @@ def to_coverage(run: RunResult, score: ScoreReport) -> str:  # noqa: ARG001
             continue
         cell = (result.category, _style_of_result(result.test_id))
         probed.setdefault(cell, []).append(result.status)
-        origins[_origin(result.test_id)] += 1
+        origins[origin_of(result.test_id)] += 1
 
     categories = sorted({c for c, _ in probed}, key=lambda c: c.value)
     lines = [

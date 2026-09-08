@@ -15,18 +15,6 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from agentaudit.core.lifecycle import GENERATED_PREFIX, PROMOTED_PREFIX
-
-
-def origin_of(test_id: str) -> str:
-    """authored/generated/promoted, from the test_id prefix (see core/lifecycle.py)."""
-    head = test_id.split(".", 1)[0]
-    if head == GENERATED_PREFIX:
-        return "generated"
-    if head == PROMOTED_PREFIX:
-        return "promoted"
-    return "authored"
-
 
 def load_runs(con: sqlite3.Connection, org_id: str | None) -> list[dict]:
     query = "SELECT id, org_id, agent_id, started_at, finished_at, status, score_json FROM runs"
@@ -57,17 +45,19 @@ def load_runs(con: sqlite3.Connection, org_id: str | None) -> list[dict]:
 
 
 def load_test_results(con: sqlite3.Connection, org_id: str | None) -> list[dict]:
-    query = "SELECT run_id, org_id, test_id, category, risk, status, latency_ms FROM test_results"
+    has_origin = "origin" in {row[1] for row in con.execute("PRAGMA table_info(test_results)")}
+    origin_col = "origin" if has_origin else "'authored' AS origin"
+    query = (
+        f"SELECT run_id, org_id, test_id, category, risk, status, latency_ms, {origin_col} "
+        "FROM test_results"
+    )
     params: tuple = ()
     if org_id:
         query += " WHERE org_id = ?"
         params = (org_id,)
     cur = con.execute(query, params)
     cols = [c[0] for c in cur.description]
-    rows = [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
-    for row in rows:
-        row["origin"] = origin_of(row["test_id"])
-    return rows
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
 
 
 def summarize(runs: list[dict], results: list[dict]) -> dict:
