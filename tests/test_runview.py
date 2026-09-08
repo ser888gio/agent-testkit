@@ -46,6 +46,7 @@ def _result(test_id, status, *, category=Category.prompt_injection, risk=Risk.lo
         started_at=NOW,
         finished_at=NOW + timedelta(milliseconds=10),
         latency_ms=10.0,
+        error="not applicable" if status is Status.skipped else None,
         assertion_results=[
             AssertionResult(name="a", passed=status is Status.passed, detail=detail)
         ],

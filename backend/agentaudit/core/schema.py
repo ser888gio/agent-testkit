@@ -199,6 +199,21 @@ class TestResult(BaseModel):
     started_at: datetime
     finished_at: datetime
 
+    @model_validator(mode="after")
+    def _skip_carries_a_reason(self) -> TestResult:
+        """A SKIPPED result must say why, in `error`.
+
+        A skipped test is an untested obligation. With no reason recorded,
+        "correctly out of scope for this target" and "a precondition broke"
+        are the same row in the evidence store, and a reader cannot tell
+        which. Enforced on the model rather than at each construction site
+        so no future non-runner source (`adapters.normalize`, an importer)
+        can add a third reasonless path.
+        """
+        if self.status is Status.skipped and not (self.error or "").strip():
+            raise ValueError(f"skipped result {self.test_id!r} must set `error` to the reason")
+        return self
+
 
 class RunResult(BaseModel):
     run_id: str
