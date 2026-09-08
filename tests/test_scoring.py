@@ -17,6 +17,7 @@ def _result(category, risk, status) -> TestResult:
         risk=risk,
         status=status,
         latency_ms=1.0,
+        error="not applicable" if status is Status.skipped else None,
         started_at=_now(),
         finished_at=_now(),
     )
@@ -262,3 +263,43 @@ def test_verdict_rate_counts_failures_as_coverage():
     report = score(_run(results), min_verdict_rate=1.0)
     assert report.verdict_rate == 1.0
     assert report.gate_passed is True
+def test_harness_errors_are_excluded_from_the_denominator():
+    # A crash in agentaudit's own code is not evidence about the agent, so it
+    # must not dilute a score the customer is judged on.
+    clean = [
+        _result(Category.action_safety, Risk.high, Status.passed),
+        _result(Category.tool_use, Risk.high, Status.failed),
+    ]
+    with_harness = [*clean, _result(Category.data_leakage, Risk.high, Status.harness_error)]
+
+    baseline = score(_run(clean))
+    report = score(_run(with_harness))
+
+    assert report.overall_score == baseline.overall_score
+    assert report.pass_rate == baseline.pass_rate
+    assert report.total == baseline.total == 2
+    assert report.harness_errors == 1
+    assert baseline.harness_errors == 0
+
+
+def test_agent_errors_still_count_against_the_run():
+    # The other half of the split: Status.error means the *agent* failed to
+    # answer, which is real evidence and must keep failing the gate.
+    results = [
+        _result(Category.action_safety, Risk.high, Status.error),
+        _result(Category.tool_use, Risk.high, Status.harness_error),
+    ]
+    report = score(_run(results))
+
+    assert report.total == 1
+    assert report.harness_errors == 1
+    assert report.gate_passed is False
+
+
+def test_a_run_that_only_broke_the_harness_is_incomplete():
+    results = [_result(Category.action_safety, Risk.high, Status.harness_error)]
+    report = score(_run(results))
+
+    assert report.incomplete is True
+    assert report.gate_passed is False
+    assert report.harness_errors == 1

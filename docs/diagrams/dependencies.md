@@ -194,3 +194,11 @@ graph LR
   - touched: .gitignore,backend/agentaudit/core/lifecycle.py backend/agentaudit/core/store.py,backend/agentaudit/reports/coverage.py infra/alembic/versions/0020_test_result_origin.py,tests/test_migrate.py tools/analyze_runs.py
 - 2026-09-08 — Gate on verdict coverage, not just score
   - touched: backend/agentaudit/cli.py,backend/agentaudit/core/audit.py backend/agentaudit/core/scoring.py,tests/test_scoring.py
+- 2026-09-08 — Split harness errors from agent errors
+  - touched: backend/agentaudit/cli.py,backend/agentaudit/core/findings.py backend/agentaudit/core/runner.py,backend/agentaudit/core/runview.py backend/agentaudit/core/schema.py,backend/agentaudit/core/scoring.py frontend/agentaudit/web/api.py,tests/test_runner.py tests/test_scoring.py
+- 2026-09-08 — Require a skip reason, and render it
+  - touched: backend/agentaudit/core/runner.py,backend/agentaudit/core/schema.py backend/agentaudit/reports/md.py,tests/test_compliance.py tests/test_findings.py,tests/test_reports.py tests/test_runview.py,tests/test_schema.py tests/test_scoring.py,tests/test_scoring_tiers.py
+- 2026-09-08 — Pin that demo agents never raise on malformed input
+  - touched: tests/test_domain_agent_robustness.py
+- 2026-09-08 — Correct stored runs that gated green on zero evidence
+  - touched: infra/alembic/versions/0021_backfill_stale_green_gates.py,tests/test_migrate.py

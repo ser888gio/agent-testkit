@@ -69,6 +69,7 @@ STATUS_LABELS = {
     "all": "All statuses",
     "failed": "Failed",
     "error": "Error",
+    "harness_error": "Harness error",
     "passed": "Passed",
     "skipped": "Skipped",
 }

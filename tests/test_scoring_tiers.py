@@ -30,6 +30,7 @@ def _result(category: Category, risk: Risk, status: Status) -> TestResult:
         risk=risk,
         status=status,
         latency_ms=1.0,
+        error="not applicable" if status is Status.skipped else None,
         started_at=_now(),
         finished_at=_now(),
     )

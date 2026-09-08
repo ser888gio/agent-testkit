@@ -35,7 +35,9 @@ from agentaudit.core.schema import Category, Status
 from agentaudit.core.timeline import build as build_timeline
 from agentaudit.core.timeline import window as window_timeline
 
-# Statuses that mean a reader should look at this run.
+# Statuses that mean a reader should look at this run. `harness_error` is not
+# here: it means agentaudit broke, which needs fixing but is not a finding
+# against the agent, so it must not colour the run red.
 BAD_STATUSES = frozenset({"failed", "error"})
 
 # What the library page shows for a test that has never appeared in a run.
@@ -383,6 +385,9 @@ def harness(run: Any, report: Any) -> dict:
             # No verdict was reached for these, so the page must not imply the
             # agent was observed behaving well or badly.
             "errored": sum(1 for f in findings if f["status"] == "error"),
+            # Reported apart from `errored`: the harness failed here, not the
+            # agent, so this counts against agentaudit rather than the target.
+            "harness_errors": sum(1 for f in findings if f["status"] == "harness_error"),
         },
         "context": {
             "agent": run.agent_name,

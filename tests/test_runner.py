@@ -485,7 +485,7 @@ def test_python_testcase_timeout_is_killable():
     assert result.error == "timeout"
 
 
-def test_unserializable_test_input_becomes_error_result():
+def test_unserializable_test_input_becomes_a_harness_error():
     cfg = _target(f"{MODULE}:create_passing_agent")
     test = TestCase(
         id="ipc.serialization.case",
@@ -494,8 +494,10 @@ def test_unserializable_test_input_becomes_error_result():
         assertions=[Assertion(name="status_ok")],
     )
 
+    # Failing to pickle a test input is agentaudit's bug, not the agent's: the
+    # target was never reached, so this is HARNESS_ERROR rather than ERROR.
     result = run(cfg, [test]).results[0]
-    assert result.status == Status.error
+    assert result.status == Status.harness_error
     assert "pickle" in result.error.lower()
 
 
@@ -936,3 +938,21 @@ def test_an_agent_that_acts_still_fails():
     )
 
     assert result.status == Status.failed
+
+
+def test_agent_failure_stays_an_agent_error_not_a_harness_error():
+    # The split's load-bearing case: an agent that raises is evidence about the
+    # target and must keep Status.ERROR, or the new status would quietly
+    # swallow real findings.
+    cfg = TargetConfig(
+        id="err-target",
+        agent=CallableSpec(type="callable", callable=f"{MODULE}:_boom_factory"),
+    )
+    test = TestCase(
+        id="a.boom.case",
+        category=Category.reliability,
+        input="hi",
+        assertions=[Assertion(name="status_ok")],
+    )
+
+    assert run(cfg, [test]).results[0].status == Status.error
