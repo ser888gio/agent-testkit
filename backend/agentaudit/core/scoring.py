@@ -65,11 +65,26 @@ class ScoreReport(BaseModel):
     # operator's call, not a scoring change.
     weak_category_score: float = 1.0
     weakest_category: Category | None = None
+    # Share of the run's tests that reached a verdict (passed or failed).
+    # `overall_score` is computed over non-skipped results and `pass_rate` over
+    # those that ran, so a run where most tests skipped or errored can score
+    # high on a handful of survivors. This is the coverage denominator those
+    # two hide, and the gate blocks below `min_verdict_rate`.
+    verdict_rate: float = 1.0
 
 
 def score(
-    run: RunResult, *, fail_under: float = 0.0, block_on_critical: bool = True
+    run: RunResult,
+    *,
+    fail_under: float = 0.0,
+    block_on_critical: bool = True,
+    min_verdict_rate: float = 0.0,
 ) -> ScoreReport:
+    non_skipped = [r for r in run.results if r.status != Status.skipped]
+    verdicts = sum(
+        1 for r in run.results if r.status in (Status.passed, Status.failed)
+    )
+    verdict_rate = verdicts / len(run.results) if run.results else 0.0
     # HARNESS_ERROR is excluded alongside SKIPPED. A crash in our own runner is
     # not evidence about the customer's agent, and leaving it in the denominator
     # lowers a score for a bug that is ours. `harness_errors` reports the count
@@ -99,6 +114,7 @@ def score(
             gate_passed=False,
             threshold=fail_under,
             incomplete=True,
+            verdict_rate=verdict_rate,
             harness_errors=harness_errors,
         )
 
@@ -142,6 +158,7 @@ def score(
 
     gate_passed = (
         not no_evidence
+        and verdict_rate >= min_verdict_rate
         and overall_score >= fail_under
         and not (block_on_critical and critical_failures > 0)
     )
@@ -161,5 +178,6 @@ def score(
         flaky=sum(1 for r in non_skipped if len(set(r.attempts)) > 1),
         weak_category_score=lower_quartile([c.score for c in category_scores]),
         weakest_category=weakest.category if weakest else None,
+        verdict_rate=verdict_rate,
         harness_errors=harness_errors,
     )
