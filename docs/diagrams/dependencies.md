@@ -204,3 +204,5 @@ graph LR
   - touched: tests/test_domain_agent_robustness.py
 - 2026-09-08 — Correct stored runs that gated green on zero evidence
   - touched: infra/alembic/versions/0021_backfill_stale_green_gates.py,tests/test_migrate.py
+- 2026-09-08 — feat(evolve): reject self-answering and off-domain candidates before running
+  - touched: backend/agentaudit/core/evolve.py,tests/test_evolve.py
