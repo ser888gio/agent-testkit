@@ -11,3 +11,6 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-06 — fix: an agent that took no action does not fail a content assertion
 - 2026-09-06 — chore(ci): cut Actions minutes ~87% per feature
 - 2026-09-06 — chore: remove Keycloak, standardise on hosted OIDC
+- 2026-09-08 — Add stdlib script to summarize agentaudit run history
+- 2026-09-08 — Report test origin (authored/generated/promoted) in run analysis
+- 2026-09-08 — Persist test result origin (authored/generated/promoted) as a column

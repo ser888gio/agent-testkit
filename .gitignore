@@ -58,3 +58,6 @@ frontend/agentaudit/web/spa_dist/
 # deployment-specific. The committed template is llm.example.yaml.
 agentaudit/llm.yaml
 .agentaudit/
+
+# tools/analyze_runs.py --format csv output
+analysis_out/

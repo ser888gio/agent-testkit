@@ -52,6 +52,16 @@ def expired(
     return run_count >= keep_runs
 
 
+def origin_of(test_id: str) -> str:
+    """authored/generated/promoted, from the id prefix alone -- no store lookup."""
+    head = test_id.split(".", 1)[0]
+    if head == GENERATED_PREFIX:
+        return "generated"
+    if head == PROMOTED_PREFIX:
+        return "promoted"
+    return "authored"
+
+
 def promoted_id(test_id: str, namespace: str | None = None) -> str:
     """The id a generated test takes when a human promotes it.
 

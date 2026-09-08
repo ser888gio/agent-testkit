@@ -19,6 +19,7 @@ from agentaudit.core.artifacts import artifact_key
 from agentaudit.core.attacks import TRANSFORMS
 from agentaudit.core.config import TargetConfig, load_target_dict
 from agentaudit.core.egress import EgressPolicy
+from agentaudit.core.lifecycle import origin_of
 from agentaudit.core.loader import LoaderError, load_tests_from_rows
 from agentaudit.core.profile import AgentProfile, HarnessPlan
 from agentaudit.core.redaction import Redactor
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS test_results (
     status TEXT NOT NULL,
     latency_ms REAL,
     result_json TEXT NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'authored',
     FOREIGN KEY (org_id) REFERENCES orgs(id),
     FOREIGN KEY (org_id, run_id) REFERENCES runs(org_id, id)
 );
@@ -1430,13 +1432,14 @@ class Store:
                         r.status.value,
                         r.latency_ms,
                         json.dumps(payload),
+                        origin_of(r.test_id),
                     )
                 )
             conn.executemany(
                 """
                 INSERT INTO test_results (org_id, run_id, test_id, category, risk, status,
-                                           latency_ms, result_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                           latency_ms, result_json, origin)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )

@@ -186,3 +186,9 @@ graph LR
   - touched: .github/workflows/ci.yml,.github/workflows/security.yml CLAUDE.md,pyproject.toml uv.lock
 - 2026-09-06 — chore: remove Keycloak, standardise on hosted OIDC
   - touched: README.md,backend/agentaudit/core/store.py docs/README.md,docs/deploy-clerk.md docs/deploy-demo.md,infra/.env.example infra/CLAUDE.md,infra/alembic/versions/0005_run_attribution.py infra/deploy-ionos.sh,infra/docker-compose.yml infra/keycloak/agentaudit-realm.json,tests/test_phase2_infra.py
+- 2026-09-08 — Add stdlib script to summarize agentaudit run history
+  - touched: tools/analyze_runs.py
+- 2026-09-08 — Report test origin (authored/generated/promoted) in run analysis
+  - touched: tools/analyze_runs.py
+- 2026-09-08 — Persist test result origin (authored/generated/promoted) as a column
+  - touched: .gitignore,backend/agentaudit/core/lifecycle.py backend/agentaudit/core/store.py,backend/agentaudit/reports/coverage.py infra/alembic/versions/0020_test_result_origin.py,tests/test_migrate.py tools/analyze_runs.py
