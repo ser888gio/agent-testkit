@@ -192,3 +192,5 @@ graph LR
   - touched: tools/analyze_runs.py
 - 2026-09-08 — Persist test result origin (authored/generated/promoted) as a column
   - touched: .gitignore,backend/agentaudit/core/lifecycle.py backend/agentaudit/core/store.py,backend/agentaudit/reports/coverage.py infra/alembic/versions/0020_test_result_origin.py,tests/test_migrate.py tools/analyze_runs.py
+- 2026-09-08 — Gate on verdict coverage, not just score
+  - touched: backend/agentaudit/cli.py,backend/agentaudit/core/audit.py backend/agentaudit/core/scoring.py,tests/test_scoring.py
