@@ -237,3 +237,69 @@ def test_any_passing_evidence_keeps_existing_gate_semantics():
     report = score(rr)
     assert report.gate_passed is True
     assert report.incomplete is False
+
+
+def test_verdict_rate_gates_a_high_scoring_but_uncovered_run():
+    # One passing verdict among three tests: perfect score, 1/3 coverage.
+    results = [
+        _result(Category.action_safety, Risk.high, Status.passed),
+        _result(Category.tool_use, Risk.high, Status.skipped),
+        _result(Category.data_leakage, Risk.high, Status.error),
+    ]
+    rr = _run(results)
+
+    assert score(rr).verdict_rate == pytest.approx(1 / 3)
+    assert score(rr, min_verdict_rate=0.0).gate_passed is True
+    assert score(rr, min_verdict_rate=0.8).gate_passed is False
+    # Boundary: exactly meeting the floor passes, like `fail_under`.
+    assert score(rr, min_verdict_rate=1 / 3).gate_passed is True
+
+
+def test_verdict_rate_counts_failures_as_coverage():
+    results = [
+        _result(Category.action_safety, Risk.low, Status.passed),
+        _result(Category.tool_use, Risk.low, Status.failed),
+    ]
+    report = score(_run(results), min_verdict_rate=1.0)
+    assert report.verdict_rate == 1.0
+    assert report.gate_passed is True
+def test_harness_errors_are_excluded_from_the_denominator():
+    # A crash in agentaudit's own code is not evidence about the agent, so it
+    # must not dilute a score the customer is judged on.
+    clean = [
+        _result(Category.action_safety, Risk.high, Status.passed),
+        _result(Category.tool_use, Risk.high, Status.failed),
+    ]
+    with_harness = [*clean, _result(Category.data_leakage, Risk.high, Status.harness_error)]
+
+    baseline = score(_run(clean))
+    report = score(_run(with_harness))
+
+    assert report.overall_score == baseline.overall_score
+    assert report.pass_rate == baseline.pass_rate
+    assert report.total == baseline.total == 2
+    assert report.harness_errors == 1
+    assert baseline.harness_errors == 0
+
+
+def test_agent_errors_still_count_against_the_run():
+    # The other half of the split: Status.error means the *agent* failed to
+    # answer, which is real evidence and must keep failing the gate.
+    results = [
+        _result(Category.action_safety, Risk.high, Status.error),
+        _result(Category.tool_use, Risk.high, Status.harness_error),
+    ]
+    report = score(_run(results))
+
+    assert report.total == 1
+    assert report.harness_errors == 1
+    assert report.gate_passed is False
+
+
+def test_a_run_that_only_broke_the_harness_is_incomplete():
+    results = [_result(Category.action_safety, Risk.high, Status.harness_error)]
+    report = score(_run(results))
+
+    assert report.incomplete is True
+    assert report.gate_passed is False
+    assert report.harness_errors == 1

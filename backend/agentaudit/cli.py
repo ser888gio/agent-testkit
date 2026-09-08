@@ -122,7 +122,13 @@ def _print_table(rr, report) -> None:
     for r in rr.results:
         counts = by_cat.setdefault(r.category.value, {"pass": 0, "fail": 0, "err": 0, "skip": 0})
         counts[
-            {"passed": "pass", "failed": "fail", "error": "err", "skipped": "skip"}[r.status.value]
+            {
+                "passed": "pass",
+                "failed": "fail",
+                "error": "err",
+                "harness_error": "harness",
+                "skipped": "skip",
+            }[r.status.value]
         ] += 1
 
     typer.echo(f"{'CATEGORY':<20}{'PASS':>6}{'FAIL':>6}{'ERR':>6}{'SKIP':>6}")
@@ -567,6 +573,11 @@ def run_cmd(
     db: str | None = typer.Option(None, "--db"),
     fail_under: float = typer.Option(0.0, "--fail-under"),
     block_on_critical: bool = typer.Option(True, "--block-on-critical/--no-block-on-critical"),
+    min_verdict_rate: float = typer.Option(
+        0.0,
+        "--min-verdict-rate",
+        help="Block when fewer than this share of tests reached a pass/fail verdict.",
+    ),
     tag: list[str] = typer.Option([], "--tag"),
     category: list[str] = typer.Option([], "--category"),
     format: str = typer.Option("table", "--format"),
@@ -642,6 +653,7 @@ def run_cmd(
         external=external,
         fail_under=fail_under,
         block_on_critical=block_on_critical,
+        min_verdict_rate=min_verdict_rate,
         on_plan=announce,
         on_test=progress if format != "json" else None,
     )

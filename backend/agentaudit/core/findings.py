@@ -23,9 +23,20 @@ from agentaudit.core.schema import AssertionResult, Status, TestResult
 # broken endpoint scores green.
 FAILING = (Status.failed, Status.error)
 
+# Harness errors are excluded deliberately: a crash in our own code is not
+# evidence the agent misbehaved, and counting it as a failure reports a finding
+# against a target that may never have been reached.
+HARNESS = (Status.harness_error,)
+
 # Failures first, then everything else, skipped last. The reader is here for the
 # failures; a report that buries them under fifty passes is a worse report.
-RANK = {Status.failed: 0, Status.error: 0, Status.passed: 1, Status.skipped: 2}
+RANK = {
+    Status.failed: 0,
+    Status.error: 0,
+    Status.harness_error: 1,
+    Status.passed: 2,
+    Status.skipped: 3,
+}
 
 
 def is_failure(result: TestResult) -> bool:

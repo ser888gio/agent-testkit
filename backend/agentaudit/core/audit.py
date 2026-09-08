@@ -92,6 +92,7 @@ def execute(
     external: bool = False,
     fail_under: float = 0.0,
     block_on_critical: bool = True,
+    min_verdict_rate: float = 0.0,
     on_plan: Callable[[list[Any], HarnessPlan | None, list[SelectedTest]], None] | None = None,
     on_expand: Callable[[Sequence[str]], None] | None = None,
     on_test: Callable[[int, Any], None] | None = None,
@@ -170,7 +171,12 @@ def execute(
 
     return AuditRun(
         result=result,
-        report=score(result, fail_under=fail_under, block_on_critical=block_on_critical),
+        report=score(
+            result,
+            fail_under=fail_under,
+            block_on_critical=block_on_critical,
+            min_verdict_rate=min_verdict_rate,
+        ),
         plan=harness,
         unexecuted=unexecuted,
     )
