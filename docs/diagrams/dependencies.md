@@ -192,3 +192,5 @@ graph LR
   - touched: tools/analyze_runs.py
 - 2026-09-08 — Persist test result origin (authored/generated/promoted) as a column
   - touched: .gitignore,backend/agentaudit/core/lifecycle.py backend/agentaudit/core/store.py,backend/agentaudit/reports/coverage.py infra/alembic/versions/0020_test_result_origin.py,tests/test_migrate.py tools/analyze_runs.py
+- 2026-09-08 — Split harness errors from agent errors
+  - touched: backend/agentaudit/cli.py,backend/agentaudit/core/findings.py backend/agentaudit/core/runner.py,backend/agentaudit/core/runview.py backend/agentaudit/core/schema.py,backend/agentaudit/core/scoring.py frontend/agentaudit/web/api.py,tests/test_runner.py tests/test_scoring.py

@@ -364,12 +364,21 @@ def _error_result(
     started: datetime,
     error: str,
     redactor: Redactor,
+    *,
+    status: Status = Status.harness_error,
 ) -> TestResult:
+    """A result for a test that produced no verdict.
+
+    Defaults to HARNESS_ERROR because every caller is one of our own failure
+    paths -- an exception the runner caught, or an isolation worker that died.
+    An agent that failed to answer is handled in `_derive_status` off
+    `response.error`, and stays Status.ERROR.
+    """
     return TestResult(
         test_id=test.id,
         category=test.category,
         risk=test.risk,
-        status=Status.error,
+        status=status,
         latency_ms=None,
         assertion_results=[],
         request=None,
