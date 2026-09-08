@@ -210,3 +210,5 @@ graph LR
   - touched: backend/agentaudit/core/evolve.py,tests/test_evolve.py
 - 2026-09-08 — Fixing the UI on detail grid.
   - touched: frontend/spa/src/style.css
+- 2026-09-08 — fix(store): enable WAL and align the busy timeout at 30s
+  - touched: backend/agentaudit/core/store.py,tests/test_store.py
