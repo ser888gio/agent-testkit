@@ -23,3 +23,4 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-08 — feat(core): give the attacker and judge the sandbox event ledger
 - 2026-09-08 — feat(evolve): reject self-answering and off-domain candidates before running
 - 2026-09-08 — Fixing the UI on detail grid.
+- 2026-09-08 — feat(auth): revoke stale authorization on mutating requests
