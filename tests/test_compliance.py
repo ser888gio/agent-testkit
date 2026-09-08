@@ -30,6 +30,7 @@ def _result(test_id: str, category: Category, status=Status.failed) -> TestResul
         category=category,
         risk=Risk.high,
         status=status,
+        error="not applicable" if status is Status.skipped else None,
         started_at=now,
         finished_at=now,
     )

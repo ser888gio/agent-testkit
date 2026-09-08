@@ -192,3 +192,5 @@ graph LR
   - touched: tools/analyze_runs.py
 - 2026-09-08 — Persist test result origin (authored/generated/promoted) as a column
   - touched: .gitignore,backend/agentaudit/core/lifecycle.py backend/agentaudit/core/store.py,backend/agentaudit/reports/coverage.py infra/alembic/versions/0020_test_result_origin.py,tests/test_migrate.py tools/analyze_runs.py
+- 2026-09-08 — Require a skip reason, and render it
+  - touched: backend/agentaudit/core/runner.py,backend/agentaudit/core/schema.py backend/agentaudit/reports/md.py,tests/test_compliance.py tests/test_findings.py,tests/test_reports.py tests/test_runview.py,tests/test_schema.py tests/test_scoring.py,tests/test_scoring_tiers.py

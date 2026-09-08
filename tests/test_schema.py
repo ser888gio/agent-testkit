@@ -192,3 +192,25 @@ def test_effective_trial_explicit_policy_wins_over_adaptive_default():
         trial=TrialPolicy(n=10, threshold=0.8),
     )
     assert tc.effective_trial() == TrialPolicy(n=10, threshold=0.8)
+
+
+def test_skipped_result_must_carry_a_reason():
+    now = _now()
+    fields = dict(
+        test_id="a.b.c",
+        category=Category.reliability,
+        risk=Risk.low,
+        started_at=now,
+        finished_at=now,
+    )
+
+    with pytest.raises(ValidationError, match="must set `error` to the reason"):
+        TestResult(status=Status.skipped, **fields)
+    # Whitespace is not a reason.
+    with pytest.raises(ValidationError):
+        TestResult(status=Status.skipped, error="   ", **fields)
+
+    ok = TestResult(status=Status.skipped, error="requires sandbox", **fields)
+    assert ok.error == "requires sandbox"
+    # Every other status is unaffected.
+    assert TestResult(status=Status.passed, **fields).error is None
