@@ -192,3 +192,5 @@ graph LR
   - touched: tools/analyze_runs.py
 - 2026-09-08 — Persist test result origin (authored/generated/promoted) as a column
   - touched: .gitignore,backend/agentaudit/core/lifecycle.py backend/agentaudit/core/store.py,backend/agentaudit/reports/coverage.py infra/alembic/versions/0020_test_result_origin.py,tests/test_migrate.py tools/analyze_runs.py
+- 2026-09-08 — Pin that demo agents never raise on malformed input
+  - touched: tests/test_domain_agent_robustness.py

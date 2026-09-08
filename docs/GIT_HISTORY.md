@@ -14,3 +14,4 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-08 — Add stdlib script to summarize agentaudit run history
 - 2026-09-08 — Report test origin (authored/generated/promoted) in run analysis
 - 2026-09-08 — Persist test result origin (authored/generated/promoted) as a column
+- 2026-09-08 — Pin that demo agents never raise on malformed input
