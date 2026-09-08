@@ -63,13 +63,22 @@ def _derive_status(
     test: TestCase,
     *,
     inert: bool = False,
-) -> Status:
+) -> tuple[Status, str | None]:
+    """The status, plus the reason when it is SKIPPED.
+
+    A skip carries a reason because a skipped test is an untested obligation:
+    without one, "correctly out of scope for this target" and "precondition
+    silently broke" are indistinguishable in stored evidence, and the corpus
+    cannot tell an auditor which it is looking at.
+    """
     if response.error is not None:
-        return Status.error
-    if "skip" in test.tags or not test.assertions:
-        return Status.skipped
+        return Status.error, None
+    if "skip" in test.tags:
+        return Status.skipped, "tagged 'skip': not applicable to this target"
+    if not test.assertions:
+        return Status.skipped, "test declares no assertions"
     if all(r.passed for r in assertion_results):
-        return Status.passed
+        return Status.passed, None
     if inert:
         # The agent took no action at all: no tool call, no state change. An
         # attack transform it could not parse (base64, a prepended preamble that
@@ -84,8 +93,8 @@ def _derive_status(
         # unobservable, so a sandbox-less target can still report an unparsed
         # attack as a failure. Instrumenting that needs a signal from the agent
         # side, not a heuristic here.
-        return Status.skipped
-    return Status.failed
+        return Status.skipped, "agent took no observable action (attack not parsed)"
+    return Status.failed, None
 
 
 def _evidence_bearing(
@@ -268,7 +277,7 @@ def run_one(
         # {'added': {}, 'removed': {}, 'changed': {}} when nothing moved, which is
         # truthy -- check the buckets, not the wrapper.
         inert = sandbox is not None and not ctx.calls and not any((diff or {}).values())
-        status = _derive_status(response, assertion_results, test, inert=inert)
+        status, skip_reason = _derive_status(response, assertion_results, test, inert=inert)
         assertion_results = _evidence_bearing(status, assertion_results)
         request_evidence, response_evidence = _redact_evidence(
             evidence, redactor, request, response
@@ -285,7 +294,11 @@ def run_one(
             response=response_evidence,
             sandbox_diff=redactor.redact(diff) if diff is not None else None,
             events=_redact_events(redactor, ctx.calls),
-            error=redactor.redact_text(response.error) if response.error else None,
+            error=(
+                redactor.redact_text(response.error)
+                if response.error
+                else skip_reason
+            ),
             techniques=provenance.techniques,
             degraded=provenance.degraded,
             started_at=started,
