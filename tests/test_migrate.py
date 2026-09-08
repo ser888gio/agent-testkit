@@ -15,7 +15,7 @@ from agentaudit.core.store import Store
 runner = CliRunner()
 
 # Bump when a new revision lands in infra/alembic/versions/.
-HEAD = "0020"
+HEAD = "0021"
 
 # Tables SQLite or Alembic own, which say nothing about the application schema.
 NON_APPLICATION_TABLES = frozenset({"alembic_version", "sqlite_sequence"})
@@ -330,3 +330,72 @@ def test_compose_runs_migrations_before_starting_the_ui():
     assert compose["services"]["agentaudit"]["depends_on"]["migrate"] == {
         "condition": "service_completed_successfully"
     }
+
+
+def _seed_run(conn, run_id, *, passed, statuses, stored_status="passed"):
+    score = {
+        "overall_score": 0.0 if passed == 0 else 1.0,
+        "pass_rate": 0.0,
+        "category_scores": [],
+        "critical_failures": 0,
+        "total": len(statuses),
+        "passed": passed,
+        "gate_passed": True,
+        "threshold": 0.0,
+        "incomplete": False,
+    }
+    conn.execute(
+        "INSERT INTO runs (id, org_id, agent_id, started_at, finished_at, status, "
+        "summary_json, score_json) VALUES (?, 'default', 'a', 's', 'f', ?, '{}', ?)",
+        (run_id, stored_status, json.dumps(score)),
+    )
+    for i, status in enumerate(statuses):
+        conn.execute(
+            "INSERT INTO test_results (org_id, run_id, test_id, category, risk, status, "
+            "result_json) VALUES ('default', ?, ?, 'reliability', 'medium', ?, '{}')",
+            (run_id, f"t.{i}", status),
+        )
+
+
+def test_0021_corrects_only_runs_that_gated_green_on_zero_evidence(tmp_path):
+    db_path = tmp_path / "stale.db"
+    cfg = _alembic_config(db_path)
+    alembic_command.upgrade(cfg, "0020")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO orgs (id, name, created_at) "
+        "VALUES ('default', 'Default', '2026-01-01T00:00:00+00:00')"
+    )
+    conn.execute(
+        "INSERT INTO agents (id, org_id, name, target_type, created_at) "
+        "VALUES ('a', 'default', 'A', 'callable', '2026-01-01T00:00:00+00:00')"
+    )
+    # The bug: nothing passed, every test errored, stored green.
+    _seed_run(conn, "stale", passed=0, statuses=["error", "error"])
+    # Left alone: a real verdict, even though it is a bad one.
+    _seed_run(conn, "clean-fail", passed=0, statuses=["failed", "failed"])
+    # Left alone: errored, but there is passing evidence too.
+    _seed_run(conn, "partial", passed=1, statuses=["passed", "error"])
+    conn.commit()
+    conn.close()
+
+    alembic_command.upgrade(cfg, "head")
+
+    conn = sqlite3.connect(db_path)
+    rows = dict(conn.execute("SELECT id, status FROM runs").fetchall())
+    assert rows == {"stale": "failed", "clean-fail": "passed", "partial": "passed"}
+
+    # The embedded report must agree with the row, or a rendered report still
+    # claims the run passed.
+    score = json.loads(
+        conn.execute("SELECT score_json FROM runs WHERE id = 'stale'").fetchone()[0]
+    )
+    assert score["gate_passed"] is False
+    assert score["incomplete"] is True
+
+    untouched = json.loads(
+        conn.execute("SELECT score_json FROM runs WHERE id = 'partial'").fetchone()[0]
+    )
+    assert untouched["gate_passed"] is True
+    conn.close()
