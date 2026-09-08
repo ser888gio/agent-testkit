@@ -15,6 +15,18 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from agentaudit.core.lifecycle import GENERATED_PREFIX, PROMOTED_PREFIX
+
+
+def origin_of(test_id: str) -> str:
+    """authored/generated/promoted, from the test_id prefix (see core/lifecycle.py)."""
+    head = test_id.split(".", 1)[0]
+    if head == GENERATED_PREFIX:
+        return "generated"
+    if head == PROMOTED_PREFIX:
+        return "promoted"
+    return "authored"
+
 
 def load_runs(con: sqlite3.Connection, org_id: str | None) -> list[dict]:
     query = "SELECT id, org_id, agent_id, started_at, finished_at, status, score_json FROM runs"
@@ -52,7 +64,10 @@ def load_test_results(con: sqlite3.Connection, org_id: str | None) -> list[dict]
         params = (org_id,)
     cur = con.execute(query, params)
     cols = [c[0] for c in cur.description]
-    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+    rows = [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+    for row in rows:
+        row["origin"] = origin_of(row["test_id"])
+    return rows
 
 
 def summarize(runs: list[dict], results: list[dict]) -> dict:
@@ -90,6 +105,22 @@ def summarize(runs: list[dict], results: list[dict]) -> dict:
             "avg_latency_ms": sum(latencies) / len(latencies) if latencies else None,
         }
 
+    by_origin = defaultdict(lambda: {"passed": 0, "total": 0})
+    for t in results:
+        o = by_origin[t["origin"]]
+        o["total"] += 1
+        if t["status"] == "passed":
+            o["passed"] += 1
+
+    origin_summary = {
+        origin: {
+            "total": data["total"],
+            "passed": data["passed"],
+            "pass_rate": data["passed"] / data["total"] if data["total"] else None,
+        }
+        for origin, data in by_origin.items()
+    }
+
     slowest = sorted(
         (t for t in results if t["latency_ms"] is not None),
         key=lambda t: t["latency_ms"],
@@ -101,6 +132,7 @@ def summarize(runs: list[dict], results: list[dict]) -> dict:
     return {
         "agent_summary": agent_summary,
         "category_summary": category_summary,
+        "origin_summary": origin_summary,
         "slowest_tests": slowest,
         "failing_tests": failing,
     }
@@ -122,6 +154,11 @@ def print_text_report(runs: list[dict], results: list[dict], summary: dict) -> N
         pr = f"{s['pass_rate']:.0%}" if s["pass_rate"] is not None else "n/a"
         lat = f"{s['avg_latency_ms']:.1f}ms" if s["avg_latency_ms"] is not None else "n/a"
         print(f"  {cat:<25} total={s['total']:<5} pass_rate={pr:<6} avg_latency={lat}")
+
+    print("\n=== By origin (authored/generated/promoted) ===")
+    for origin, s in sorted(summary["origin_summary"].items()):
+        pr = f"{s['pass_rate']:.0%}" if s["pass_rate"] is not None else "n/a"
+        print(f"  {origin:<12} total={s['total']:<5} pass_rate={pr}")
 
     print("\n=== Slowest tests ===")
     for t in summary["slowest_tests"]:
