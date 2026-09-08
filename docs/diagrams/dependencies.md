@@ -208,3 +208,5 @@ graph LR
   - touched: backend/agentaudit/core/agent.py,backend/agentaudit/core/attacker.py backend/agentaudit/core/judge.py,backend/agentaudit/core/runner.py tests/test_attacker.py,tests/test_judge.py tests/test_runner.py
 - 2026-09-08 — feat(evolve): reject self-answering and off-domain candidates before running
   - touched: backend/agentaudit/core/evolve.py,tests/test_evolve.py
+- 2026-09-08 — Fixing the UI on detail grid.
+  - touched: frontend/spa/src/style.css

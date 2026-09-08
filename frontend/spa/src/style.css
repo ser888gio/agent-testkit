@@ -598,6 +598,14 @@ h3 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
+  align-items: stretch;
+  margin: 1rem 0;
+}
+
+.detail-grid > .panel {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
 }
 
 .attention-list { display: grid; gap: 0.5rem; }
@@ -771,7 +779,8 @@ td.truncate {
 
 pre {
   max-height: 26rem;
-  overflow-x: auto;
+  /* max-height without overflow-y clipped long evidence with no way to reach it. */
+  overflow: auto;
   padding: 1rem;
   color: var(--ink);
   background: var(--surface-1);
@@ -1247,6 +1256,18 @@ pre {
   margin-bottom: 0.75rem;
 }
 
+/* Test ids are long and unspaced; without this they run past the panel edge. */
+.pager a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pager a:last-child { text-align: right; }
+
+/* Keeps the pager on the panel floor when the neighbouring Artifacts panel
+   makes this one tall. */
+.pager:last-child { margin-top: auto; margin-bottom: 0; }
+
 .assertion-list,
 .artifact-list {
   display: grid;
@@ -1266,8 +1287,13 @@ pre {
   background: var(--surface-1);
 }
 
-.artifact-list span { font-weight: 600; }
-.artifact-list small { color: var(--ink-subtle); }
+.artifact-list li {
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+.artifact-list strong { min-width: 0; overflow-wrap: anywhere; }
+.artifact-list span { font-weight: 600; justify-self: end; }
+.artifact-list small { grid-column: 1 / -1; color: var(--ink-subtle); }
 
 .option-list {
   display: grid;
