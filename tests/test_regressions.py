@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from agentaudit.core.regressions import compare
+from agentaudit.core.regressions import compare, detect_error_rate_incident
 from agentaudit.core.schema import Category, Risk, RunResult, Status, TestResult
 from agentaudit.core.scoring import score
 
@@ -151,3 +151,63 @@ def test_identical_runs_empty_diff():
     assert diff.critical_regressions == []
     assert diff.score_delta["overall"] == 0.0
     assert diff.score_delta["pass_rate"] == 0.0
+
+
+def _run_with(statuses) -> RunResult:
+    return RunResult(
+        run_id="r",
+        agent_name="a",
+        started_at=_now(),
+        finished_at=_now(),
+        results=[
+            _tr(f"t.{i}", Category.reliability, Risk.low, s) for i, s in enumerate(statuses)
+        ],
+    )
+
+
+ALL_ERROR = [Status.error] * 4
+ALL_PASS = [Status.passed] * 4
+
+
+def test_error_rate_spike_against_a_clean_baseline():
+    incident = detect_error_rate_incident(_run_with(ALL_ERROR), [0.0, 0.0, 0.0, 0.1])
+
+    assert incident is not None
+    assert incident.error_rate == 1.0
+    assert incident.baseline == 0.0
+    assert incident.no_baseline is False
+    assert (incident.errored, incident.total) == (4, 4)
+
+
+def test_a_target_that_always_errors_is_not_a_spike():
+    # Chronically broken is a different problem from newly broken, and firing
+    # every run would make the flag noise.
+    assert detect_error_rate_incident(_run_with(ALL_ERROR), [1.0, 1.0, 1.0, 1.0]) is None
+
+
+def test_first_run_erroring_outright_is_flagged_without_a_baseline():
+    # The shape the 4 Sep railway cluster actually has: an agent's first run
+    # errors on every test, then recovers once configured. A pure jump rule
+    # would miss it -- there is no history to jump from.
+    incident = detect_error_rate_incident(_run_with(ALL_ERROR), [])
+
+    assert incident is not None
+    assert incident.no_baseline is True
+    assert incident.baseline is None
+
+
+def test_a_healthy_run_is_not_an_incident():
+    assert detect_error_rate_incident(_run_with(ALL_PASS), [0.0, 0.0, 0.0]) is None
+    # ...and neither is a run that merely failed: a failure is a verdict.
+    assert detect_error_rate_incident(_run_with([Status.failed] * 4), [0.0, 0.0, 0.0]) is None
+
+
+def test_a_moderate_error_rate_stays_below_the_floor():
+    # 1 in 4 errored: the score is still computed on a majority of the suite.
+    assert detect_error_rate_incident(
+        _run_with([Status.error, *[Status.passed] * 3]), [0.0, 0.0, 0.0]
+    ) is None
+
+
+def test_empty_run_is_not_an_incident():
+    assert detect_error_rate_incident(_run_with([]), [0.0, 0.0, 0.0]) is None
