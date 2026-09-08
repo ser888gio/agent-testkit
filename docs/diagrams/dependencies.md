@@ -210,3 +210,5 @@ graph LR
   - touched: backend/agentaudit/core/evolve.py,tests/test_evolve.py
 - 2026-09-08 — Fixing the UI on detail grid.
   - touched: frontend/spa/src/style.css
+- 2026-09-08 — chore(infra): apply the worker's container hardening to the web service
+  - touched: infra/deploy-ionos.sh,infra/docker-compose.yml tests/test_phase2_infra.py

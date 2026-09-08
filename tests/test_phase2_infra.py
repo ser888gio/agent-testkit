@@ -59,3 +59,17 @@ def test_compose_healthcheck_is_a_single_valid_python_command():
     assert "\n" not in probe
     source = probe.split("python -c ", 1)[1].strip('"')
     compile(source, "<healthcheck>", "exec")
+
+
+def test_data_mounting_services_carry_the_same_container_hardening():
+    """The internet-facing service guards the same volume the worker does."""
+    services = _compose()["services"]
+    for name in ("agentaudit", "worker"):
+        service = services[name]
+        assert service["read_only"] is True, name
+        assert service["cap_drop"] == ["ALL"], name
+        assert "no-new-privileges:true" in service["security_opt"], name
+        assert service["pids_limit"] == 512, name
+        assert service["mem_limit"] == "2g", name
+        # read_only leaves no writable temp dir, and uvicorn/Python want one.
+        assert "/tmp" in service["tmpfs"], name
