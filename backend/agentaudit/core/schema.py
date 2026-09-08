@@ -37,6 +37,12 @@ class Status(str, Enum):
     failed = "failed"
     error = "error"
     skipped = "skipped"
+    # The harness broke, not the agent: an exception inside the runner, or an
+    # isolation worker that died. `error` means the *agent* failed to answer
+    # (timeout, HTTP 5xx) and is real evidence about the target; this is a bug
+    # in our own code and is evidence about nothing. Scored separately so a
+    # crash in our regex cannot lower a customer's score.
+    harness_error = "harness_error"
 
 
 class Assertion(BaseModel):

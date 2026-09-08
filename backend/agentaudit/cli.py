@@ -122,7 +122,13 @@ def _print_table(rr, report) -> None:
     for r in rr.results:
         counts = by_cat.setdefault(r.category.value, {"pass": 0, "fail": 0, "err": 0, "skip": 0})
         counts[
-            {"passed": "pass", "failed": "fail", "error": "err", "skipped": "skip"}[r.status.value]
+            {
+                "passed": "pass",
+                "failed": "fail",
+                "error": "err",
+                "harness_error": "harness",
+                "skipped": "skip",
+            }[r.status.value]
         ] += 1
 
     typer.echo(f"{'CATEGORY':<20}{'PASS':>6}{'FAIL':>6}{'ERR':>6}{'SKIP':>6}")
