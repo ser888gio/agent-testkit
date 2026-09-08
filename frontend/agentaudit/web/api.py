@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from agentaudit.core import llm, runview
+from agentaudit.core import credentials, llm, runview
 from agentaudit.core.assertions import REGISTRY as ASSERTION_REGISTRY
 from agentaudit.core.attacks import describe_transforms
 from agentaudit.core.config import known_sandboxes
@@ -885,6 +885,14 @@ def save_llm_settings(body: LLMSettingsBody, principal: Principal = Depends(requ
         if not parts.hostname or parts.username or parts.password:
             raise HTTPException(
                 status_code=400, detail=f"{role} endpoint must be a URL without credentials"
+            )
+        if spec.api_key is not None and not credentials.is_reference(spec.api_key):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{role} api_key must be an environment reference like ${{VAR}}, "
+                    "not a literal key; the operator provisions the value on the worker"
+                ),
             )
         store.save_llm_settings(
             principal.org_id, role, spec.endpoint, spec.model, spec.api_key or None

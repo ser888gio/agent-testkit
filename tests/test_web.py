@@ -299,7 +299,7 @@ def test_settings_api_saves_llm_role_and_never_returns_the_key(tmp_path, monkeyp
             "attacker": {
                 "endpoint": "https://api.openai.com/v1/chat/completions",
                 "model": "gpt-4o-mini",
-                "api_key": "sk-secret-value",
+                "api_key": "${ACME_OPENAI_KEY}",
             },
             "judge": None,
         },
@@ -310,7 +310,7 @@ def test_settings_api_saves_llm_role_and_never_returns_the_key(tmp_path, monkeyp
     assert body["llm"]["attacker"]["model"] == "gpt-4o-mini"
     assert body["llm"]["attacker"]["api_key_set"] is True
     assert "judge" not in body["llm"]
-    assert "sk-secret-value" not in json.dumps(body)
+    assert "ACME_OPENAI_KEY" not in json.dumps(body)
 
 
 def test_settings_api_keeps_stored_key_when_none_is_sent(tmp_path, monkeypatch):
@@ -319,13 +319,34 @@ def test_settings_api_keeps_stored_key_when_none_is_sent(tmp_path, monkeypatch):
     client = _client(db, monkeypatch)
     role = {"endpoint": "https://api.openai.com/v1/chat/completions", "model": "m"}
 
-    client.put("/api/settings/llm", json={"attacker": {**role, "api_key": "sk-keep-me"}})
+    client.put("/api/settings/llm", json={"attacker": {**role, "api_key": "${ACME_OPENAI_KEY}"}})
     # a second save that only renames the model must not wipe the key
     client.put("/api/settings/llm", json={"attacker": {**role, "model": "m2"}})
 
     body = client.get("/api/settings").json()
     assert body["llm"]["attacker"]["model"] == "m2"
     assert body["llm"]["attacker"]["api_key_set"] is True
+
+
+def test_settings_api_rejects_a_literal_api_key(tmp_path, monkeypatch):
+    """Keys live in the worker's environment; the row holds only a reference."""
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.put(
+        "/api/settings/llm",
+        json={
+            "attacker": {
+                "endpoint": "https://api.openai.com/v1/chat/completions",
+                "model": "m",
+                "api_key": "sk-a-real-looking-literal",
+            }
+        },
+    )
+    assert resp.status_code == 400
+    assert "${VAR}" in resp.json()["detail"]
+    assert client.get("/api/settings").json()["llm"] == {}
 
 
 def test_settings_api_rejects_a_non_https_llm_endpoint(tmp_path, monkeypatch):

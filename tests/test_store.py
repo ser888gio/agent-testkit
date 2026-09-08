@@ -857,3 +857,9 @@ def test_test_history_is_empty_for_an_unknown_test_and_org_scoped():
 
     assert store.analytics.test_history(DEFAULT_ORG, "never.ran") == []
     assert store.analytics.test_history("other-org", "flaky.case") == []
+
+
+def test_save_llm_settings_refuses_a_literal_api_key():
+    store = Store(":memory:")
+    with pytest.raises(ValueError, match="environment reference"):
+        store.save_llm_settings("org-a", "attacker", "https://api.test/v1", "m", "sk-literal")

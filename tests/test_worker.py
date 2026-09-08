@@ -1146,3 +1146,24 @@ def test_run_against_an_already_profiled_target_does_not_reprobe(tmp_path, monke
 
     # ShapeUnknown would have failed the job had detection run at all.
     assert len(store.list_runs("org-a", "shape-target")) == 1
+
+
+def test_tenant_llm_config_resolves_a_key_reference(tmp_path, monkeypatch):
+    store = Store(str(tmp_path / "worker.db"))
+    store.save_llm_settings("org-a", "attacker", "https://api.test/v1", "m", "${ACME_KEY}")
+    monkeypatch.setenv("ACME_KEY", "sk-provisioned-on-the-worker")
+
+    config = worker._tenant_llm_config(store, "org-a")
+
+    assert config.attacker.api_key_literal == "sk-provisioned-on-the-worker"
+
+
+def test_tenant_llm_config_yields_no_key_for_an_unprovisioned_reference(tmp_path, monkeypatch):
+    """A name the operator never provisioned turns the role off, not the job."""
+    store = Store(str(tmp_path / "worker.db"))
+    store.save_llm_settings("org-a", "attacker", "https://api.test/v1", "m", "${MISSING_KEY}")
+    monkeypatch.delenv("MISSING_KEY", raising=False)
+
+    config = worker._tenant_llm_config(store, "org-a")
+
+    assert config.attacker.api_key_literal is None
