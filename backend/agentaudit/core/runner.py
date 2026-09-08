@@ -175,6 +175,8 @@ def _run_turns(
     agent: Agent | None,
     test: TestCase,
     run_turn: Callable[[Any, float], AgentResponse] | None,
+    sandbox: Sandbox | None = None,
+    redactor: Redactor | None = None,
 ) -> tuple[AgentResponse, Any, _Provenance]:
     # Single-input tests run one turn; multi-turn tests run each turn in
     # sequence WITHOUT resetting the sandbox between turns, so state (and
@@ -184,12 +186,25 @@ def _run_turns(
     # Returns the final response, the turns actually sent (an adaptive test's
     # turns are generated here and are the only record of them), and how they
     # were produced.
+    # Events accumulate on the sandbox across the whole test, so the delta
+    # since the previous turn is this turn's side effects. Tracked by count
+    # rather than by clearing: clearing would rob the assertions of the full
+    # ledger they run against after the last turn.
+    seen = 0
+
     def _send(turn: Any) -> AgentResponse:
+        nonlocal seen
         if run_turn is None:
             if agent is None:  # pragma: no cover - internal invariant
                 raise ValueError("agent is required without an isolated turn runner")
-            return _run_with_timeout(agent, turn, test.timeout_s)
-        return run_turn(turn, test.timeout_s)
+            response = _run_with_timeout(agent, turn, test.timeout_s)
+        else:
+            response = run_turn(turn, test.timeout_s)
+        if sandbox is not None and redactor is not None:
+            fresh = sandbox.events[seen:]
+            seen += len(fresh)
+            response.events = _redact_events(redactor, fresh)
+        return response
 
     if test.adaptive is not None:
         # Both model-driven layers are opt-in and return None when
@@ -251,7 +266,9 @@ def run_one(
         else:
             before = None
 
-        response, request, provenance = _run_turns(agent, test, run_turn)
+        response, request, provenance = _run_turns(
+            agent, test, run_turn, sandbox=sandbox, redactor=redactor
+        )
 
         # An isolated turn runner kills the agent worker before returning a
         # timeout, so the supervisor-owned sandbox is stable.  Direct calls to

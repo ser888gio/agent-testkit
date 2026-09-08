@@ -20,4 +20,5 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-08 — Require a skip reason, and render it
 - 2026-09-08 — Pin that demo agents never raise on malformed input
 - 2026-09-08 — Correct stored runs that gated green on zero evidence
+- 2026-09-08 — feat(core): give the attacker and judge the sandbox event ledger
 - 2026-09-08 — feat(evolve): reject self-answering and off-domain candidates before running

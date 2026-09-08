@@ -6,13 +6,14 @@ import importlib
 import inspect
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
 
 from agentaudit.core.config import CallableSpec, HTTPSpec, TargetConfig
 from agentaudit.core.egress import ValidatedEndpoint
+from agentaudit.core.schema import SandboxEvent
 
 _HTTPX_REQUEST_KWARGS = {"json", "params", "data", "content"}
 _INPUT_PLACEHOLDER = "{{ input }}"
@@ -25,6 +26,11 @@ class AgentResponse:
     latency_ms: float | None = None
     status_code: int | None = None
     error: str | None = None
+    # Side effects this turn caused, already redacted. What the agent *did*, as
+    # opposed to what it said -- an agent can deny in text and still have moved
+    # money, so anything judging the turn needs both. The runner fills this in
+    # from the sandbox; a text-only target leaves it empty.
+    events: list[SandboxEvent] = field(default_factory=list)
 
     def contains_any(self, needles: list[str]) -> bool:
         lowered = self.text.lower()
