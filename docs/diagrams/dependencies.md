@@ -212,3 +212,11 @@ graph LR
   - touched: frontend/spa/src/style.css
 - 2026-09-08 — chore(infra): apply the worker's container hardening to the web service
   - touched: infra/deploy-ionos.sh,infra/docker-compose.yml tests/test_phase2_infra.py
+- 2026-09-08 — test(web): sweep every route for cross-org leakage
+  - touched: tests/test_web.py
+- 2026-09-08 — feat(llm): store an environment reference for API keys, never a literal
+  - touched: backend/agentaudit/core/store.py,backend/agentaudit/worker.py frontend/agentaudit/web/api.py,frontend/spa/src/pages/Settings.tsx infra/alembic/versions/0022_clear_literal_llm_api_keys.py,tests/test_migrate.py tests/test_store.py,tests/test_web.py tests/test_worker.py
+- 2026-09-08 — feat(auth): revoke stale authorization on mutating requests
+  - touched: frontend/agentaudit/web/auth.py,tests/test_auth.py
+- 2026-09-08 — fix(store): enable WAL and align the busy timeout at 30s
+  - touched: backend/agentaudit/core/store.py,tests/test_store.py

@@ -339,7 +339,11 @@ class _SQLitePool:
         conn = sqlite3.connect(self._path, check_same_thread=False, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 5000")
+        # Three containers write this one file; WAL keeps readers off the writer's
+        # back. Persistent DB property, so setting it per-connection is idempotent.
+        conn.execute("PRAGMA journal_mode = WAL")
+        # Runs after connect() and silently overrides its timeout=, so the two must agree.
+        conn.execute("PRAGMA busy_timeout = 30000")
         conn.executescript(_SCHEMA)
         conn.commit()
         return conn
@@ -1127,14 +1131,15 @@ class Store:
     def save_llm_settings(
         self, org_id: str, role: str, endpoint: str, model: str, api_key: str | None
     ) -> None:
-        """Store one tenant's own model for a role. `api_key=None` keeps the stored key.
+        """Store one tenant's own model for a role. `api_key=None` keeps the stored value.
 
-        This is the one place a credential literal is persisted, and it is
-        deliberate: a tenant supplying their own key has nowhere else to put it
-        -- `save_target` refuses literals because a *target* config is partner
-        input, while this row is the operator's own account setting. It is never
-        returned by any read; `get_llm_settings` reports only whether it is set.
+        `api_key` is an environment reference (`${VAR}`), never a literal, for
+        the same reason `save_target` refuses one: this row sits on an
+        unencrypted volume shared by every tenant. The worker resolves the name
+        from its own environment at dial time.
         """
+        if api_key is not None and not credentials.is_reference(api_key):
+            raise ValueError("llm_settings.api_key must be an environment reference like ${VAR}")
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as conn, conn:
             self._ensure_org(conn, org_id, now)

@@ -19,6 +19,7 @@ from fastapi import Depends, HTTPException, Request
 from jwt import PyJWKClient
 from jwt import exceptions as jwt_exceptions
 
+from agentaudit.core.intake import demo_mode
 from agentaudit.core.store import DEFAULT_ORG
 
 _LOG = logging.getLogger(__name__)
@@ -36,6 +37,10 @@ LOGIN_STATE_COOKIE = "agentaudit_login_state"
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 _IDP_UNAVAILABLE = "identity provider unavailable"
 _INVALID_TOKEN = "invalid token"
+_REVOKED = "authorization revoked"
+# A session caches authorization, so this is how long a removed or demoted user
+# keeps read access. Writes re-check with the IdP, so this bounds reads only.
+SESSION_TTL_SECONDS = 1800
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,8 @@ class _LoginAttempt:
 class _Session:
     principal: Principal
     expires_at: float
+    # Retained so a mutating request can re-ask the IdP who this user still is.
+    access_token: str = ""
 
 
 _OIDC_ENV_VARS = (
@@ -252,6 +259,11 @@ def _principal_from_token(
                 "OIDC token carries no usable %s; claims present: %s", ORG_CLAIM, sorted(claims)
             )
             raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
+        # On a shared instance anyone who can finish a Clerk login could
+        # otherwise mint their own workspace and run jobs on the box, so a
+        # missing org is a hard refusal outside the demo deployment.
+        if not demo_mode():
+            raise HTTPException(status_code=403, detail="organization membership required")
         org_id = f"user:{subject.strip()}"
         # Sole occupant of a tenant nobody else can reach, so admin over it.
         roles = roles or frozenset({"admin"})
@@ -306,6 +318,44 @@ def current_principal(request: Request) -> Principal:
     return session.principal
 
 
+def _revalidate_session(session_id: str) -> None:
+    """Re-ask the IdP whether this session may still write.
+
+    A session freezes org membership and roles at login, so removing a user from
+    a company's Clerk org would otherwise leave them writing until the token
+    expires. Reads tolerate that staleness (bounded by `SESSION_TTL_SECONDS`);
+    writes do not. If the IdP is unreachable the mutation is denied rather than
+    falling back to the cached principal, so an IdP outage degrades to read-only.
+    """
+    settings = _settings()
+    if settings is None:
+        return
+    with _state_lock:
+        session = _sessions.get(session_id)
+    if session is None or not session.access_token:
+        raise HTTPException(status_code=401, detail="authentication required")
+    try:
+        fresh, _claims = _principal_from_token(
+            session.access_token,
+            settings,
+            require_azp=False,
+            identity=_userinfo(settings, session.access_token),
+        )
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        _end_session(session_id)
+        raise HTTPException(status_code=403, detail=_REVOKED) from exc
+    if fresh.org_id != session.principal.org_id or not fresh.can_mutate:
+        _end_session(session_id)
+        raise HTTPException(status_code=403, detail=_REVOKED)
+
+
+def _end_session(session_id: str) -> None:
+    with _state_lock:
+        _sessions.pop(session_id, None)
+
+
 async def require_admin(
     request: Request,
     principal: Principal = Depends(current_principal),
@@ -320,6 +370,7 @@ async def require_admin(
             supplied = str(form.get("csrf_token", ""))
         if not supplied or not secrets.compare_digest(supplied, principal.csrf_token):
             raise HTTPException(status_code=403, detail="invalid CSRF token")
+        _revalidate_session(request.cookies.get(SESSION_COOKIE, ""))
     return principal
 
 
@@ -464,9 +515,13 @@ def complete_browser_login(
     csrf_token = secrets.token_urlsafe(32)
     principal = replace(principal, auth_method="session", csrf_token=csrf_token)
     session_id = secrets.token_urlsafe(48)
-    expires_at = float(claims["exp"])
+    # The IdP token can live for hours; cap the session so cached authorization
+    # goes stale in minutes, not for the token's whole lifetime.
+    expires_at = min(float(claims["exp"]), time.time() + SESSION_TTL_SECONDS)
     with _state_lock:
-        _sessions[session_id] = _Session(principal=principal, expires_at=expires_at)
+        _sessions[session_id] = _Session(
+            principal=principal, expires_at=expires_at, access_token=access_token
+        )
     return session_id, principal, attempt.next_url
 
 

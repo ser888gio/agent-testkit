@@ -188,17 +188,20 @@ export function SettingsPage() {
               </label>
 
               <label>
-                API key
+                API key reference
                 <input
-                  type="password"
                   autoComplete="off"
                   value={drafts[key].api_key}
                   onChange={(e) => set(key, "api_key", e.target.value)}
-                  placeholder={view.llm[key]?.api_key_set ? "Stored — leave blank to keep" : ""}
+                  placeholder={
+                    view.llm[key]?.api_key_set ? "Stored — leave blank to keep" : "${OPENAI_API_KEY}"
+                  }
                   data-testid={`${key}-key`}
                 />
                 <span className="quiet">
-                  Blank is fine for a local model server that needs no key.
+                  The name of an environment variable your operator has provisioned on the
+                  worker, written as ${"${VAR}"}. Keys themselves are never stored here. Blank
+                  is fine for a local model server that needs no key.
                 </span>
               </label>
             </div>
