@@ -21,7 +21,7 @@ import time
 import uuid
 from collections.abc import Callable
 
-from agentaudit.core import llm
+from agentaudit.core import credentials, llm
 from agentaudit.core.audit import execute as execute_audit
 from agentaudit.core.campaign import CampaignBudget, run_campaign
 from agentaudit.core.config import (
@@ -327,12 +327,22 @@ def _apply_selection(job: JobRow, tests: list) -> list:
     return selected
 
 
+def _resolve_key_reference(reference: str | None) -> str | None:
+    """`${VAR}` -> the worker's value for VAR, or None when it is not provisioned."""
+    if not reference or not credentials.is_reference(reference):
+        return None
+    return os.environ.get(reference.strip()[2:-1]) or None
+
+
 def _tenant_llm_config(store: Store, org_id: str) -> llm.LLMConfig | None:
     """This org's own attacker/judge models, or None to fall back to the deployment's.
 
-    The key is read here and handed to the config object rather than exported to
-    `os.environ`: workers run jobs for several orgs concurrently, and a process
-    env var is shared by all of them.
+    The stored `api_key` is an environment reference (`${VAR}`), not a secret;
+    it is resolved from the worker's own environment here and handed to the
+    config object rather than exported to `os.environ`, because workers run jobs
+    for several orgs concurrently and a process env var is shared by all of them.
+    An unprovisioned name resolves to None, which existing code reads as "role
+    off" -- the job degrades to the scripted ladder instead of failing.
     """
     rows = store.get_llm_secrets(org_id)
     if not rows:
@@ -343,7 +353,9 @@ def _tenant_llm_config(store: Store, org_id: str) -> llm.LLMConfig | None:
         if row is None:
             return None
         return llm.RoleConfig(
-            model=row["model"], endpoint=row["endpoint"], api_key_literal=row["api_key"]
+            model=row["model"],
+            endpoint=row["endpoint"],
+            api_key_literal=_resolve_key_reference(row["api_key"]),
         )
 
     return llm.LLMConfig(attacker=role("attacker"), judge=role("judge"))
