@@ -170,6 +170,10 @@ machine that is not this VPS:
      /var/backups/agentaudit to a scratch copy and run PRAGMA integrity_check
      plus SELECT count(*) FROM runs on it. An unrestored backup is a guess,
      not evidence.
+  6. Remove a user from the Clerk org and confirm a mutating request now fails
+     inside their still-live session.
+  7. $COMPOSE exec agentaudit sqlite3 /data/agentaudit.db "PRAGMA journal_mode;"
+     must print wal.
 
 Logs: $COMPOSE logs -f agentaudit
 EOF

@@ -24,3 +24,8 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-08 — feat(evolve): reject self-answering and off-domain candidates before running
 - 2026-09-08 — Fixing the UI on detail grid.
 - 2026-09-08 — chore(infra): nightly sqlite backup with 14-day rotation
+- 2026-09-08 — chore(infra): apply the worker's container hardening to the web service
+- 2026-09-08 — test(web): sweep every route for cross-org leakage
+- 2026-09-08 — feat(llm): store an environment reference for API keys, never a literal
+- 2026-09-08 — feat(auth): revoke stale authorization on mutating requests
+- 2026-09-08 — fix(store): enable WAL and align the busy timeout at 30s

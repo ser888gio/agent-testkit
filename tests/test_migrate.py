@@ -15,7 +15,7 @@ from agentaudit.core.store import Store
 runner = CliRunner()
 
 # Bump when a new revision lands in infra/alembic/versions/.
-HEAD = "0021"
+HEAD = "0022"
 
 # Tables SQLite or Alembic own, which say nothing about the application schema.
 NON_APPLICATION_TABLES = frozenset({"alembic_version", "sqlite_sequence"})
@@ -399,3 +399,29 @@ def test_0021_corrects_only_runs_that_gated_green_on_zero_evidence(tmp_path):
     )
     assert untouched["gate_passed"] is True
     conn.close()
+
+
+def test_0022_clears_stored_literal_api_keys(tmp_path):
+    db_path = tmp_path / "keys.db"
+    cfg = _alembic_config(db_path)
+    alembic_command.upgrade(cfg, "0021")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO orgs (id, name, created_at) "
+        "VALUES ('org-a', 'A', '2026-01-01T00:00:00+00:00')"
+    )
+    conn.execute(
+        "INSERT INTO llm_settings (org_id, role, endpoint, model, api_key, updated_at) "
+        "VALUES ('org-a', 'attacker', 'https://api.test/v1', 'm', 'sk-literal', 'now')"
+    )
+    conn.commit()
+    conn.close()
+
+    alembic_command.upgrade(cfg, "0022")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT api_key FROM llm_settings").fetchall() == [(None,)]
+    finally:
+        conn.close()

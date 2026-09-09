@@ -7,6 +7,7 @@ error is not enough, because a 500 or a silently-accepted claim would pass it.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -324,7 +325,8 @@ def test_browser_login_reads_org_from_userinfo(oidc, monkeypatch):
 
 
 def test_browser_login_without_org_gets_private_tenant(oidc, monkeypatch):
-    """A stranger with no Clerk org still logs in, isolated in their own tenant."""
+    """Under demo mode a stranger with no Clerk org still logs in, isolated."""
+    monkeypatch.setenv("AGENTAUDIT_DEMO_MODE", "1")
     _destination, state = auth.begin_browser_login("/")
     token = _token(org_id=None, roles=None, email=None, azp=None)
     monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": token})
@@ -343,3 +345,92 @@ def test_bearer_token_without_org_is_still_401(oidc):
     mint its own tenant would turn any token this IdP issues into a workspace.
     """
     _expect_401(_request(_token(org_id=None)))
+
+
+def test_browser_login_without_org_is_403_outside_demo_mode(oidc, monkeypatch):
+    """On a shared instance a stranger cannot mint their own workspace."""
+    monkeypatch.delenv("AGENTAUDIT_DEMO_MODE", raising=False)
+    _destination, state = auth.begin_browser_login("/")
+    token = _token(org_id=None, roles=None, email=None, azp=None)
+    monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": token})
+    monkeypatch.setattr(auth, "_userinfo", lambda _s, _t: {"email": "stranger@example.test"})
+
+    with pytest.raises(HTTPException) as exc:
+        auth.complete_browser_login("code", state, state)
+    assert exc.value.status_code == 403
+
+
+def _login(monkeypatch, userinfo: dict) -> str:
+    _destination, state = auth.begin_browser_login("/")
+    token = _token(org_id=None, roles=None, email=None, azp=None, exp=int(time.time()) + 86400)
+    monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": token})
+    monkeypatch.setattr(auth, "_userinfo", lambda _s, _t: userinfo)
+    session_id, _principal, _next_url = auth.complete_browser_login("code", state, state)
+    return session_id
+
+
+_ADMIN = {"org_id": "acme", "roles": "org:admin", "email": "user@acme.test"}
+
+
+def test_session_lifetime_is_capped_below_a_long_lived_token(oidc, monkeypatch):
+    session_id = _login(monkeypatch, _ADMIN)
+    assert auth._sessions[session_id].expires_at <= time.time() + auth.SESSION_TTL_SECONDS
+
+
+def test_revalidation_passes_while_membership_holds(oidc, monkeypatch):
+    session_id = _login(monkeypatch, _ADMIN)
+    auth._revalidate_session(session_id)
+    assert session_id in auth._sessions
+
+
+def test_revalidation_refuses_and_drops_a_demoted_session(oidc, monkeypatch):
+    session_id = _login(monkeypatch, _ADMIN)
+    monkeypatch.setattr(auth, "_userinfo", lambda _s, _t: {**_ADMIN, "roles": "org:viewer"})
+
+    with pytest.raises(HTTPException) as exc:
+        auth._revalidate_session(session_id)
+    assert exc.value.status_code == 403
+    assert session_id not in auth._sessions
+
+
+def test_revalidation_refuses_and_drops_a_session_removed_from_its_org(oidc, monkeypatch):
+    session_id = _login(monkeypatch, _ADMIN)
+    monkeypatch.setattr(auth, "_userinfo", lambda _s, _t: {**_ADMIN, "org_id": "other"})
+
+    with pytest.raises(HTTPException) as exc:
+        auth._revalidate_session(session_id)
+    assert exc.value.status_code == 403
+    assert session_id not in auth._sessions
+
+
+def test_idp_outage_denies_the_write_but_keeps_the_session(oidc, monkeypatch):
+    """Fail closed on writes, but do not log the user out over a Clerk blip."""
+    session_id = _login(monkeypatch, _ADMIN)
+
+    def _down(_settings, _token):
+        raise HTTPException(status_code=503, detail="identity provider unavailable")
+
+    monkeypatch.setattr(auth, "_userinfo", _down)
+
+    with pytest.raises(HTTPException) as exc:
+        auth._revalidate_session(session_id)
+    assert exc.value.status_code == 503
+    assert session_id in auth._sessions
+
+
+def test_require_admin_revalidates_only_session_mutations(oidc, monkeypatch):
+    session_id = _login(monkeypatch, _ADMIN)
+    principal = auth._sessions[session_id].principal
+    calls = []
+    monkeypatch.setattr(auth, "_revalidate_session", lambda sid: calls.append(sid))
+
+    def _call(method: str, headers: dict) -> None:
+        request = SimpleNamespace(
+            headers=headers, cookies={auth.SESSION_COOKIE: session_id}, method=method
+        )
+        asyncio.run(auth.require_admin(request, principal))
+
+    _call("GET", {})
+    assert calls == []
+    _call("POST", {"x-csrf-token": principal.csrf_token})
+    assert calls == [session_id]

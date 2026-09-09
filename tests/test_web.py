@@ -299,7 +299,7 @@ def test_settings_api_saves_llm_role_and_never_returns_the_key(tmp_path, monkeyp
             "attacker": {
                 "endpoint": "https://api.openai.com/v1/chat/completions",
                 "model": "gpt-4o-mini",
-                "api_key": "sk-secret-value",
+                "api_key": "${ACME_OPENAI_KEY}",
             },
             "judge": None,
         },
@@ -310,7 +310,7 @@ def test_settings_api_saves_llm_role_and_never_returns_the_key(tmp_path, monkeyp
     assert body["llm"]["attacker"]["model"] == "gpt-4o-mini"
     assert body["llm"]["attacker"]["api_key_set"] is True
     assert "judge" not in body["llm"]
-    assert "sk-secret-value" not in json.dumps(body)
+    assert "ACME_OPENAI_KEY" not in json.dumps(body)
 
 
 def test_settings_api_keeps_stored_key_when_none_is_sent(tmp_path, monkeypatch):
@@ -319,13 +319,34 @@ def test_settings_api_keeps_stored_key_when_none_is_sent(tmp_path, monkeypatch):
     client = _client(db, monkeypatch)
     role = {"endpoint": "https://api.openai.com/v1/chat/completions", "model": "m"}
 
-    client.put("/api/settings/llm", json={"attacker": {**role, "api_key": "sk-keep-me"}})
+    client.put("/api/settings/llm", json={"attacker": {**role, "api_key": "${ACME_OPENAI_KEY}"}})
     # a second save that only renames the model must not wipe the key
     client.put("/api/settings/llm", json={"attacker": {**role, "model": "m2"}})
 
     body = client.get("/api/settings").json()
     assert body["llm"]["attacker"]["model"] == "m2"
     assert body["llm"]["attacker"]["api_key_set"] is True
+
+
+def test_settings_api_rejects_a_literal_api_key(tmp_path, monkeypatch):
+    """Keys live in the worker's environment; the row holds only a reference."""
+    db = str(tmp_path / "web.db")
+    _seed_store(db)
+    client = _client(db, monkeypatch)
+
+    resp = client.put(
+        "/api/settings/llm",
+        json={
+            "attacker": {
+                "endpoint": "https://api.openai.com/v1/chat/completions",
+                "model": "m",
+                "api_key": "sk-a-real-looking-literal",
+            }
+        },
+    )
+    assert resp.status_code == 400
+    assert "${VAR}" in resp.json()["detail"]
+    assert client.get("/api/settings").json()["llm"] == {}
 
 
 def test_settings_api_rejects_a_non_https_llm_endpoint(tmp_path, monkeypatch):
@@ -779,10 +800,10 @@ _PLACEHOLDER_VALUES = {
 }
 
 
-def _fill(path: str) -> str:
+def _fill(path: str, values: dict[str, str] | None = None) -> str:
     def sub(match: re.Match[str]) -> str:
         name = match.group(1)
-        value = _PLACEHOLDER_VALUES.get(name)
+        value = (values or _PLACEHOLDER_VALUES).get(name)
         assert value is not None, (
             f"route parameter {{{name}}} has no substitution entry in "
             "_PLACEHOLDER_VALUES; add one so the auth walk actually exercises "
@@ -795,14 +816,34 @@ def _fill(path: str) -> str:
     return filled
 
 
-def _concrete_paths() -> list[tuple[str, str]]:
+def _walk_routes(routes, prefix: str = ""):
+    """Flatten the route tree, descending into included routers and mounts.
+
+    Since FastAPI 0.139 an `include_router` call is kept as one opaque
+    `_IncludedRouter` node -- no `path`, no `routes`, the real endpoints hidden
+    behind `original_router` and a prefix in `include_context`. Reading
+    `app.routes` alone therefore sees a single entry where the whole /api
+    surface should be, which silently reduced the walks below to one route.
+    """
+    for route in routes:
+        context = getattr(route, "include_context", None)
+        if context is not None:
+            yield from _walk_routes(route.original_router.routes, prefix + context.prefix)
+            continue
+        path = prefix + getattr(route, "path", "")
+        children = getattr(route, "routes", None)
+        if children:
+            yield from _walk_routes(children, path)
+            continue
+        yield path, getattr(route, "methods", set()) or set()
+
+
+def _concrete_paths(values: dict[str, str] | None = None) -> list[tuple[str, str]]:
     """Every app route, with path params filled in. Static mounts excluded."""
     from agentaudit.web.app import app
 
     out = []
-    for route in app.routes:
-        path = getattr(route, "path", "")
-        methods = getattr(route, "methods", set()) or set()
+    for path, methods in _walk_routes(app.routes):
         if (
             not path.startswith("/")
             or path.startswith("/static")
@@ -811,7 +852,7 @@ def _concrete_paths() -> list[tuple[str, str]]:
         ):
             continue
         for method in sorted(methods - {"HEAD", "OPTIONS"}):
-            out.append((method, _fill(path)))
+            out.append((method, _fill(path, values)))
     return out
 
 
@@ -832,6 +873,101 @@ def test_every_route_requires_a_token(tmp_path, monkeypatch):
         if resp.status_code != 401:
             unprotected.append((method, path, resp.status_code))
     assert not unprotected
+
+
+def _seed_org_a(tmp_path, monkeypatch) -> tuple[str, dict[str, str], set[str]]:
+    """Org A's resources, the ids that address them, and the strings that betray them."""
+    db, run_id, _body = _seed_artifact(tmp_path, monkeypatch)
+    store = Store(db)
+    artifact_id = store.list_artifacts(DEFAULT_ORG, run_id)[0].id
+    job_id = store.jobs.enqueue(DEFAULT_ORG, "web-target", "web-pack")
+    store.save_pack(DEFAULT_ORG, "web-pack", "Web pack", [])
+    store.save_pack_test(
+        DEFAULT_ORG,
+        "web-pack",
+        {
+            "id": "orga.secret.case",
+            "category": "reliability",
+            "input": "hi",
+            "assertions": [{"name": "status_ok"}],
+        },
+    )
+    ids = {
+        "run_id": run_id,
+        "test_id": "a.pass.case",
+        "job_id": job_id,
+        "fmt": "md",
+        "artifact_id": artifact_id,
+        "agent_id": "web-target",
+        "full_path": "some-shell-path",
+    }
+    markers = {run_id, artifact_id, job_id, "a.pass.case", "orga.secret.case", "web-target"}
+    return db, ids, markers
+
+
+def test_no_route_serves_another_orgs_data(tmp_path, monkeypatch):
+    """The authorization twin of the auth walk above.
+
+    `test_every_route_requires_a_token` proves a new route authenticates; it
+    says nothing about scoping. A route added with `current_principal` that
+    queries without `org_id` passes every other test in this file, because the
+    nine cross-org tests are per-resource spot checks. This walks the whole
+    route table as a second org against real org-A ids.
+
+    Two signals, because one is not enough. An id org B typed into the URL
+    coming back in a 404 detail is an echo, not a leak -- but a route that
+    ignores `org_id` returns org A's *content* under exactly that URL, so the
+    echo and the leak look alike from the id alone. Hence: no unrequested
+    marker anywhere, and no GET that hands org B byte-identical content to
+    what org A sees.
+    """
+    db, ids, markers = _seed_org_a(tmp_path, monkeypatch)
+    monkeypatch.setenv("AGENTAUDIT_DB", db)
+
+    from agentaudit.web import app as web_app
+    from agentaudit.web.auth import Principal
+
+    client = TestClient(web_app.app)
+    paths = _concrete_paths(ids)
+    assert len(paths) > 20, f"route table came back with only {len(paths)} routes"
+    # Sanity: as org A these ids really do resolve, so a clean sweep below is
+    # scoping and not just a route table full of 404s.
+    assert client.get(f"/api/runs/{ids['run_id']}").status_code == 200
+
+    def sweep() -> dict[tuple[str, str], tuple[int, str]]:
+        return {
+            (method, path): (resp.status_code, resp.text)
+            for method, path in paths
+            for resp in [
+                client.request(
+                    method,
+                    path,
+                    params={"a": "x", "b": "y"},
+                    headers={"Accept": "application/json"},
+                )
+            ]
+        }
+
+    as_org_a = sweep()
+    web_app.app.dependency_overrides[web_app.current_principal] = (
+        lambda: Principal("org-b", "sub-b", "b@other.test", frozenset({"admin"}))
+    )
+    try:
+        as_org_b = sweep()
+    finally:
+        web_app.app.dependency_overrides.clear()
+
+    leaked = []
+    for key, (status, body) in as_org_b.items():
+        method, path = key
+        unrequested = sorted(m for m in markers if m in body and m not in path)
+        if unrequested:
+            leaked.append((method, path, status, unrequested))
+        a_status, a_body = as_org_a[key]
+        if method == "GET" and status == 200 and a_status == 200 and body == a_body:
+            if any(marker in a_body for marker in markers):
+                leaked.append((method, path, status, "identical to org A's response"))
+    assert not leaked
 
 
 def test_browser_request_starts_code_pkce_login(tmp_path, monkeypatch):
