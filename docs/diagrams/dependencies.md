@@ -224,3 +224,5 @@ graph LR
   - touched: backend/agentaudit/core/store.py,tests/test_store.py
 - 2026-09-09 — Allow login without a Clerk organization behind an opt-in
   - touched: frontend/agentaudit/web/auth.py,infra/.env.example infra/docker-compose.yml,tests/test_auth.py
+- 2026-09-09 — Fixed the tests.
+  - touched: tests/test_migrate.py,tests/test_packs_domain.py tests/test_security_p0.py

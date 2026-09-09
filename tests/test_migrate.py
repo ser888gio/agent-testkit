@@ -363,8 +363,9 @@ def test_0021_corrects_only_runs_that_gated_green_on_zero_evidence(tmp_path):
     alembic_command.upgrade(cfg, "0020")
 
     conn = sqlite3.connect(db_path)
+    # Migration 0002 already seeds `default`; this only fills it in if absent.
     conn.execute(
-        "INSERT INTO orgs (id, name, created_at) "
+        "INSERT OR IGNORE INTO orgs (id, name, created_at) "
         "VALUES ('default', 'Default', '2026-01-01T00:00:00+00:00')"
     )
     conn.execute(

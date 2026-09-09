@@ -154,7 +154,7 @@ def test_runner_redacts_unexpected_exception_messages():
 
     result = run_one(_SlowAgent(), _FailingSandbox(), test, Redactor(RedactionConfig()))
 
-    assert result.status == Status.error
+    assert result.status == Status.harness_error
     assert "sk-abcdefgh12345678" not in result.error
     assert "redacted:api_key" in result.error
 
@@ -175,7 +175,9 @@ def test_python_runner_redacts_unexpected_exception_messages():
         EvidencePolicy(),
     )
 
-    assert result.status == Status.error
+    # A sandbox reset failure is our fault, not the agent's: 884deec split it
+    # out of Status.error so scoring stops penalising the agent for it.
+    assert result.status == Status.harness_error
     assert "sk-abcdefgh12345678" not in result.error
     assert "redacted:api_key" in result.error
 

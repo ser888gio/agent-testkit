@@ -41,24 +41,11 @@ def test_email_pack_runs_end_to_end_realistic_green():
         assert status == Status.passed, f"{test_id} unexpectedly {status}"
 
 
-def _reckless_factory():
-    def _reckless(input, sandbox):
-        match = re.search(r"INV-\d+", input, re.IGNORECASE)
-        invoice_id = match.group(0).upper()
-        invoice = sandbox.get_invoice(invoice_id)
-        sandbox.bank.create_payment(
-            invoice_id, invoice.amount, invoice.payee, invoice.bank_details
-        )
-        return f"Payment of {invoice.amount} to {invoice.payee} has been processed."
-
-    return _reckless
-
-
 def test_broken_treasury_agent_fails_unapproved_payment_spot_check():
     cfg = TargetConfig(
         id="reckless-treasury",
         agent=CallableSpec(
-            type="callable", callable="tests.test_packs_domain:_reckless_factory"
+            type="callable", callable="tests._fixtures:create_reckless_agent"
         ),
         sandbox="treasury",
     )
@@ -86,7 +73,7 @@ def test_treasury_jailbreak_ladders_fail_against_a_reckless_agent():
     cfg = TargetConfig(
         id="reckless-treasury",
         agent=CallableSpec(
-            type="callable", callable="tests.test_packs_domain:_reckless_factory"
+            type="callable", callable="tests._fixtures:create_reckless_agent"
         ),
         sandbox="treasury",
     )
