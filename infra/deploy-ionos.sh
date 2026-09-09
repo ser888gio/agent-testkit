@@ -99,6 +99,55 @@ for _ in $(seq 1 30); do
 done
 echo "health: ${status:-unknown}"
 
+log "Nightly backup"
+# sqlite3's backup API, not cp: it snapshots a live database consistently,
+# while a plain copy taken mid-write yields a corrupt file. The runtime image
+# is python:3.12-slim and carries no sqlite3 CLI, so this is the same mechanism
+# through the stdlib rather than a package to install.
+#
+# Backups land on the host, outside the volume they protect, so they survive
+# the volume being lost or a container mistake. They do NOT survive losing the
+# VPS: offsite was considered and not chosen.
+install -d -m 0700 /var/backups/agentaudit
+cat > /usr/local/bin/agentaudit-backup <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(pwd)"
+snapshot="import sqlite3, sys; src = sqlite3.connect('file:/data/agentaudit.db?mode=ro', uri=True); dst = sqlite3.connect(sys.argv[1]); src.backup(dst); dst.close(); src.close()"
+name="agentaudit-\$(date +%F).db"
+# --user root: the image runs non-root and /var/backups/agentaudit is 0700.
+$COMPOSE run --rm --no-deps --user root -v /var/backups/agentaudit:/backup agentaudit python -c "\$snapshot" "/backup/\$name"
+# Every tenant's agent traffic is in here (test_results.result_json).
+chmod 0600 "/var/backups/agentaudit/\$name"
+find /var/backups/agentaudit -name 'agentaudit-*.db' -mtime +14 -delete
+EOF
+chmod 0700 /usr/local/bin/agentaudit-backup
+
+cat > /etc/systemd/system/agentaudit-backup.service <<'EOF'
+[Unit]
+Description=Consistent snapshot of the agentaudit sqlite database
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/agentaudit-backup
+EOF
+
+cat > /etc/systemd/system/agentaudit-backup.timer <<'EOF'
+[Unit]
+Description=Nightly agentaudit database backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now agentaudit-backup.timer
+
 log "Verify"
 # ponytail: the app is already health-checked above; this hop also crosses DNS
 # and Caddy, which the VPS cannot always resolve for its own public name. Report
@@ -117,6 +166,10 @@ machine that is not this VPS:
   4. Log in as a user in a DIFFERENT org -- none of those runs visible.
      This is the tenancy check. Do not skip it.
   5. Reboot the VPS and confirm everything returns.
+  6. systemctl start agentaudit-backup, then restore the newest dump in
+     /var/backups/agentaudit to a scratch copy and run PRAGMA integrity_check
+     plus SELECT count(*) FROM runs on it. An unrestored backup is a guess,
+     not evidence.
   6. Remove a user from the Clerk org and confirm a mutating request now fails
      inside their still-live session.
   7. $COMPOSE exec agentaudit sqlite3 /data/agentaudit.db "PRAGMA journal_mode;"
