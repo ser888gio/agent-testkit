@@ -222,3 +222,5 @@ graph LR
   - touched: frontend/agentaudit/web/auth.py,tests/test_auth.py
 - 2026-09-08 — fix(store): enable WAL and align the busy timeout at 30s
   - touched: backend/agentaudit/core/store.py,tests/test_store.py
+- 2026-09-09 — Allow login without a Clerk organization behind an opt-in
+  - touched: frontend/agentaudit/web/auth.py,infra/.env.example infra/docker-compose.yml,tests/test_auth.py

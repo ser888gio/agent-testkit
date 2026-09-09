@@ -29,3 +29,4 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-08 — feat(llm): store an environment reference for API keys, never a literal
 - 2026-09-08 — feat(auth): revoke stale authorization on mutating requests
 - 2026-09-08 — fix(store): enable WAL and align the busy timeout at 30s
+- 2026-09-09 — Allow login without a Clerk organization behind an opt-in
