@@ -117,6 +117,10 @@ machine that is not this VPS:
   4. Log in as a user in a DIFFERENT org -- none of those runs visible.
      This is the tenancy check. Do not skip it.
   5. Reboot the VPS and confirm everything returns.
+  6. Remove a user from the Clerk org and confirm a mutating request now fails
+     inside their still-live session.
+  7. $COMPOSE exec agentaudit sqlite3 /data/agentaudit.db "PRAGMA journal_mode;"
+     must print wal.
 
 Logs: $COMPOSE logs -f agentaudit
 EOF
