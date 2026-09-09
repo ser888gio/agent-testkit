@@ -863,3 +863,8 @@ def test_save_llm_settings_refuses_a_literal_api_key():
     store = Store(":memory:")
     with pytest.raises(ValueError, match="environment reference"):
         store.save_llm_settings("org-a", "attacker", "https://api.test/v1", "m", "sk-literal")
+def test_file_backed_connections_use_wal_and_a_30s_busy_timeout(tmp_path):
+    store = Store(str(tmp_path / "agentaudit.db"))
+    with store._connection() as conn:  # noqa: SLF001 - inspect connection pragmas
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 30000

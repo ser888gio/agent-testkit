@@ -339,7 +339,11 @@ class _SQLitePool:
         conn = sqlite3.connect(self._path, check_same_thread=False, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 5000")
+        # Three containers write this one file; WAL keeps readers off the writer's
+        # back. Persistent DB property, so setting it per-connection is idempotent.
+        conn.execute("PRAGMA journal_mode = WAL")
+        # Runs after connect() and silently overrides its timeout=, so the two must agree.
+        conn.execute("PRAGMA busy_timeout = 30000")
         conn.executescript(_SCHEMA)
         conn.commit()
         return conn
