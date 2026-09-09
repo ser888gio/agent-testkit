@@ -34,6 +34,7 @@ services:
       AGENTAUDIT_OIDC_REDIRECT_URI: ${AGENTAUDIT_OIDC_REDIRECT_URI:?set in infra/.env}
       AGENTAUDIT_SESSION_COOKIE_SECURE: ${AGENTAUDIT_SESSION_COOKIE_SECURE:-1}
       AGENTAUDIT_DEMO_MODE: ${AGENTAUDIT_DEMO_MODE:-0}
+      AGENTAUDIT_ALLOW_ORGLESS_LOGIN: ${AGENTAUDIT_ALLOW_ORGLESS_LOGIN:-0}
     # Same controls the worker carries. This service is the internet-facing one
     # and mounts the same volume read-write, so the weaker container was
     # guarding the data the hardened one protects. /data stays writable -- it is

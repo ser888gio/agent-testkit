@@ -255,11 +255,55 @@ def test_exchanged_token_with_wrong_azp_is_still_401(oidc):
     assert exc.value.status_code == 401
 
 
-def test_pending_organization_membership_is_403(oidc):
+def test_pending_organization_membership_is_403(oidc, monkeypatch):
     """A user who has not joined an org yet carries no usable tenancy."""
+    monkeypatch.delenv("AGENTAUDIT_ALLOW_ORGLESS_LOGIN", raising=False)
     with pytest.raises(HTTPException) as exc:
         auth.current_principal(_request(_token(sts="pending", org_id=None)))
     assert exc.value.status_code == 403
+
+
+def test_orgless_login_setting_grants_a_private_tenant(oidc, monkeypatch):
+    """With the opt-in set, a login carrying no Clerk org still lands somewhere.
+
+    Same isolation as the demo-mode fallback -- a tenant keyed on the user's
+    own `sub` -- without demo mode's narrowing of the target picker.
+    """
+    monkeypatch.delenv("AGENTAUDIT_DEMO_MODE", raising=False)
+    monkeypatch.setenv("AGENTAUDIT_ALLOW_ORGLESS_LOGIN", "1")
+    _destination, state = auth.begin_browser_login("/")
+    token = _token(org_id=None, roles=None, email=None, azp=None)
+    monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": token})
+    monkeypatch.setattr(auth, "_userinfo", lambda _s, _t: {"email": "stranger@example.test"})
+
+    _session_id, principal, _next_url = auth.complete_browser_login("code", state, state)
+
+    assert principal.org_id == "user:user-1"
+    assert principal.roles == frozenset({"admin"})
+
+
+def test_orgless_login_setting_admits_a_pending_invitation(oidc, monkeypatch):
+    """A half-finished Clerk invite must not strand the user behind a 403."""
+    monkeypatch.delenv("AGENTAUDIT_DEMO_MODE", raising=False)
+    monkeypatch.setenv("AGENTAUDIT_ALLOW_ORGLESS_LOGIN", "1")
+    _destination, state = auth.begin_browser_login("/")
+    token = _token(org_id=None, roles=None, email=None, azp=None)
+    monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": token})
+    monkeypatch.setattr(
+        auth,
+        "_userinfo",
+        lambda _s, _t: {"email": "invitee@example.test", "sts": "pending"},
+    )
+
+    _session_id, principal, _next_url = auth.complete_browser_login("code", state, state)
+
+    assert principal.org_id == "user:user-1"
+
+
+def test_bearer_token_without_org_is_401_even_with_the_setting(oidc, monkeypatch):
+    """The opt-in widens the PKCE-bound path only, never bare bearer tokens."""
+    monkeypatch.setenv("AGENTAUDIT_ALLOW_ORGLESS_LOGIN", "1")
+    _expect_401(_request(_token(org_id=None)))
 
 
 def test_code_pkce_callback_creates_server_side_session(oidc, monkeypatch):
@@ -350,6 +394,7 @@ def test_bearer_token_without_org_is_still_401(oidc):
 def test_browser_login_without_org_is_403_outside_demo_mode(oidc, monkeypatch):
     """On a shared instance a stranger cannot mint their own workspace."""
     monkeypatch.delenv("AGENTAUDIT_DEMO_MODE", raising=False)
+    monkeypatch.delenv("AGENTAUDIT_ALLOW_ORGLESS_LOGIN", raising=False)
     _destination, state = auth.begin_browser_login("/")
     token = _token(org_id=None, roles=None, email=None, azp=None)
     monkeypatch.setattr(auth, "_exchange_code", lambda _s, _c, _v: {"access_token": token})

@@ -43,6 +43,21 @@ _REVOKED = "authorization revoked"
 SESSION_TTL_SECONDS = 1800
 
 
+def private_tenant_without_org() -> bool:
+    """Whether a login carrying no Clerk org gets its own private tenant.
+
+    Off by default: on a shared instance anyone who can finish a login would
+    otherwise mint a workspace and run jobs on the box. Turning it on trades
+    that for not having to provision an org per user, which is what a
+    single-operator or internal deployment usually wants.
+    """
+    return os.environ.get("AGENTAUDIT_ALLOW_ORGLESS_LOGIN", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 @dataclass(frozen=True)
 class Principal:
     org_id: str
@@ -240,9 +255,13 @@ def _principal_from_token(
 
     # Clerk marks a user whose org membership has not been accepted yet. That
     # is a distinct, diagnosable state, so it is refused ahead of the
-    # private-tenant fallback rather than being silently absorbed by it.
-    if source.get("sts") == "pending":
-        raise HTTPException(status_code=403, detail="organization membership required")
+    # private-tenant fallback rather than being silently absorbed by it --
+    # except where that fallback is the deployment's intended landing place.
+    if source.get("sts") == "pending" and not private_tenant_without_org():
+        raise HTTPException(
+            status_code=403,
+            detail="organization invitation not accepted",
+        )
 
     org_id = source.get(ORG_CLAIM)
     roles = _roles(source)
@@ -261,8 +280,14 @@ def _principal_from_token(
             raise HTTPException(status_code=401, detail=_INVALID_TOKEN)
         # On a shared instance anyone who can finish a Clerk login could
         # otherwise mint their own workspace and run jobs on the box, so a
-        # missing org is a hard refusal outside the demo deployment.
-        if not demo_mode():
+        # missing org is a hard refusal unless the deployment opted in.
+        if not demo_mode() and not private_tenant_without_org():
+            _LOG.warning(
+                "OIDC userinfo carries no usable %s for sub=%r; keys present: %s",
+                ORG_CLAIM,
+                subject,
+                sorted(source),
+            )
             raise HTTPException(status_code=403, detail="organization membership required")
         org_id = f"user:{subject.strip()}"
         # Sole occupant of a tenant nobody else can reach, so admin over it.
