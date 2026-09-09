@@ -210,6 +210,8 @@ graph LR
   - touched: backend/agentaudit/core/evolve.py,tests/test_evolve.py
 - 2026-09-08 — Fixing the UI on detail grid.
   - touched: frontend/spa/src/style.css
+- 2026-09-08 — test(web): sweep every route for cross-org leakage
+  - touched: tests/test_web.py
 - 2026-09-08 — feat(llm): store an environment reference for API keys, never a literal
   - touched: backend/agentaudit/core/store.py,backend/agentaudit/worker.py frontend/agentaudit/web/api.py,frontend/spa/src/pages/Settings.tsx infra/alembic/versions/0022_clear_literal_llm_api_keys.py,tests/test_migrate.py tests/test_store.py,tests/test_web.py tests/test_worker.py
 - 2026-09-08 — feat(auth): revoke stale authorization on mutating requests
