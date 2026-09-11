@@ -37,3 +37,5 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-11 — Port the design spec's type and spacing scales to the SPA
 - 2026-09-11 — Space the provider preset buttons on Settings
 - 2026-09-11 — Simplify the Settings key instructions, fix two spacing regressions
+- 2026-09-11 — Notify on agent registration, test creation and promotion
+- 2026-09-11 — Notify on agent registration, test creation and promotion

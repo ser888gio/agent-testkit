@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
 import { Breadcrumb, EmptyState, ErrorNote, PageHeader } from "../components/ui";
+import { useToast } from "../components/toast";
 
 interface FormOptions {
   categories: string[];
@@ -11,6 +12,7 @@ interface FormOptions {
 
 export function TestNewPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [options, setOptions] = useState<FormOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,9 +44,12 @@ export function TestNewPage() {
     setError(null);
     try {
       await apiSend("/tests", "POST", values);
+      toast(`Test ${values.test_id} saved — it runs with the next pack.`);
       navigate("/tests");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Saving failed.");
+      const detail = err instanceof ApiError ? err.detail : "Saving failed.";
+      setError(detail);
+      toast(detail, "danger");
     } finally {
       setBusy(false);
     }

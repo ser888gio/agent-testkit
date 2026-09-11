@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiError, apiSend } from "../api";
 import { useView, Loading } from "../components/useView";
 import { Breadcrumb, EmptyState, ErrorNote, PageHeader } from "../components/ui";
+import { useToast } from "../components/toast";
 import { DataTable } from "../components/table";
 
 interface Candidate {
@@ -18,6 +19,7 @@ interface GeneratedView {
 }
 
 export function GeneratedPage() {
+  const toast = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const { view, error, reload } = useView<GeneratedView>("/generated");
@@ -27,9 +29,16 @@ export function GeneratedPage() {
     setActionError(null);
     try {
       await apiSend(path, "POST", { test_id });
+      toast(
+        path.endsWith("promote")
+          ? `${test_id} promoted — it now runs as a reviewed test.`
+          : `${test_id} rejected.`,
+      );
       reload();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.detail : "Action failed.");
+      const detail = err instanceof ApiError ? err.detail : "Action failed.";
+      setActionError(detail);
+      toast(detail, "danger");
     } finally {
       setBusyId(null);
     }

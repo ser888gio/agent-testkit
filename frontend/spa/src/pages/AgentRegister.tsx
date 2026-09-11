@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiSend } from "../api";
 import { useEffect } from "react";
 import { Breadcrumb, EmptyState, ErrorNote, PageHeader, Panel } from "../components/ui";
+import { useToast } from "../components/toast";
 
 interface RegisterOptions {
   sandboxes: string[];
@@ -12,6 +13,7 @@ const METHODS = ["POST", "GET"];
 
 export function AgentRegisterPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [options, setOptions] = useState<RegisterOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,9 +38,12 @@ export function AgentRegisterPage() {
     setError(null);
     try {
       const result = await apiSend<{ agent_id: string }>("/agents/register", "POST", values);
+      toast(`Agent ${result.agent_id} registered.`);
       navigate(`/agents/${result.agent_id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Registration failed.");
+      const detail = err instanceof ApiError ? err.detail : "Registration failed.";
+      setError(detail);
+      toast(detail, "danger");
     } finally {
       setBusy(false);
     }
