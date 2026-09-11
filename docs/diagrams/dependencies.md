@@ -238,3 +238,7 @@ graph LR
   - touched: frontend/spa/src/style.css
 - 2026-09-11 — Simplify the Settings key instructions, fix two spacing regressions
   - touched: frontend/spa/src/pages/Settings.tsx,frontend/spa/src/style.css
+- 2026-09-11 — Notify on agent registration, test creation and promotion
+  - touched: frontend/spa/src/App.tsx,frontend/spa/src/components/toast.tsx frontend/spa/src/pages/AgentRegister.tsx,frontend/spa/src/pages/Generated.tsx frontend/spa/src/pages/TestNew.tsx,frontend/spa/src/style.css
+- 2026-09-11 — Notify on agent registration, test creation and promotion
+  - touched: frontend/spa/src/App.tsx,frontend/spa/src/components/toast.tsx frontend/spa/src/pages/AgentRegister.tsx,frontend/spa/src/pages/Generated.tsx frontend/spa/src/pages/TestNew.tsx,frontend/spa/src/style.css

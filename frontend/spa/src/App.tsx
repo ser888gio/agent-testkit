@@ -19,6 +19,7 @@ import { ComparePage } from "./pages/Compare";
 import { SettingsPage } from "./pages/Settings";
 import { LandingPage } from "./pages/Landing";
 import { EmptyState, PageHeader } from "./components/ui";
+import { ToastProvider } from "./components/toast";
 
 function NotFound() {
   return (
@@ -44,8 +45,9 @@ export function App() {
     );
   }
   return (
-    <Layout>
-      <Routes>
+    <ToastProvider>
+      <Layout>
+        <Routes>
         <Route path="/" element={<AnalyticsPage />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/:runId" element={<RunDetailPage />} />
@@ -64,7 +66,8 @@ export function App() {
         <Route path="/compare" element={<ComparePage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Layout>
+        </Routes>
+      </Layout>
+    </ToastProvider>
   );
 }
