@@ -63,7 +63,7 @@ export function RunsPage() {
       {!view.all_runs.length ? (
         <EmptyState
           title="No runs yet"
-          body="Run your first pack with agentaudit run <packs_dir> --target <config.yaml>."
+          body="Run your first pack with okjul run <packs_dir> --target <config.yaml>."
           actionLabel="View tests"
           actionHref="/tests"
         />

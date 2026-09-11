@@ -174,7 +174,7 @@ export function AgentConnectPage() {
       />
 
       <Panel title="Run configuration" blurb={<>Pick a registered agent or a shipped target config, choose a test pack from{" "}
-              <code>agentaudit/packs</code>, then start the run. Agent deployed somewhere new?{" "}
+              <code>okjul/packs</code>, then start the run. Agent deployed somewhere new?{" "}
               Select <em>other endpoint URL</em> and paste its address.</>}>
         {error ? <ErrorNote message={error} /> : null}
         <form onSubmit={submit} className="test-form" data-testid="connect-form">

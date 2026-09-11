@@ -13,7 +13,7 @@ const STAGES = [
 export function LandingPage() {
   return (
     <main id="content" className="mx-auto max-w-3xl px-6 py-24">
-      <p className="eyebrow">agentaudit</p>
+      <p className="eyebrow">OKJUL</p>
       <h1 className="mt-2 text-4xl font-semibold tracking-tight text-ink">
         Black-box testing for AI agents.
       </h1>

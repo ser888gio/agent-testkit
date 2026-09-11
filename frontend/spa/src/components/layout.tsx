@@ -113,11 +113,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </a>
       <div className={`layout${collapsed ? " collapsed" : ""}`}>
         <aside className={`sidebar${navOpen ? " open" : ""}`}>
-          <Link className="brand" to="/" aria-label="agentaudit runs">
+          <Link className="brand" to="/" aria-label="OKJUL runs">
             <span className="brand-mark" aria-hidden="true">
-              AK
+              OK
             </span>
-            <span className="brand-name">agentaudit</span>
+            <span className="brand-name">OKJUL</span>
           </Link>
           <nav ref={navRef} id="primary-nav" aria-label="Primary">
             <p className="nav-section">Menu</p>
@@ -167,13 +167,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <main id="content" tabIndex={-1}>
             {children}
             <footer className="site-footer" data-testid="site-footer">
-              <p className="site-footer-brand">agentaudit</p>
+              <p className="site-footer-brand">OKJUL</p>
               <p>
                 Black-box testing and assurance for AI agents. Evidence produced here is technical
                 evidence, not a CE marking or compliance determination.
               </p>
               <p className="quiet">
-                &copy; {new Date().getFullYear()} agentaudit &middot; Apache-2.0 licensed
+                &copy; {new Date().getFullYear()} OKJUL &middot; Apache-2.0 licensed
               </p>
             </footer>
           </main>

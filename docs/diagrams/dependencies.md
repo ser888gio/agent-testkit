@@ -242,3 +242,5 @@ graph LR
   - touched: frontend/spa/src/App.tsx,frontend/spa/src/components/toast.tsx frontend/spa/src/pages/AgentRegister.tsx,frontend/spa/src/pages/Generated.tsx frontend/spa/src/pages/TestNew.tsx,frontend/spa/src/style.css
 - 2026-09-11 — Notify on agent registration, test creation and promotion
   - touched: frontend/spa/src/App.tsx,frontend/spa/src/components/toast.tsx frontend/spa/src/pages/AgentRegister.tsx,frontend/spa/src/pages/Generated.tsx frontend/spa/src/pages/TestNew.tsx,frontend/spa/src/style.css
+- 2026-09-11 — Rename web UI branding from agentaudit to OKJUL
+  - touched: frontend/agentaudit/web/app.py,frontend/spa/index.html frontend/spa/src/components/layout.tsx,frontend/spa/src/pages/AgentConnect.tsx frontend/spa/src/pages/AgentRegister.tsx,frontend/spa/src/pages/Generated.tsx frontend/spa/src/pages/Landing.tsx,frontend/spa/src/pages/Runs.tsx frontend/spa/src/pages/Settings.tsx

@@ -123,7 +123,7 @@ export function SettingsPage() {
 
       <Panel
         title="Getting a key"
-        blurb="agentaudit talks the OpenAI chat-completions format, so any provider that speaks it works."
+        blurb="OKJUL talks the OpenAI chat-completions format, so any provider that speaks it works."
       >
         <ol className="steps-compact">
           <li>
