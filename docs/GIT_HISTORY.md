@@ -31,3 +31,4 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-08 — fix(store): enable WAL and align the busy timeout at 30s
 - 2026-09-09 — Allow login without a Clerk organization behind an opt-in
 - 2026-09-09 — Fixed the tests.
+- 2026-09-11 — Stop job status polling on a 4xx
