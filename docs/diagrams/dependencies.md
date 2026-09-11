@@ -232,3 +232,5 @@ graph LR
   - touched: frontend/spa/src/pages/Job.tsx
 - 2026-09-11 — Skip the /compare fetch when run ids are absent
   - touched: frontend/spa/src/components/useView.tsx,frontend/spa/src/pages/Compare.tsx
+- 2026-09-11 — Port the design spec's type and spacing scales to the SPA
+  - touched: frontend/spa/src/style.css
