@@ -32,3 +32,5 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-09 — Allow login without a Clerk organization behind an opt-in
 - 2026-09-09 — Fixed the tests.
 - 2026-09-11 — Add an opt-in browser crawl of the SPA
+- 2026-09-11 — Stop job status polling on a 4xx
+- 2026-09-11 — Skip the /compare fetch when run ids are absent
