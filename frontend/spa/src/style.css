@@ -1289,6 +1289,17 @@ pre {
   color: var(--ink-subtle);
 }
 
+/* The preset row ("Fill from: OpenRouter OpenAI Groq"). The buttons are
+   inline-flex, so the JSX's whitespace text nodes collapse between them and the
+   three read as one segmented control. Flex with a real gap instead; wrap is
+   for the narrow settings column. */
+.test-form p.quiet:has(> button) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
 .test-form button { justify-self: start; }
 
 .form-error {
