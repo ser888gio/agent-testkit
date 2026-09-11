@@ -226,6 +226,8 @@ graph LR
   - touched: frontend/agentaudit/web/auth.py,infra/.env.example infra/docker-compose.yml,tests/test_auth.py
 - 2026-09-09 — Fixed the tests.
   - touched: tests/test_migrate.py,tests/test_packs_domain.py tests/test_security_p0.py
+- 2026-09-11 — Add an opt-in browser crawl of the SPA
+  - touched: pyproject.toml,tests/test_crawl.py
 - 2026-09-11 — Stop job status polling on a 4xx
   - touched: frontend/spa/src/pages/Job.tsx
 - 2026-09-11 — Skip the /compare fetch when run ids are absent
