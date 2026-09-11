@@ -34,3 +34,6 @@ One line per commit, appended automatically by `tools/hooks/post-commit`.
 - 2026-09-11 — Add an opt-in browser crawl of the SPA
 - 2026-09-11 — Stop job status polling on a 4xx
 - 2026-09-11 — Skip the /compare fetch when run ids are absent
+- 2026-09-11 — Port the design spec's type and spacing scales to the SPA
+- 2026-09-11 — Space the provider preset buttons on Settings
+- 2026-09-11 — Simplify the Settings key instructions, fix two spacing regressions

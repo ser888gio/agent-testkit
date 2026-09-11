@@ -108,6 +108,26 @@
   --neutral-text: var(--ink-subtle);
   --focus: var(--accent-focus);
 
+  /* Type and spacing scales from DESIGN-linear.app.md. The colour tokens above
+     were ported from that spec; these two scales were not, which left the app
+     at a single 16px/1.5 size and two spacing values for every job. Sizes are
+     rem so a user's browser text setting still scales them. */
+  --text-caption: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --leading-tight: 1.2;
+  --leading-ui: 1.4;
+  --leading-body: 1.5;
+
+  --space-xxs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-xxl: 3rem;
+
   --radius-sm: 8px;
   --radius-card: 12px;
   --radius-pill: 9999px;
@@ -184,7 +204,7 @@ body {
   background: var(--canvas);
   color: var(--ink);
   font-family: Inter, "SF Pro Display", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.5;
+  line-height: var(--leading-body);
   letter-spacing: -0.05px;
   -webkit-font-smoothing: antialiased;
 }
@@ -335,9 +355,12 @@ main:focus-visible {
   box-shadow: var(--shadow);
 }
 
+/* The cap is a ceiling for very wide monitors only: .layout already gives main
+   its own grid column (viewport - sidebar), and `100%` resolves against that
+   column, so below ~1700px this never binds and main simply fills the column. */
 main {
   position: relative;
-  width: min(100%, 1180px);
+  width: min(100%, 1440px);
   min-width: 0;
   margin: 0 auto;
   padding: clamp(1.25rem, 4vw, 3rem) clamp(1rem, 3vw, 2rem) 4rem;
@@ -570,13 +593,16 @@ h3 {
   font-weight: 600;
 }
 
+/* Panels are page-level sections, so they get the section step (--space-xl)
+   between them, not the same 1rem that separates items inside one. That gap is
+   what groups a panel's contents against its neighbours. */
 .panel {
   background: var(--surface-1);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow);
   padding: clamp(1rem, 2vw, 1.5rem);
-  margin: 1rem 0;
+  margin: var(--space-xl) 0;
 }
 
 .panel-header {
@@ -656,13 +682,29 @@ h3 {
 input, select, textarea {
   color-scheme: dark;
   width: 100%;
-  min-height: 2.5rem;
+  min-height: 2.25rem;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-1);
   color: var(--ink);
   font: inherit;
+  font-size: var(--text-sm);
   padding: 0.5rem 0.65rem;
+}
+
+/* The rule above targets text-like fields; a checkbox or radio is a fixed-size
+   glyph and `width: 100%` stretches it into a slab. Reset here, once, rather
+   than at each call site -- .adaptive-toggle was missing its patch and rendered
+   a ~2.5rem grey square. */
+input[type="checkbox"],
+input[type="radio"] {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
 }
 
 input::placeholder,
@@ -679,19 +721,20 @@ button,
 .button-link,
 .button-secondary {
   display: inline-flex;
-  min-height: 2.5rem;
+  min-height: 2.25rem;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
-  padding: 0 0.9rem;
+  padding: 0.5rem 0.875rem;
   font: inherit;
+  font-size: var(--text-sm);
   font-weight: 500;
-  line-height: 1.25;
+  line-height: var(--leading-tight);
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 button,
@@ -700,11 +743,12 @@ button,
   color: var(--on-accent);
 }
 
+/* Tone shift only. The old translateY(-1px) lift jittered the label sub-pixel
+   and reads dated next to Linear/Vercel, which move background alone. */
 button:hover,
 .button-link:hover {
   background: var(--accent-hover);
   color: var(--on-accent);
-  transform: translateY(-1px);
 }
 
 .button-secondary {
@@ -740,19 +784,35 @@ table {
   background: var(--surface-1);
 }
 
+/* Dense by design: these tables are scanned, not read. 6px vertical padding on
+   --text-sm gives a ~34px row, against the ~49px that 16px text at 0.7rem
+   padding produced. */
 td, th {
   border-bottom: 1px solid var(--hairline);
-  padding: 0.7rem 0.75rem;
+  padding: 0.375rem 0.75rem;
   text-align: left;
   vertical-align: middle;
+}
+
+td {
+  font-size: var(--text-sm);
+  line-height: var(--leading-ui);
+}
+
+/* Digits in a column only line up with tabular figures; score and count cells
+   are compared down the column, not read across. */
+td.mono,
+td .mono {
+  font-variant-numeric: tabular-nums;
 }
 
 th {
   background: var(--surface-2);
   color: var(--ink-subtle);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.72rem;
+  font-size: var(--text-caption);
   font-weight: 500;
+  line-height: var(--leading-tight);
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -1069,15 +1129,7 @@ pre {
   cursor: pointer;
 }
 
-.test-picker-list input[type="checkbox"] {
-  /* The global `input { width: 100% }` rule would blow the row apart. */
-  flex: 0 0 auto;
-  width: 1rem;
-  height: 1rem;
-  min-height: 0;
-  margin: 0;
-  accent-color: var(--accent);
-}
+/* Sizing now comes from the global input[type="checkbox"] reset. */
 
 .test-picker-list li {
   display: flex;
@@ -1235,6 +1287,42 @@ pre {
 .test-form small {
   font-weight: 400;
   color: var(--ink-subtle);
+}
+
+/* A short numbered procedure inside a panel. The default ol indent is sized for
+   prose and pushes three short steps well off the panel's text edge.
+   Not `display: grid`: that makes the li's grid items, which drops ::marker and
+   loses the numbering the steps exist for. Plain list-item flow + margin. */
+.steps-compact {
+  /* Tailwind's preflight resets list-style on every ol/ul, so the numbering has
+     to be asked for back explicitly -- inheriting it is not an option here. */
+  list-style-type: decimal;
+  margin: 0 0 var(--space-sm);
+  padding-left: 1.1rem;
+}
+
+.steps-compact li {
+  padding-left: 0.15rem;
+  margin-bottom: var(--space-xxs);
+}
+
+.steps-compact li:last-child {
+  margin-bottom: 0;
+}
+
+.steps-compact li::marker {
+  color: var(--ink-subtle);
+}
+
+/* The preset row ("Fill from: OpenRouter OpenAI Groq"). The buttons are
+   inline-flex, so the JSX's whitespace text nodes collapse between them and the
+   three read as one segmented control. Flex with a real gap instead; wrap is
+   for the narrow settings column. */
+.test-form p.quiet:has(> button) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
 }
 
 .test-form button { justify-self: start; }
@@ -2075,9 +2163,13 @@ svg.export-icon {
   text-transform: uppercase;
 }
 
+/* justify-content is reset explicitly: the global button rule centres its
+   content, which here centred each row on its own label width and left the
+   icons on ten different x-positions down the list. */
 .header-search-results button {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.6rem;
   width: 100%;
   padding: 0.45rem 0.6rem;
@@ -2259,11 +2351,13 @@ svg.export-icon {
   padding-bottom: 0;
 }
 
+/* left = (marker width / 2) - (rail width / 2), so the rail runs through the
+   centre of the 1.75rem markers. top clears the marker it hangs from. */
 .step:not(:last-child)::before {
   content: "";
   position: absolute;
-  left: 0.68rem;
-  top: 1.65rem;
+  left: calc(0.875rem - 1px);
+  top: 2rem;
   bottom: 0.35rem;
   width: 2px;
   background: var(--hairline-strong);
@@ -2279,15 +2373,20 @@ svg.export-icon {
   background: var(--pass-border);
 }
 
+/* The marker is the step's identity and the rail's anchor, so it outweighs its
+   own label rather than shrinking under it. Width is tied to the rail's
+   ::before offset below -- change one and the line leaves the circles' axis. */
 .step-marker {
   flex: none;
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 1.75rem;
+  height: 1.75rem;
   border-radius: var(--radius-pill);
   border: 2px solid var(--hairline-strong);
   background: var(--surface-2);
   color: var(--ink-subtle);
-  font-size: 0.72rem;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -2462,9 +2561,10 @@ svg.export-icon {
   cursor: pointer;
 }
 
+/* Size and flex come from the global checkbox reset; this only nudges the box
+   onto the first line's optical baseline. */
 .adaptive-toggle input {
   margin-top: 0.15rem;
-  flex: none;
 }
 
 /* Marks a result written during the run instead of coming from the pack. Small

@@ -125,19 +125,27 @@ export function SettingsPage() {
         title="Getting a key"
         blurb="agentaudit talks the OpenAI chat-completions format, so any provider that speaks it works."
       >
-        <p>
-          The quickest route is <strong>OpenRouter</strong>, which fronts most models behind one
-          key. Sign up at <span className="mono">openrouter.ai</span>, create a key under{" "}
-          <span className="mono">openrouter.ai/keys</span>, then paste it below with the base URL{" "}
-          <span className="mono">https://openrouter.ai/api/v1/chat/completions</span> and a model
-          name such as <span className="mono">openai/gpt-4o-mini</span> or{" "}
-          <span className="mono">anthropic/claude-sonnet-4</span> — OpenRouter model names are
-          always <span className="mono">vendor/model</span>.
-        </p>
+        <ol className="steps-compact">
+          <li>
+            Get a key from your provider —{" "}
+            {PRESETS.map((preset, index) => (
+              <span key={preset.name}>
+                {index > 0 ? ", " : ""}
+                <span className="mono">{preset.keys}</span>
+              </span>
+            ))}
+            .
+          </li>
+          <li>
+            Pick a provider with <strong>Fill from</strong> below. That sets the base URL and a
+            starting model.
+          </li>
+          <li>Paste the key and save.</li>
+        </ol>
         <p className="quiet">
-          Going direct to a vendor works the same way, and so does a local server (Ollama, vLLM,
-          LiteLLM) if you point the base URL at it and leave the key blank. Use the buttons on each
-          role below to fill in a provider's URL.
+          OpenRouter fronts most models behind one key, and its model names are always{" "}
+          <span className="mono">vendor/model</span>. A local server (Ollama, vLLM, LiteLLM) works
+          too — point the base URL at it and leave the key blank.
         </p>
       </Panel>
 
