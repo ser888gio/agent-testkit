@@ -4,22 +4,29 @@ import { SyncLoader } from "./ui";
 
 // One fetch per page: the JSON API returns the whole view model the React
 // pages use, so pages render from a single response object.
-export function useView<T>(path: string, params?: Record<string, string>) {
+// `params: null` skips the request entirely, for a view whose required query
+// arguments are absent. Passing `undefined` still fetches with no query string.
+export function useView<T>(path: string, params?: Record<string, string> | null) {
   const [view, setView] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [nonce, setNonce] = useState(0);
+  const skip = params === null;
   const key = params ? JSON.stringify(params) : "";
 
   useEffect(() => {
     let alive = true;
+    if (skip) {
+      setLoading(false);
+      return;
+    }
     // The previous view stays on screen while the next one loads. Blanking it
     // here meant every navigation -- including back/forward and each debounced
     // keystroke in a filter box -- flashed a full-page loading state over
     // content that was about to be replaced by something nearly identical.
     setLoading(true);
     setError(null);
-    apiGet<T>(path, params)
+    apiGet<T>(path, params ?? undefined)
       .then((data) => {
         if (!alive) return;
         setView(data);
@@ -36,7 +43,7 @@ export function useView<T>(path: string, params?: Record<string, string>) {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, key, nonce]);
+  }, [path, key, nonce, skip]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   return { view, error, loading, reload };
