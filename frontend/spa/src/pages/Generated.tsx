@@ -64,7 +64,7 @@ export function GeneratedPage() {
       {!view.candidates.length ? (
         <EmptyState
           title="Nothing to review"
-          body="Run `agentaudit evolve` to generate candidate attacks."
+          body="Run `okjul evolve` to generate candidate attacks."
         />
       ) : (
         <section className="panel">

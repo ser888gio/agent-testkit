@@ -55,7 +55,7 @@ export function AgentRegisterPage() {
       <PageHeader
         eyebrow="Agent setup"
         title="Register an agent"
-        subtitle="Point agentaudit at an HTTP endpoint. The host you enter becomes the only address this target may be dialled at."
+        subtitle="Point OKJUL at an HTTP endpoint. The host you enter becomes the only address this target may be dialled at."
       />
 
       <Panel title="Endpoint" blurb={<>Registered targets can be profiled and run without adding a YAML file.</>}>

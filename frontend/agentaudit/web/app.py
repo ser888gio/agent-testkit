@@ -71,7 +71,7 @@ async def _lifespan(app: FastAPI):
 # would be the only unauthenticated routes on a partner-facing deployment, and
 # they publish the whole route surface for free.
 app = FastAPI(
-    title="agentaudit",
+    title="OKJUL",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
