@@ -236,3 +236,5 @@ graph LR
   - touched: frontend/spa/src/style.css
 - 2026-09-11 — Space the provider preset buttons on Settings
   - touched: frontend/spa/src/style.css
+- 2026-09-11 — Simplify the Settings key instructions, fix two spacing regressions
+  - touched: frontend/spa/src/pages/Settings.tsx,frontend/spa/src/style.css

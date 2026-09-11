@@ -1289,6 +1289,31 @@ pre {
   color: var(--ink-subtle);
 }
 
+/* A short numbered procedure inside a panel. The default ol indent is sized for
+   prose and pushes three short steps well off the panel's text edge.
+   Not `display: grid`: that makes the li's grid items, which drops ::marker and
+   loses the numbering the steps exist for. Plain list-item flow + margin. */
+.steps-compact {
+  /* Tailwind's preflight resets list-style on every ol/ul, so the numbering has
+     to be asked for back explicitly -- inheriting it is not an option here. */
+  list-style-type: decimal;
+  margin: 0 0 var(--space-sm);
+  padding-left: 1.1rem;
+}
+
+.steps-compact li {
+  padding-left: 0.15rem;
+  margin-bottom: var(--space-xxs);
+}
+
+.steps-compact li:last-child {
+  margin-bottom: 0;
+}
+
+.steps-compact li::marker {
+  color: var(--ink-subtle);
+}
+
 /* The preset row ("Fill from: OpenRouter OpenAI Groq"). The buttons are
    inline-flex, so the JSX's whitespace text nodes collapse between them and the
    three read as one segmented control. Flex with a real gap instead; wrap is
@@ -2138,9 +2163,13 @@ svg.export-icon {
   text-transform: uppercase;
 }
 
+/* justify-content is reset explicitly: the global button rule centres its
+   content, which here centred each row on its own label width and left the
+   icons on ten different x-positions down the list. */
 .header-search-results button {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.6rem;
   width: 100%;
   padding: 0.45rem 0.6rem;
