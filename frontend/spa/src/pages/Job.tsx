@@ -24,6 +24,8 @@ interface JobView {
 
 // Polls /jobs/{id}/status every 2s while the job is live; the same cadence the
 // old poll.js used. Backoff on failure so an offline worker does not spin.
+// A 4xx is permanent -- a deleted or mistyped job will never appear -- so it
+// stops instead of retrying a dead endpoint every 10s for the life of the tab.
 function useJobPolling(jobId: string, onStatus: (status: JobView) => void) {
   useEffect(() => {
     let alive = true;
@@ -38,9 +40,10 @@ function useJobPolling(jobId: string, onStatus: (status: JobView) => void) {
           onStatus(status);
           if (status.running) timer = window.setTimeout(tick, 2000);
         })
-        .catch(() => {
-          failures += 1;
+        .catch((err: unknown) => {
           if (!alive) return;
+          if (err instanceof ApiError && err.status >= 400 && err.status < 500) return;
+          failures += 1;
           timer = window.setTimeout(tick, Math.min(10000, 2000 * failures));
         });
     };
