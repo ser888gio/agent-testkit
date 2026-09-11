@@ -29,7 +29,7 @@ export function ComparePage() {
   const b = params.get("b") ?? "";
   const { view, error } = useView<{ diff: RunDiff }>(
     "/compare",
-    a && b ? { a, b } : undefined,
+    a && b ? { a, b } : null,
   );
 
   if (!a || !b) {
