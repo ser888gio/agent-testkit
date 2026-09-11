@@ -88,7 +88,10 @@ agentaudit = "backend/agentaudit"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Suite is dominated by per-run process spawn (core/isolation.py), not CPU.
-addopts = "-n logical"
+# `crawl` is excluded by default: it needs a browser and a live server, which
+# the rest of the suite does not. Run it with `-m crawl -p no:xdist`.
+addopts = "-n logical -m 'not crawl'"
+markers = ["crawl: browser crawl of the SPA; needs playwright and a live server"]
 
 [tool.ruff]
 line-length = 100
